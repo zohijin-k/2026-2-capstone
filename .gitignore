@@ -1,0 +1,41 @@
+# ==============================================================================
+# 하네스(.trellis/, .claude/, AGENTS.md, .gitattributes)는 커밋 대상이다.
+# .trellis/ 내부의 기기별 파일은 .trellis/.gitignore가 따로 관리한다.
+# 여기에는 하네스 바깥의 일반적인 무시 대상만 둔다.
+# ==============================================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# ---- 비밀값 / 환경 ----
+.env
+.env.*
+!.env.example
+
+# ---- Node (데모사이트 / 대시보드 합류 대비) ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---- 에디터 ----
+.vscode/
+.idea/
+*.swp
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- Claude Code 개인 설정 (권한 승인 기록, 기기별) ----
+.claude/settings.local.json
