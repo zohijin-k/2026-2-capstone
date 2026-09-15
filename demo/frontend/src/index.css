@@ -1,0 +1,22 @@
+/* 관공서 서식을 재현해야 하므로 기본 폰트를 맑은 고딕 계열로 고정한다. */
+:root {
+  --form-border: #333;
+  --form-label-bg: #f2f2f2;
+  --text: #1a1a1a;
+  --muted: #666;
+
+  font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo',
+    'Noto Sans KR', system-ui, sans-serif;
+  color: var(--text);
+  background: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+}

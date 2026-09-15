@@ -42,3 +42,6 @@ desktop.ini
 
 # --- 클로드 학습용 pdf
 *.pdf
+# ---- 데모 사이트 런타임 산출물 (업로드 원본 / SQLite) ----
+demo/storage/
+demo/**/*.db

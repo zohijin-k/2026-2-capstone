@@ -13,18 +13,23 @@
 
 ## P0. 정렬 및 스캐폴딩 (D0 ~ D+1)
 
-- [ ] `docs/demo-site-dev-plan.md`를 정식 프로젝트명·PDF 검증 결과로 전면 개정 → **진·채운에게 공유**
-- [ ] `design.md` 9절(E1~E13) 엔진 수정 요청을 진에게 전달, `doc_types` 단일 소스 합의
-- [ ] 채운과 화면 경계 확정 (데모=건별 심사 / 대시보드=집계)
-- [ ] **`demo/` 폴더 생성** — 이후 모든 산출물의 루트
-- [ ] `demo/backend/` FastAPI 스캐폴딩 (`main.py`, `requirements.txt`) — 루트에 `requirements.txt`를 만들지 않는다
-- [ ] `demo/frontend/` Vite 스캐폴딩 (`package.json`, `vite.config.ts`) — 루트/`dashboard`의 `package.json`과 분리
-- [ ] `demo/backend/rules/programs.py`, `rules/doc_types.py` 상수 작성 (PDF 원문값 그대로)
-- [ ] `demo/backend/engine_adapter.py` 골격 — `sys.path`에 저장소 루트 추가 후 `from engine.pipeline import run_pipeline`. **`engine/`을 복사하지 않는다**
-- [ ] 루트 `.gitignore`에 4줄 추가: `demo/storage/`, `demo/**/*.db`, `demo/frontend/node_modules/`, `demo/frontend/dist/`
+- [x] `docs/demo-site-dev-plan.md`를 정식 프로젝트명·PDF 검증 결과로 전면 개정 → **진·채운에게 공유**
+- [ ] `design.md` 9절(E1~E13) 엔진 수정 요청을 진에게 전달, `doc_types` 단일 소스 합의 ⏸ **사람이 해야 함** (문서는 준비됨: `docs/demo-site-dev-plan.md` 5절)
+- [ ] 채운과 화면 경계 확정 (데모=건별 심사 / 대시보드=집계) ⏸ **사람이 해야 함**
+- [x] **`demo/` 폴더 생성** — 이후 모든 산출물의 루트
+- [x] `demo/backend/` FastAPI 스캐폴딩 (`main.py`, `requirements.txt`) — 루트에 `requirements.txt`를 만들지 않는다
+- [x] `demo/frontend/` Vite 스캐폴딩 (`package.json`, `vite.config.ts`) — 루트/`dashboard`의 `package.json`과 분리
+- [x] `demo/backend/rules/programs.py`, `rules/doc_types.py` 상수 작성 (PDF 원문값 그대로)
+- [x] `demo/backend/engine_adapter.py` 골격 — `sys.path`에 저장소 루트 추가 후 `from engine.pipeline import run_pipeline`. **`engine/`을 복사하지 않는다**
+- [x] 루트 `.gitignore`에 4줄 추가: `demo/storage/`, `demo/**/*.db`, `demo/frontend/node_modules/`, `demo/frontend/dist/`
 
-**게이트**: `uvicorn` + `vite dev` 동시 기동, `/api/programs`가 두 사업 설정을 반환.
-`git status`에 `demo/` 외의 신규 파일이 없다 (`.gitignore`·`docs/` 제외).
+**게이트**: ✅ **통과 (2026-09-16)**
+- `uvicorn demo.backend.main:app --port 8000` + `npm run dev`(5173) 동시 기동 확인
+- `/api/programs`가 두 사업 설정 반환 (두배적금 scored/보완불가/정원1300, 취업패키지 first_come/7일보완)
+- vite 프록시로 `localhost:5173/api/programs` 도달 확인
+- `tsc -b` · `oxlint` 통과
+- `git status`에 `demo/` 외 신규 파일 없음 (`.gitignore`만 2줄 추가)
+- 엔진 런타임 오버라이드 확인: 필수서류가 **주민등록초본**으로 교체됨, cutoff 2026-03-03 / 2026-01-01, 혼동군에 `사업자등록증 ↔ 증명` 추가
 
 ---
 
