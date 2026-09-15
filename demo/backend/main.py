@@ -13,7 +13,9 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api import applications
 from .engine_adapter import apply_runtime_overrides
+from .models import init_db
 from .rules.programs import PROGRAMS, get_program
 
 
@@ -21,6 +23,7 @@ from .rules.programs import PROGRAMS, get_program
 async def lifespan(app: FastAPI):
     # 엔진 config를 공고문 실제값으로 덮어쓴다. 엔진 파일은 건드리지 않는다.
     apply_runtime_overrides()
+    init_db()
     yield
 
 
@@ -38,6 +41,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(applications.router)
 
 
 @app.get("/api/health")

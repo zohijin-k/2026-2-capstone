@@ -1,0 +1,375 @@
+/*
+ * 관공서 서식 재현 — PC 전용 고정 레이아웃.
+ *
+ * 열 너비와 체크박스 줄바꿈을 원본 PDF와 동일하게 맞춘다. 반응형으로 셀을
+ * 재배치하면 "종이 서식과 같은 구조"가 깨지므로, 이 사이트는 PC 폭만 지원한다.
+ * 좁은 화면에서는 가로 스크롤로 원본 레이아웃을 그대로 유지한다.
+ *
+ * 열 경계값은 시행지침 PDF의 실제 선 좌표에서 뽑았다 (표 폭 340.2pt 기준 %).
+ * 설계 근거: .trellis/tasks/09-16-demo-site/design.md 6-A절
+ */
+
+.form-sheet {
+  --sheet-w: 940px;
+  --line: #000;
+  --label-bg: #fff;
+  --band-bg: #e8e8e8;
+  --note-hl: #fdf0d5;
+
+  width: var(--sheet-w);
+  margin: 0 auto;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #000;
+}
+
+/* 좁은 화면에서도 레이아웃을 무너뜨리지 않고 가로 스크롤만 허용한다. */
+.form-sheet-scroll {
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+
+/* ---- 표제: [서식N] + 제목 상자 ---- */
+
+.form-sheet__head {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.form-sheet__no {
+  background: #1f3864;
+  color: #fff;
+  font-weight: 700;
+  font-size: 17px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  letter-spacing: 1px;
+  flex: none;
+}
+
+.form-sheet__title {
+  flex: 1;
+  border: 1px solid var(--line);
+  font-size: 21px;
+  font-weight: 700;
+  margin: 0;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  letter-spacing: -0.5px;
+}
+
+/* ---- 서식 상단 안내문 ---- */
+
+.form-sheet__notices {
+  border: 1px solid var(--line);
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+
+.form-sheet__notices p {
+  margin: 3px 0;
+}
+
+/* ---- 본표 ---- */
+
+.form-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.form-table td,
+.form-table th {
+  border: 1px solid var(--line);
+  padding: 6px 8px;
+  vertical-align: middle;
+  word-break: keep-all;
+}
+
+/* 좌측 라벨 셀 */
+.fc-label {
+  text-align: center;
+  background: var(--label-bg);
+  font-weight: 400;
+}
+
+/* 절 제목 띠 (Ⅰ. 기본정보) */
+.fc-band {
+  background: var(--band-bg);
+  font-weight: 500;
+  padding: 6px 10px;
+}
+
+.fc-center {
+  text-align: center;
+}
+
+/* 세로로 긴 라벨(인적사항 등)은 위에서 시작하는 편이 원본과 가깝다. */
+.fc-label--tall {
+  vertical-align: middle;
+}
+
+/* ---- 입력 ---- */
+
+.form-input {
+  font: inherit;
+  border: none;
+  border-bottom: 1px dotted #aaa;
+  background: transparent;
+  padding: 1px 3px;
+  color: inherit;
+  width: 100%;
+  min-width: 0;
+}
+
+.form-input:focus {
+  outline: none;
+  border-bottom: 1px solid #0b57d0;
+  background: #f0f6ff;
+}
+
+/* 년/월/일을 따로 받는다. 한 칸에 전체 날짜를 넣으면 서식의 칸 구조가 깨진다. */
+.form-date {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  justify-content: center;
+}
+
+.form-date input {
+  font: inherit;
+  border: none;
+  border-bottom: 1px dotted #aaa;
+  background: transparent;
+  text-align: center;
+  padding: 1px 2px;
+  color: inherit;
+  -moz-appearance: textfield;
+}
+
+.form-date input::-webkit-outer-spin-button,
+.form-date input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.form-date input:focus {
+  outline: none;
+  border-bottom: 1px solid #0b57d0;
+  background: #f0f6ff;
+}
+
+.form-date__y {
+  width: 3.4em;
+}
+.form-date__m,
+.form-date__d {
+  width: 2.2em;
+}
+
+.form-date__unit {
+  font-size: 12.5px;
+  padding-right: 4px;
+}
+
+/* ---- 체크 항목: 줄바꿈 위치를 원본과 동일하게 고정 ---- */
+
+.form-checks {
+  display: grid;
+  gap: 4px 10px;
+}
+
+.form-checks--1 { grid-template-columns: 1fr; }
+.form-checks--2 { grid-template-columns: repeat(2, 1fr); }
+.form-checks--3 { grid-template-columns: repeat(3, 1fr); }
+.form-checks--5 { grid-template-columns: repeat(5, 1fr); }
+/* 흐름 배치 — 서식이 괄호 안에 줄줄이 늘어놓는 경우(Ⅳ. 기타사항) */
+.form-checks--flow {
+  display: block;
+}
+.form-checks--flow .form-check {
+  margin-right: 12px;
+}
+
+.form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  word-break: keep-all;
+}
+
+.form-check input {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border: 1px solid #000;
+  background: #fff;
+  display: grid;
+  place-content: center;
+  margin: 0;
+  flex: none;
+  cursor: inherit;
+  border-radius: 0; /* 서식의 체크란은 라디오도 네모다 */
+}
+
+.form-check input::before {
+  content: '✓';
+  font-size: 11px;
+  line-height: 1;
+  transform: scale(0);
+  color: #0b57d0;
+  font-weight: 700;
+}
+
+.form-check input:checked::before {
+  transform: scale(1);
+}
+
+.form-check input:focus-visible {
+  outline: 2px solid #0b57d0;
+  outline-offset: 1px;
+}
+
+/* 다른 입력에서 자동으로 정해지는 칸 */
+.form-check--derived {
+  cursor: default;
+  color: #333;
+}
+
+.form-check--derived input {
+  border-color: #777;
+  background: #f6f6f6;
+}
+
+.form-check--derived input:checked {
+  border-color: #0b57d0;
+  background: #e8f0fe;
+}
+
+/* ---- 각주 / 근거 ---- */
+
+/* 원본은 ※ 각주에 옅은 형광 배경이 깔려 있다. */
+.form-note {
+  font-size: 12px;
+  margin: 3px 0 0;
+  word-break: keep-all;
+}
+
+.form-note > span {
+  background: var(--note-hl);
+  padding: 0 2px;
+}
+
+.form-basis {
+  font-size: 12px;
+  color: #0b57d0;
+  margin: 3px 0 0;
+}
+
+.form-basis::before {
+  content: '└ ';
+}
+
+.form-derived-tag {
+  font-size: 11px;
+  border: 1px solid #0b57d0;
+  color: #0b57d0;
+  padding: 0 4px;
+  margin-left: 6px;
+  white-space: nowrap;
+  align-self: center;
+}
+
+/* ---- 서식 내 보조 박스 (서식2의 제외대상 목록 등) ---- */
+
+.form-subbox {
+  border: 1px solid #555;
+  padding: 8px 10px;
+  margin: 6px 0 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.form-subbox ol,
+.form-subbox ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.form-subbox li {
+  margin: 1px 0;
+}
+
+.form-subbox--2col {
+  column-count: 2;
+  column-gap: 24px;
+}
+
+/* ---- 맺음말 ---- */
+
+.form-sheet__agreements {
+  border: 1px solid var(--line);
+  background: #efefef;
+  margin: 16px 0 0;
+  padding: 12px 16px 12px 34px;
+  font-size: 13px;
+}
+
+.form-sheet__agreements li {
+  margin: 4px 0;
+}
+
+.form-sheet__closing {
+  text-align: center;
+  padding: 18px 0 8px;
+}
+
+.form-sheet__closing p {
+  margin: 6px 0;
+}
+
+.form-sheet__closing strong {
+  font-size: 17px;
+  letter-spacing: 1px;
+}
+
+/* ---- 전자서명 ---- */
+
+.signature-pad {
+  border: 1px solid var(--line);
+  background: #fff;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.signature-box {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.signature-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.badge-proposal {
+  display: inline-block;
+  border: 1px solid #b26a00;
+  background: #fff4e5;
+  color: #8a4b00;
+  font-size: 11.5px;
+  padding: 1px 6px;
+  margin-left: 8px;
+  white-space: nowrap;
+}

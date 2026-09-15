@@ -1,0 +1,147 @@
+/* 신청 플로우 껍데기. 서식 내부 스타일은 forms/form-sheet.css 가 담당한다. */
+
+.flow {
+  width: 940px;
+  margin: 0 auto;
+  padding: 20px 0 80px;
+}
+
+.flow__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #1f3864;
+  margin-bottom: 18px;
+}
+
+.flow__head h1 {
+  font-size: 19px;
+  margin: 0;
+}
+
+.flow__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.flow__stages {
+  display: flex;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.flow__stages li {
+  border: 1px solid #ccc;
+  padding: 3px 10px;
+  color: #888;
+}
+
+.flow__stages li.is-current {
+  border-color: #1f3864;
+  background: #1f3864;
+  color: #fff;
+  font-weight: 700;
+}
+
+/* 서식1 절 단위 스텝 */
+.flow__steps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.step {
+  font: inherit;
+  font-size: 13px;
+  border: 1px solid #bbb;
+  background: #fafafa;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+
+.step.is-current {
+  border-color: #1f3864;
+  background: #eaf0fb;
+  font-weight: 700;
+}
+
+.flow__whole {
+  margin-left: auto;
+  font-size: 12.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.flow__gap {
+  height: 28px;
+}
+
+.flow__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.btn {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 20px;
+  border: 1px solid #888;
+  background: #fff;
+  cursor: pointer;
+}
+
+.btn--primary {
+  border-color: #1f3864;
+  background: #1f3864;
+  color: #fff;
+  font-weight: 700;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.flow-block {
+  border: 1px solid #ccc;
+  padding: 14px 16px;
+  margin-top: 18px;
+}
+
+.flow-block p {
+  margin: 6px 0 0;
+}
+
+/* 자가진단에서 걸린 경우 — 사유와 대안을 같이 준다 */
+.flow-block--stop {
+  border-color: #c00;
+  background: #fff5f5;
+}
+
+.flow-block--ok {
+  border-color: #177245;
+  background: #f2fbf5;
+}
+
+.flow-alt {
+  background: #fff;
+  border-left: 3px solid #1f3864;
+  padding: 6px 10px;
+}
+
+.flow-error {
+  color: #c00;
+  text-align: center;
+  padding: 40px;
+}
