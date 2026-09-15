@@ -13,7 +13,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications, documents, review
+from .api import applications, documents, files, officer, review
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
@@ -46,6 +46,9 @@ app.add_middleware(
 app.include_router(applications.router)
 app.include_router(documents.router)
 app.include_router(review.router)
+# 담당자 심사 화면(P4). 원본은 files 라우터가 inline으로만 흘린다 — 다운로드 경로는 없다.
+app.include_router(officer.router)
+app.include_router(files.router)
 
 
 @app.get("/api/health")

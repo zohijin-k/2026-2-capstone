@@ -271,3 +271,234 @@ export const submitApplication = (id: number) =>
 
 export const fetchStatus = (id: number) =>
   json<ApplicationStatus>(`/api/applications/${id}/status`)
+
+/* ------------------------------------------------------------------ 담당자 화면
+ *
+ * 원본 파일은 `/api/files/{id}`가 `inline`으로만 흘린다. 이 파일 어디에도 파일을
+ * 로컬에 저장하는 경로를 만들지 않는다 — 뷰어가 URL을 직접 읽는 것이 전부다 (R4.1).
+ */
+
+/** 원본에서 값을 읽어낸 위치. PDF 포인트, **좌상단 원점**이다. */
+export interface BBox {
+  page: number
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+}
+
+export type DecisionKey = 'approve' | 'reject' | 'hold'
+
+export interface OfficerAction {
+  key: DecisionKey
+  /** 버튼 표기. 같은 approve라도 역할마다 뜻이 다르다. */
+  label: string
+  result_label: string
+  tone: 'primary' | 'danger' | 'neutral'
+}
+
+export interface OfficerRole {
+  key: string
+  name: string
+  stage: string
+  scope: string
+  requires_region: boolean
+  requires_town: boolean
+  /** 정원 대비 몇 %까지 선발하는 단계인가. null이면 선발 권한이 없다. */
+  quota_ratio: number | null
+  can_bulk: boolean
+  notes: string[]
+  actions: OfficerAction[]
+}
+
+export interface QuotaRow {
+  region: string
+  quota: number
+  applied: number
+  selected: number
+  limit_120: number
+  cutoff_120: number | null
+  cutoff_100: number | null
+  role_cutoff: number | null
+  rate_percent: number
+}
+
+export interface OfficerRow {
+  application_id: number
+  application_no: string
+  name: string
+  region: string
+  town: string
+  program_code: string
+  program_name: string
+  ai_status: DocStatus | null
+  ai_status_label: string
+  total_score: number | null
+  max_total: number | null
+  missing_count: number
+  submitted_at: string | null
+  status: string
+  decision: DecisionKey | null
+  decision_label: string
+  officer_role: string | null
+  rank: number | null
+}
+
+export interface OfficerListQuery {
+  role: string
+  region?: string
+  town?: string
+  program?: string
+  status?: string
+  ai_status?: string
+  submitted_from?: string
+  submitted_to?: string
+  sort?: string
+  page?: number
+  page_size?: number
+}
+
+export interface OfficerList {
+  role: OfficerRole
+  scope: {
+    region: string
+    town: string
+    region_locked: boolean
+    town_locked: boolean
+    regions: string[]
+    towns: string[]
+  }
+  filters: {
+    programs: { code: string; name: string }[]
+    ai_statuses: { value: string; label: string }[]
+    statuses: { value: string; label: string }[]
+    sorts: { value: string; label: string }[]
+    applied: Record<string, string | null>
+  }
+  columns: { key: string; label: string }[]
+  quota: QuotaRow[]
+  total: number
+  page: number
+  page_size: number
+  page_count: number
+  rows: OfficerRow[]
+}
+
+/** 심사표 한 줄. `bbox`와 `source_file_url`이 좌측 원본 하이라이트의 좌표다 (R4.3). */
+export interface ScoreItemRow {
+  key: string
+  label: string
+  score: number
+  max_score: number
+  band: string
+  basis: string
+  source_doc: string | null
+  source_document_id: number | null
+  source_origin: string
+  bbox: BBox | null
+  incomplete: boolean
+  source_slot_key: string | null
+  source_file_url: string | null
+  source_file_format: string | null
+}
+
+export interface ScoreSheetData {
+  items: ScoreItemRow[]
+  total: number
+  max_total: number
+  income_percent: number | null
+  income_over_limit: boolean
+  incomplete: boolean
+  tiebreak: number[]
+  notes: string[]
+}
+
+export interface OfficerDocument {
+  document_id: number
+  slot_key: string
+  label: string
+  expected_doc_type: string | null
+  detected_doc_type: string | null
+  status: DocStatus | null
+  findings: Finding[]
+  /** 인라인 스트리밍 주소. 뷰어가 이 URL을 그대로 읽는다. */
+  file_url: string
+  file_name: string
+  file_format: string
+  page_index: number | null
+  extracted: Record<string, string>
+  bboxes: Record<string, BBox>
+  ocr_confidence: number | null
+  ocr_tier: string | null
+  declared_issue_date: string | null
+  uploaded_at: string
+}
+
+export interface ReviewDetailData {
+  application_id: number
+  application_no: string
+  name: string
+  program_code: string
+  program_name: string
+  region: string
+  town: string
+  status: string
+  submitted_at: string | null
+  ai: {
+    final_status: DocStatus | null
+    final_status_label: string
+    stage1_status: string | null
+    stage2_status: string | null
+    recommended_action: string
+    reasons: { stage: string; code: string; message: string; doc_type: string | null }[]
+  }
+  score_sheet: ScoreSheetData
+  documents: OfficerDocument[]
+  eligibility: { key: string; label: string; ok: boolean; basis: string }[]
+  exclusions: { label: string; answer: string; ok: boolean; source: string }[]
+  decision: {
+    decision: DecisionKey | null
+    label: string
+    memo: string | null
+    officer_role: string | null
+    decided_at: string | null
+  }
+  role: OfficerRole
+}
+
+function query(params: Record<string, unknown>): string {
+  const search = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    search.set(key, String(value))
+  }
+  return search.toString()
+}
+
+export const fetchOfficerRoles = () => json<OfficerRole[]>('/api/officer/roles')
+
+export const fetchOfficerList = (params: OfficerListQuery) =>
+  json<OfficerList>(`/api/officer/applications?${query({ ...params })}`)
+
+export const fetchReviewDetail = (applicationId: number, role: string) =>
+  json<ReviewDetailData>(`/api/officer/applications/${applicationId}?${query({ role })}`)
+
+export const postDecision = (
+  applicationId: number,
+  body: { role: string; decision: DecisionKey; memo: string },
+) =>
+  json<{ decision: string; label: string; decided_at: string | null }>(
+    `/api/officer/applications/${applicationId}/decision`,
+    { method: 'POST', body: JSON.stringify(body) },
+  )
+
+export const postBulkDecision = (body: {
+  role: string
+  decision: DecisionKey
+  memo: string
+  application_ids: number[]
+}) =>
+  json<{ processed: number }>('/api/officer/applications/decisions', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })

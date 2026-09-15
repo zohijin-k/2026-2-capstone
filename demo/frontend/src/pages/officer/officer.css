@@ -1,0 +1,754 @@
+/*
+ * 담당자 심사 화면 — PC 전용 고정 레이아웃.
+ *
+ * 분할 뷰는 좌 55% 원본 / 우 45% 판독 결과다 (R4.2). 좁은 화면에서 세로로 쌓지
+ * 않는다 — 원본과 판독 결과를 나란히 두는 것이 이 화면의 존재 이유이기 때문에,
+ * 폭이 모자라면 가로 스크롤로 비율을 지킨다.
+ */
+
+.officer {
+  padding: 16px 20px 40px;
+  min-width: 1280px;
+}
+
+.officer__head h1 {
+  font-size: 20px;
+  margin: 0 0 10px;
+}
+
+.officer__error {
+  border: 1px solid #c00;
+  background: #fff4f4;
+  color: #900;
+  padding: 8px 12px;
+  margin: 10px 0;
+}
+
+.officer__loading {
+  color: var(--muted);
+  padding: 24px 0;
+}
+
+/* ---- 역할 전환 토글 (R4.5) ---- */
+
+.officer__roles {
+  display: inline-flex;
+  border: 1px solid #1f3864;
+}
+
+.officer__role {
+  font: inherit;
+  border: none;
+  background: #fff;
+  color: #1f3864;
+  padding: 6px 18px;
+  cursor: pointer;
+  border-right: 1px solid #1f3864;
+}
+
+.officer__role:last-child {
+  border-right: none;
+}
+
+.officer__role--on {
+  background: #1f3864;
+  color: #fff;
+  font-weight: 700;
+}
+
+.officer__scope {
+  margin: 8px 0 2px;
+  font-size: 13px;
+}
+
+.officer__notes {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* ---- 정원 대비 진행률 배지 ---- */
+
+.quota {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px 10px;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.quota__item {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.quota__region {
+  font-weight: 700;
+  margin-right: 5px;
+}
+
+.quota__count {
+  color: #1f3864;
+}
+
+.quota__bar {
+  display: block;
+  height: 5px;
+  background: #eee;
+  margin: 3px 0 2px;
+}
+
+.quota__bar i {
+  display: block;
+  height: 100%;
+  background: #1f3864;
+}
+
+.quota__meta {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* ---- 필터 ---- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  border: 1px solid #ddd;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.filters label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filters select,
+.filters input[type='date'] {
+  font: inherit;
+  padding: 3px 6px;
+  border: 1px solid #aaa;
+  background: #fff;
+}
+
+.filters__tilde {
+  color: var(--muted);
+}
+
+.filters__total {
+  margin-left: auto;
+  font-weight: 700;
+}
+
+/* ---- 일괄 처리 ---- */
+
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.bulk--off {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.btn {
+  font: inherit;
+  border: 1px solid #1f3864;
+  background: #fff;
+  color: #1f3864;
+  padding: 5px 14px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: #1f3864;
+  color: #fff;
+}
+
+.btn--danger {
+  border-color: #c00;
+  color: #c00;
+}
+
+.btn--neutral {
+  border-color: #777;
+  color: #333;
+}
+
+/* ---- 목록 표 ---- */
+
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.grid th,
+.grid td {
+  border: 1px solid #ddd;
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.grid th {
+  background: #f2f2f2;
+  font-weight: 700;
+}
+
+.grid tbody tr {
+  cursor: pointer;
+}
+
+.grid tbody tr:hover {
+  background: #f0f6ff;
+}
+
+.grid__check {
+  width: 34px;
+  text-align: center;
+}
+
+.grid__rank,
+.grid__score {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.grid__no {
+  font-family: Consolas, monospace;
+}
+
+.grid__missing {
+  color: #c00;
+  font-weight: 700;
+}
+
+.grid__empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px 0;
+}
+
+.pager {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.pager button {
+  font: inherit;
+  border: 1px solid #aaa;
+  background: #fff;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.pager__on {
+  background: #1f3864;
+  color: #fff;
+  border-color: #1f3864;
+}
+
+/* ---- 심사 상세 헤더 ---- */
+
+.review__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #ddd;
+  background: #fafafa;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.review__back {
+  font: inherit;
+  border: 1px solid #aaa;
+  background: #fff;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.review__no {
+  font-family: Consolas, monospace;
+}
+
+.review__name {
+  font-size: 15px;
+}
+
+.review__where,
+.review__when,
+.review__role {
+  color: var(--muted);
+}
+
+.review__score {
+  font-weight: 700;
+  color: #1f3864;
+}
+
+.review__spacer {
+  flex: 1;
+}
+
+/* ---- 분할 뷰 ---- */
+
+.review__split {
+  display: grid;
+  grid-template-columns: 55fr 45fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.review__left {
+  border: 1px solid #ccc;
+  position: sticky;
+  top: 8px;
+}
+
+.review__right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+}
+
+.review__tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  background: #eee;
+  padding: 4px 4px 0;
+}
+
+.review__tab {
+  font: inherit;
+  font-size: 12.5px;
+  border: 1px solid #ccc;
+  border-bottom: none;
+  background: #f7f7f7;
+  padding: 4px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.review__tab--on {
+  background: #fff;
+  font-weight: 700;
+}
+
+.tabdot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.tabdot--pass {
+  background: #177245;
+}
+.tabdot--fail {
+  background: #c00;
+}
+.tabdot--needs_review {
+  background: #b8860b;
+}
+
+/* ---- 원본 뷰어 ---- */
+
+.viewer__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid #ccc;
+  background: #fff;
+  padding: 5px 8px;
+  font-size: 12.5px;
+}
+
+.viewer__bar button {
+  font: inherit;
+  border: 1px solid #aaa;
+  background: #fff;
+  min-width: 26px;
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.viewer__name {
+  font-family: Consolas, monospace;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viewer__pages {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.viewer__zoom {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.viewer__spacer {
+  flex: 1;
+}
+
+/* 저장 버튼 자리에 놓이는 안내. 이 화면에는 저장 버튼이 없다 (R4.1). */
+.viewer__inline-badge {
+  border: 1px solid #177245;
+  color: #177245;
+  background: #f1faf4;
+  padding: 1px 7px;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.viewer__error {
+  color: #c00;
+  padding: 10px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.viewer__stage {
+  height: calc(100vh - 160px);
+  overflow: auto;
+  background: #525659;
+  padding: 12px;
+}
+
+.viewer__paper {
+  position: relative;
+  display: inline-block;
+  background: #fff;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 40%);
+}
+
+.viewer__canvas,
+.viewer__image {
+  display: block;
+  transform-origin: top left;
+}
+
+/* 판정 근거 위치. 클릭 한 번에 여기로 스크롤된다 (R4.3). */
+.viewer__mark {
+  position: absolute;
+  border: 2px solid #ff8a00;
+  background: rgb(255 214 0 / 28%);
+  pointer-events: none;
+  animation: mark-in 0.9s ease-out;
+}
+
+.viewer__mark-tag {
+  position: absolute;
+  left: 0;
+  top: -19px;
+  background: #ff8a00;
+  color: #fff;
+  font-size: 11px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+@keyframes mark-in {
+  from {
+    box-shadow: 0 0 0 10px rgb(255 138 0 / 55%);
+  }
+  to {
+    box-shadow: 0 0 0 0 rgb(255 138 0 / 0%);
+  }
+}
+
+/* ---- 우측 패널 ---- */
+
+.panel {
+  border: 1px solid #ccc;
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 13px;
+  background: #f2f2f2;
+  border-bottom: 1px solid #ccc;
+  padding: 6px 10px;
+}
+
+.panel__body {
+  padding: 10px;
+  font-size: 13px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 4px 0;
+}
+
+.verdict {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.verdict__action {
+  font-weight: 700;
+}
+
+.verdict__stages {
+  margin: 8px 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.reasons {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 12.5px;
+}
+
+.reasons li {
+  margin: 4px 0;
+}
+
+.reasons code {
+  background: #f2f2f2;
+  padding: 0 4px;
+  font-size: 11.5px;
+}
+
+.reasons em {
+  color: var(--muted);
+  font-style: normal;
+  display: block;
+}
+
+.checks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.checks li {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dotted #ddd;
+}
+
+.checks li:last-child {
+  border-bottom: none;
+}
+
+.checks__mark {
+  font-weight: 700;
+  flex: none;
+}
+
+.checks__ok .checks__mark {
+  color: #177245;
+}
+
+.checks__no .checks__mark {
+  color: #c00;
+}
+
+.checks em {
+  display: block;
+  color: var(--muted);
+  font-style: normal;
+  margin-top: 1px;
+}
+
+.ocr {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 2px 8px;
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+
+.ocr dt {
+  color: var(--muted);
+}
+
+.ocr dd {
+  margin: 0;
+}
+
+.ocr em {
+  color: var(--muted);
+  font-style: normal;
+}
+
+.fields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.fields li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px dotted #eee;
+}
+
+.fields__key {
+  width: 96px;
+  color: var(--muted);
+  flex: none;
+}
+
+.fields__value {
+  flex: 1;
+}
+
+.fields__go {
+  font: inherit;
+  font-size: 11.5px;
+  border: 1px solid #0b57d0;
+  color: #0b57d0;
+  background: #fff;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.memo {
+  font: inherit;
+  width: 100%;
+  border: 1px solid #aaa;
+  padding: 6px;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.decided {
+  background: #f1f6ff;
+  border: 1px solid #c6d9f5;
+  padding: 5px 8px;
+  margin: 4px 0 8px;
+}
+
+.decided em {
+  color: var(--muted);
+  font-style: normal;
+  margin-left: 6px;
+}
+
+/* ---- 서식6 심사표 ---- */
+
+/* 패널 폭에 맞춰 서식을 통째로 축소한다. 서식의 열 비율은 그대로 유지된다. */
+.sheet6 {
+  zoom: 0.72;
+}
+
+.sheet6 .form-sheet {
+  --sheet-w: 100%;
+}
+
+.sheet6__band td {
+  font-size: 12.5px;
+  padding: 3px 8px;
+}
+
+/* 자동 계산된 구간에만 배경색을 얹는다 (R8.7). */
+.sheet6__band--on td {
+  background: #fff3c4;
+  font-weight: 700;
+}
+
+.sheet6__band--active td {
+  outline: 1px solid #ff8a00;
+  outline-offset: -1px;
+}
+
+.sheet6__basis td {
+  background: #fafafa;
+  padding: 0;
+}
+
+.sheet6__basis--active td {
+  background: #fff8e6;
+}
+
+.sheet6__basis-btn {
+  font: inherit;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 5px 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.sheet6__basis-btn:disabled {
+  cursor: default;
+}
+
+.sheet6__basis-text {
+  flex: 1;
+  font-size: 12.5px;
+}
+
+.sheet6__basis-meta {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.sheet6__basis-go {
+  color: #0b57d0;
+  margin-left: 8px;
+}
+
+.sheet6__total td {
+  background: #e8e8e8;
+  font-size: 14px;
+}
+
+.sheet6__over {
+  border: 1px solid #c00;
+  background: #fff4f4;
+  color: #900;
+  padding: 6px 10px;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+}

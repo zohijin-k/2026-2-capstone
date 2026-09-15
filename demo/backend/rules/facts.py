@@ -198,3 +198,35 @@ def extract_region(address: str, known_regions: list[str]) -> str:
         if region.endswith(("시", "군")) and region[:-1] in flat:
             return region
     return ""
+
+
+#: 읍·면·동 토큰. 주소 문자열의 세 번째 행정단위에 해당한다.
+_TOWN_SUFFIXES = ("읍", "면", "동")
+
+
+def extract_town(address: str, region: str = "") -> str:
+    """주소 문자열에서 읍·면·동을 뽑는다.
+
+    담당자 역할 중 **읍면동**은 관할 접수 건만 봐야 한다(시행지침 선발절차 2단계).
+    시군까지만 알아서는 그 범위를 만들 수 없어 한 단계 더 내려간다.
+
+    구(區)가 있는 시(전주시 완산구 효자동)에서는 '구'를 건너뛰고 '동'을 잡는다.
+    데모 범위라 토큰 검사로 충분하다 — 실서비스는 도로명주소 API를 쓸 자리다.
+    """
+    tail = (address or "").strip()
+    if region and region in tail:
+        tail = tail.split(region, 1)[1]
+    tokens = tail.split()
+
+    for token in tokens:
+        if len(token) >= 2 and token.endswith(_TOWN_SUFFIXES):
+            return token
+
+    # "효자동3가"처럼 뒤에 무언가 더 붙는 표기. 위 규칙으로 못 잡았을 때만 쓴다
+    # ("중동로"처럼 도로명을 읍면동으로 오인할 수 있어 마지막 수단으로 둔다).
+    for token in tokens:
+        for suffix in _TOWN_SUFFIXES:
+            head, sep, _ = token.partition(suffix)
+            if sep and head and not head.endswith(("시", "군", "구")):
+                return head + suffix
+    return ""
