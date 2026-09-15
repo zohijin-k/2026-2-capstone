@@ -19,7 +19,7 @@ from sqlmodel import select
 from ..models import UNASSIGNED_SLOT, Application, Document, get_session
 from ..ocr import read_document, split_pdf_pages
 from ..ocr.base import OcrResult
-from ..rules.doc_check import check_document
+from ..rules.doc_check import THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
 from ..rules.programs import get_program
 from ..rules.required_docs import (
@@ -117,6 +117,8 @@ def _checklist_response(app: Application) -> dict[str, Any]:
         "upload_total": len(upload_items),
         "upload_done": len(done),
         "unassigned": [_document_dict(d) for d in unassigned],
+        # 판정 컷라인은 TF 미확정 가정값이다. 화면에도 같은 라벨로 노출한다.
+        "assumption_notes": list(THRESHOLD_NOTES),
     }
 
 

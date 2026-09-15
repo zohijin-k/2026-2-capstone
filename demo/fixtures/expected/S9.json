@@ -1,0 +1,42 @@
+{
+  "id": "S9",
+  "title": "담당자 분할 심사 화면 — 점수 근거 클릭 → 원본 하이라이트, 다운로드 0회",
+  "proves": "심사 1건을 여는 동안 파일 다운로드가 0건이고, 판정 근거가 원본 좌표까지 연결된다 (R4.1~R4.3)",
+  "program": "double_savings",
+  "screen": "담당자 → 역할 [시군] → 전주시 목록 → S2 건 열기",
+  "steps": [
+    "상단 탭에서 [담당자]로 전환, 역할을 [시군]으로",
+    "접수 목록 1등(99점)을 연다",
+    "좌측 pdf.js 뷰어에서 서류 탭을 차례로 넘긴다 — 다운로드 버튼이 없다",
+    "우측 서식6 심사표에서 '도 거주기간 25점'을 클릭 → 좌측 초본의 전입일이 하이라이트된다",
+    "브라우저 네트워크 탭을 열어 Content-Disposition이 전부 inline임을 보인다"
+  ],
+  "files": [],
+  "expect": {
+    "list_total": 3,
+    "top_name": "홍길동",
+    "top_score": 99,
+    "pending": 2,
+    "approved": 1,
+    "documents": 5,
+    "score_total": 99,
+    "score_keys": ["income", "residence", "work", "age"],
+    "score_max": [40, 25, 25, 10],
+    "basis_all_filled": true,
+    "estimate_label": { "$contains": "(데모 추정치)" },
+    "linked_items": 4,
+    "bbox_items": 2,
+    "bbox_resolves": true,
+    "eligibility_keys": ["residence", "age", "work", "income"],
+    "exclusion_rows": 5,
+    "file_calls": 7,
+    "inline_responses": 7,
+    "attachment_responses": 0
+  },
+  "talking_points": [
+    "원본은 Content-Disposition: inline으로만 나간다. 다운로드 버튼이 화면에 없을 뿐 아니라 백엔드에 경로 자체가 없다.",
+    "심사표는 서식6 원본 배점표 레이아웃 그대로다. 담당자가 쓰던 종이와 같은 모양이라 학습 비용이 0이다.",
+    "점수 칸마다 근거 문장과 근거 서류가 붙어 있고, 중위소득·거주기간은 원본 좌표(bbox)까지 연결된다. '소득분위 초과'라고만 쓰면 결국 원본을 뒤지게 된다.",
+    "100~130% 구간표는 공고문에 없어 140% 표를 환산했다. 그 사실이 심사표 하단에 (데모 추정치)로 적혀 있다."
+  ]
+}

@@ -554,8 +554,9 @@ def test_inline_only(rec, detail) -> None:
 #: 다운로드 경로를 만들 수 있는 토큰. 소스에 하나라도 있으면 P4 게이트 실패다.
 FORBIDDEN_TOKENS = ("attachment", "download")
 
-#: 이 검사 자체가 토큰을 들고 있으므로 스스로는 제외한다.
-SCAN_SKIP = {"run_p4_scenarios.py"}
+#: 이 검사 자체가 토큰을 들고 있으므로 스스로는 제외한다. P6 시연 검증 스크립트도
+#: 같은 이유로 제외한다 — "attachment 응답이 0건"을 세려면 그 낱말을 들고 있어야 한다.
+SCAN_SKIP = {"run_p4_scenarios.py", "run_p6_scenarios.py"}
 
 
 def _scan(root: Path, suffixes: tuple[str, ...]) -> list[str]:

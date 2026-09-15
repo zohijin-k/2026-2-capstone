@@ -274,7 +274,7 @@ export default function DocumentUpload({
     <div className="dupload">
       <section className="dupload__mistakes">
         <h3>올리기 전에 꼭 확인하세요</h3>
-        <ul>
+        <ul className="dupload__mistake-list">
           {[
             ...COMMON_MISTAKES,
             ...(checklist.program.asks_work_category ? WORK_PROOF_MISTAKES : []),
@@ -283,6 +283,12 @@ export default function DocumentUpload({
               <strong>{title}</strong>
               <span>{body}</span>
             </li>
+          ))}
+        </ul>
+        {/* 판정 컷라인은 TF 미확정 값이다. 숨기지 않고 그대로 드러낸다. */}
+        <ul className="dupload__assumptions">
+          {checklist.assumption_notes.map((note) => (
+            <li key={note}>※ {note}</li>
           ))}
         </ul>
       </section>

@@ -34,7 +34,7 @@
   margin-bottom: 18px;
 }
 
-.dupload__mistakes ul {
+.dupload__mistake-list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -51,6 +51,17 @@
   display: inline-block;
   min-width: 132px;
   color: #c00;
+}
+
+/* TF 미확정 가정값 안내. 경고와 섞이지 않게 회색 각주로 깐다. */
+.dupload__assumptions {
+  margin: 10px 0 0;
+  padding: 8px 0 0;
+  list-style: none;
+  border-top: 1px dashed #d99;
+  color: #555;
+  font-size: 11.5px;
+  line-height: 1.6;
 }
 
 /* ---- 근로유형 선택 ---- */

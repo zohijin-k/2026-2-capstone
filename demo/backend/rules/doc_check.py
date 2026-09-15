@@ -12,10 +12,24 @@
 from dataclasses import dataclass, field
 from datetime import date
 
-from ..engine_adapter import engine_check_single_document, engine_models
+from ..engine_adapter import engine_check_single_document, engine_config, engine_models
 from ..ocr.base import OcrResult
 from .doc_types import DocType, confusable_with
 from .required_docs import DocRequirement
+from .scoring import ESTIMATE_LABEL
+
+#: 판독 신뢰도·화질 컷라인은 **엔진 config의 가정값**이다. 엔진 config.py 첫 줄이
+#: "회의 전 데모용으로 우리가 임의로 정한 값"이라고 밝히고 있고, PRD의 Open
+#: Question 5(저신뢰 시 자동 반려인가 담당자 큐인가, 임계값은 얼마인가)가 아직
+#: 열려 있다. 코드와 화면 양쪽에 같은 라벨을 달아 둔다.
+THRESHOLD_NOTES: list[str] = [
+    f"{ESTIMATE_LABEL} 자동 판독 신뢰도가 "
+    f"{engine_config.OCR_CONFIDENCE_THRESHOLD:.2f} 미만이면 반려하지 않고 '확인필요'로 "
+    "담당자에게 넘깁니다. 이 컷라인은 TF 미확정 값입니다.",
+    f"{ESTIMATE_LABEL} 화질 점수 "
+    f"{engine_config.IMAGE_QUALITY_THRESHOLD:.1f} 미만을 화질 불량으로 봅니다. "
+    "이 기준도 TF 미확정 값입니다.",
+]
 
 #: 데모가 자체적으로 얹는 사유 코드. 엔진 `ReasonCode`에 없는 항목이다.
 #: 진과 합의되면 엔진 쪽으로 옮긴다 (design.md 9절 E-목록의 후속).

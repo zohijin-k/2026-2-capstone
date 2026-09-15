@@ -1,0 +1,32 @@
+{
+  "id": "S6",
+  "title": "암호가 걸린 PDF",
+  "proves": "공고문이 명시한 미비 사유 '파일 암호 미해제'를 파일을 열기도 전에 잡는다",
+  "program": "double_savings",
+  "screen": "신청자 → 서류 업로드 → [주민등록초본] 슬롯 (S2와 같은 신청 건)",
+  "steps": [
+    "암호가 걸린 초본 PDF를 올린다",
+    "'부적합 — 파일을 열 수 없음' + 암호 해제 안내를 읽는다"
+  ],
+  "files": [
+    "S6_주민등록초본_암호.pdf"
+  ],
+  "expect": {
+    "status": "FAIL",
+    "codes": [
+      "UNREADABLE_FILE"
+    ],
+    "detected_doc_type": null,
+    "ocr_confidence": 0.0,
+    "message": {
+      "$not_empty": true
+    },
+    "how_to_fix": {
+      "$contains": "암호"
+    }
+  },
+  "talking_points": [
+    "건보공단·정부24 발급 PDF는 기본값이 암호 설정인 경우가 있다. 담당자가 열지 못해 반려되는 대표 사유다.",
+    "암호 PDF는 서류 종류 판별 자체가 불가능하므로 다른 사유를 겹쳐 띄우지 않는다 — 신청자가 무엇부터 고칠지 헷갈리지 않게."
+  ]
+}

@@ -215,6 +215,8 @@ export interface Checklist {
   upload_total: number
   upload_done: number
   unassigned: UploadedDocument[]
+  /** 판정 컷라인 등 TF 미확정 가정값 안내. `(데모 추정치)` 라벨이 붙어 온다. */
+  assumption_notes: string[]
 }
 
 export interface MergedUploadResult {

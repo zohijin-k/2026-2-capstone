@@ -1,0 +1,63 @@
+{
+  "id": "S10",
+  "title": "취업지원패키지 — 면접비 2회 + 정장 1회 + 자격증 1회 복수 신청",
+  "proves": "같은 파이프라인에서 사업만 바꾸면 동작한다. 항목별 체크리스트 조립 + 실비 한도 계산 + 선착순·7일 보완 (R6)",
+  "program": "job_package",
+  "screen": "신청자 → 사업 선택 [취업지원패키지] → 자가진단 2문항 → 신청서 → 동의 → 지원 항목 → 업로드 → 제출",
+  "steps": [
+    "사업 선택에서 [전북청년 취업지원패키지]",
+    "자가진단이 8문항에서 2문항(나이·거주지)으로 줄어든 것을 보인다",
+    "지원 항목에서 면접비 2회 · 정장비 1회(영수증 70,000원) · 자격증 1회(영수증 43,000원) 선택",
+    "예상 지원금 193,000원과 항목별 계산 근거를 읽는다",
+    "응시일이 없는 응시확인서를 먼저 올려 부적합을 보이고, 응시일이 있는 것으로 교체",
+    "제출 → 접수 순번 1번 / 900건, 7일 보완 안내"
+  ],
+  "files": [
+    "S10_주민등록초본_취업패키지.pdf",
+    "S10_면접확인서_1회차.pdf",
+    "S10_면접확인서_2회차.pdf",
+    "S10_면접확인서_정장.pdf",
+    "S10_결제영수증_정장70000.pdf",
+    "S10_응시확인서_응시일없음.pdf",
+    "S10_응시확인서_적합.pdf",
+    "S10_결제영수증_응시료43000.pdf"
+  ],
+  "expect": {
+    "application_no": "JP-2026-000005",
+    "self_check_items": 2,
+    "upload_slots": 7,
+    "upload_slot_keys": [
+      "resident_abstract",
+      "interview_1_confirmation",
+      "interview_2_confirmation",
+      "suit_1_confirmation",
+      "suit_1_receipt",
+      "certificate_1_exam",
+      "certificate_1_receipt"
+    ],
+    "exam_without_date_status": "FAIL",
+    "exam_without_date_codes": ["MISSING_REQUIRED_FIELD"],
+    "granted_total": 193000,
+    "suit_receipt": 70000,
+    "suit_granted": 50000,
+    "suit_calculation": { "$contains": "70,000원 > 한도 50,000원" },
+    "can_submit": true,
+    "supplement_warning": { "$contains": "7일" },
+    "first_come_position": 1,
+    "first_come_remaining": 899,
+    "final_status": "PASS",
+    "total_score": null,
+    "score_sheet": {},
+    "officer_sort": "submitted",
+    "officer_quota": 900,
+    "mypage_score_leak": []
+  },
+  "talking_points": [
+    "사업을 바꿨을 뿐인데 연령 기준일(2025-12-31 → 2026-01-01), 서류 인정일(2026-03-03 → 2026-01-01), 소득요건 유무, 선발 방식, 보완 정책이 전부 따라 바뀐다. 화면에는 사업 코드 분기가 한 줄도 없다.",
+    "면접비만 정액 5만원(영수증 불요, 면접확인서만)이고 나머지 3종은 실비다. 정장 영수증 70,000원 → 한도 50,000원으로 깎이고, 그 계산 근거 문장이 그대로 저장된다.",
+    "응시확인서·성적표는 '응시일 표기 필수'다. 응시일이 없으면 부적합이고 무엇을 요청해야 하는지까지 안내한다.",
+    "두배적금은 보완이 없지만 취업패키지는 7일이다. 미비가 남은 채 접수되면 그 순간부터 D-7 카운트다운이 돈다.",
+    "담당자 목록도 사업에 따라 달라진다 — 두배적금은 점수순, 취업패키지는 접수순 + 총량 900건 진행률 배지.",
+    "취업패키지는 사업계획서에 신청서·자가진단 서식 원본이 없다. 항목 구성은 (데모 추정치) 라벨을 달아 두었다."
+  ]
+}
