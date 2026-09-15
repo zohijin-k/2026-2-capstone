@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/09-16-demo-site/design.md", "reason": "부모 태스크의 기술설계 — 시스템 경계, 도메인 모델, DB 스키마, OCR 3계층, 서식 재현, API 전체"}
+{"file": ".trellis/tasks/09-16-demo-site/prd.md", "reason": "부모 태스크의 요구사항 R1~R9 및 제약 C1~C5 원본"}
+{"file": "engine/README.md", "reason": "run_pipeline() 연동 규약, doc_type 네이밍, review_payload.file_ref 미구현 사항"}
+{"file": ".trellis/spec/backend/index.md", "reason": "백엔드(FastAPI) 작성 규약"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "프론트엔드(React/Vite) 작성 규약"}

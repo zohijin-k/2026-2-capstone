@@ -1,0 +1,3 @@
+{"file": "engine/README.md", "reason": "run_pipeline() 연동 규약, doc_type 네이밍 합의 대상, review_payload.file_ref 미구현 사항"}
+{"file": ".trellis/spec/backend/index.md", "reason": "백엔드(FastAPI) 작성 규약"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "프론트엔드(React/Vite) 작성 규약"}
