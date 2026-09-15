@@ -39,3 +39,6 @@ desktop.ini
 
 # ---- Claude Code 개인 설정 (권한 승인 기록, 기기별) ----
 .claude/settings.local.json
+
+# --- 클로드 학습용 pdf
+*.pdf
