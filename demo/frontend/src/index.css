@@ -20,3 +20,24 @@ body {
   font-size: 14px;
   line-height: 1.6;
 }
+
+/* 판정 배지 — 업로드·최종확인·마이페이지 세 화면이 같은 색을 쓴다.
+   같은 판정이 화면마다 다른 색으로 보이면 신청자가 다른 결과로 읽는다. */
+.dstatus {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 10px;
+  color: #fff;
+}
+
+.dstatus--pass {
+  background: #177245;
+}
+
+.dstatus--fail {
+  background: #c00;
+}
+
+.dstatus--needs_review {
+  background: #b8860b;
+}

@@ -13,7 +13,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications
+from .api import applications, documents, review
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
@@ -44,6 +44,8 @@ app.add_middleware(
 
 
 app.include_router(applications.router)
+app.include_router(documents.router)
+app.include_router(review.router)
 
 
 @app.get("/api/health")

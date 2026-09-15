@@ -1,0 +1,151 @@
+/* 마이페이지. 점수를 표시하지 않는다는 원칙이 스타일에도 반영돼 있다 —
+   강조 블록은 진행 단계와 안내 문구뿐이다. */
+
+.mypage {
+  width: 940px;
+  margin: 0 auto;
+}
+
+.mypage__loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.mypage__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  border: 1px solid #1f3864;
+  background: #f5f8ff;
+  padding: 12px 16px;
+}
+
+.mypage__head h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.mypage__head p {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.mypage__call {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+/* ---- 진행 5단계 ---- */
+
+.mypage__progress {
+  display: flex;
+  list-style: none;
+  margin: 16px 0 10px;
+  padding: 0;
+  gap: 6px;
+}
+
+.mpstep {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #ccc;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #888;
+}
+
+.mpstep__no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 11px;
+}
+
+.mpstep--done {
+  border-color: #177245;
+  color: #177245;
+  background: #f2fbf5;
+}
+
+.mpstep--current {
+  border-color: #1f3864;
+  background: #1f3864;
+  color: #fff;
+  font-weight: 700;
+}
+
+.mypage__notice {
+  margin: 0 0 16px;
+  border-left: 3px solid #1f3864;
+  background: #f7f7f7;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+
+/* ---- 서류·동의 ---- */
+
+.mypage__box {
+  border: 1px solid #ccc;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+
+.mypage__box h3 {
+  font-size: 15px;
+  margin: 0 0 8px;
+}
+
+.mypage__docs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.mypage__docs th,
+.mypage__docs td {
+  border: 1px solid #ccc;
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.mypage__docs th {
+  background: var(--form-label-bg);
+}
+
+.mypage__extract {
+  color: #444;
+}
+
+.mypage__consents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+.mypage__consents li {
+  display: flex;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #ddd;
+}
+
+.mypage__consents li:last-child {
+  border-bottom: 0;
+}
+
+.mypage__consents li span:first-child {
+  flex: 1;
+}
+
+.mypage__time {
+  color: var(--muted);
+}

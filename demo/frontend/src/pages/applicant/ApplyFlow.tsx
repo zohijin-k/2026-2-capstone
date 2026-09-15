@@ -1,13 +1,15 @@
 /**
- * 신청자 플로우 (P1 범위).
+ * 신청자 플로우.
  *
- *   [1] 자가진단(서식2)  →  [2] 신청서(서식1, 절 단위 5스텝)  →  [3] 동의(서식3·4·5)
+ *   [1] 자가진단(서식2) → [2] 신청서(서식1, 절 단위 스텝) → [3] 동의(서식3·4·5)
+ *   → [4] 서류 업로드(즉시 판정) → [5] 제출 전 최종 확인 → [6] 제출 → [7] 마이페이지
  *
  * 위저드 스텝 경계를 서식1의 절(Ⅰ~Ⅳ) 경계와 일치시킨다. 스텝은 서식을 재구성한
  * 것이 아니라 스크롤 위치를 나눈 것에 가깝고, "서식 전체 보기"를 켜면 한 장으로
  * 펼쳐진다.
  *
- * 서류 업로드와 제출은 P2·P3에서 붙는다.
+ * [5]의 "해당 위치로 이동"이 이 컴포넌트에서 처리된다. 사유만 보여주고 신청자가
+ * 직접 찾아가게 하면 결국 처음부터 다시 훑게 된다.
  */
 
 import { useEffect, useState } from 'react'
@@ -17,9 +19,14 @@ import {
   patchApplication,
   postConsents,
   postSelfCheck,
+  type Blocker,
   type ConsentPayload,
   type SelfCheckResult,
+  type SubmitResult,
 } from '../../api.ts'
+import DocumentUpload from './DocumentUpload.tsx'
+import FinalCheck from './FinalCheck.tsx'
+import MyPage from './MyPage.tsx'
 import Form1Application from '../../forms/Form1Application.tsx'
 import Form2SelfCheck from '../../forms/Form2SelfCheck.tsx'
 import { Form3PrivacyConsent, Form4ThirdPartyConsent } from '../../forms/Form34Consent.tsx'
@@ -30,7 +37,7 @@ import { EMPTY_FORM5, type Form5Value, type SignMode } from '../../forms/form5-m
 import { allAnswered, type SelfCheckAnswers } from '../../forms/form2-model.ts'
 import './apply-flow.css'
 
-type Stage = 'selfCheck' | 'form1' | 'consent' | 'done'
+type Stage = 'selfCheck' | 'form1' | 'consent' | 'upload' | 'final' | 'mypage'
 
 /** 서식1의 절 구조를 그대로 스텝 경계로 쓴다. */
 const FORM1_STEPS = [
@@ -38,6 +45,26 @@ const FORM1_STEPS = [
   { key: 'basic' as const, label: 'Ⅰ. 기본정보' },
   { key: 'tail' as const, label: 'Ⅱ~Ⅳ. 납입·계좌·기타' },
 ]
+
+/** 최종 확인에서 되돌아갈 때, 그 항목이 들어 있는 서식1 스텝. */
+const FIELD_STEP: Record<string, number> = {
+  savingPurpose: 0,
+  priorJoined: 0,
+  name: 1,
+  birth: 1,
+  gender: 1,
+  address: 1,
+  mobile: 1,
+  transferIn: 1,
+  householdType: 1,
+  householdSize: 1,
+  workType: 1,
+  employedAt: 1,
+  workplaceName: 1,
+  bankName: 2,
+  accountNo: 2,
+  accountHolder: 2,
+}
 
 export default function ApplyFlow() {
   const [appId, setAppId] = useState<number | null>(null)
@@ -55,6 +82,10 @@ export default function ApplyFlow() {
   const [consent, setConsent] = useState<ConsentValue>(EMPTY_CONSENT)
   const [form5, setForm5] = useState<Form5Value>(EMPTY_FORM5)
   const [signMode, setSignMode] = useState<SignMode>('전자서명')
+
+  const [submitted, setSubmitted] = useState<SubmitResult | null>(null)
+  /** 업로드 화면에서 스크롤해 보여줄 슬롯. 최종 확인의 "이동"이 채운다. */
+  const [focusSlot, setFocusSlot] = useState('')
 
   // 신청 건을 먼저 만들어 두고 단계마다 부분 저장한다(임시저장/이어서 작성).
   useEffect(() => {
@@ -98,7 +129,22 @@ export default function ApplyFlow() {
     ]
     await postConsents(appId, payload)
     save({ form5 })
-    setStage('done')
+    setStage('upload')
+  }
+
+  /** 최종 확인의 "해당 위치로 이동". 스텝·슬롯까지 정확히 되돌려 놓는다. */
+  const goto = (b: Blocker) => {
+    if (b.goto === 'form1') {
+      setWholeSheet(false)
+      setStep(FIELD_STEP[b.target] ?? 1)
+      setStage('form1')
+    } else if (b.goto === 'upload') {
+      setFocusSlot(b.kind === 'document' ? b.target : '')
+      setStage('upload')
+    } else {
+      setStage('consent')
+    }
+    window.scrollTo({ top: 0 })
   }
 
   const consentReady =
@@ -125,7 +171,9 @@ export default function ApplyFlow() {
               ['selfCheck', '1. 자가진단'],
               ['form1', '2. 신청서 작성'],
               ['consent', '3. 동의'],
-              ['done', '4. 서류 업로드'],
+              ['upload', '4. 서류 업로드'],
+              ['final', '5. 최종 확인'],
+              ['mypage', '6. 마이페이지'],
             ] as const
           ).map(([key, label]) => (
             <li key={key} className={stage === key ? 'is-current' : undefined}>
@@ -257,16 +305,75 @@ export default function ApplyFlow() {
         </>
       )}
 
-      {/* ── 완료 ── */}
-      {stage === 'done' && (
-        <div className="flow-block flow-block--ok">
-          <strong>서식1~5 작성이 끝났습니다. 종이·자필서명 0건.</strong>
-          <p>신청번호 {appNo}</p>
-          <p>
-            다음은 서류 업로드 단계입니다. 근로유형에 따라 필요한 서류만 골라 보여주고, 올리는
-            즉시 적합 여부를 판정합니다. <em>(P2에서 구현)</em>
-          </p>
-        </div>
+      {/* ── [4] 서류 업로드 ── */}
+      {stage === 'upload' && appId !== null && (
+        <>
+          <div className="flow-block flow-block--ok">
+            <strong>서식1~5 작성이 끝났습니다. 종이·자필서명 0건.</strong>
+            <p>신청번호 {appNo}</p>
+            <p>
+              이제 발급받아야만 하는 서류만 올리면 됩니다. 두배적금은 보완 요청이 없는 사업이라,
+              올리는 즉시 적합 여부를 알려 드립니다.
+            </p>
+          </div>
+          <div className="flow__gap" />
+          <DocumentUpload applicationId={appId} focusSlot={focusSlot} />
+          <div className="flow__actions">
+            <button type="button" className="btn" onClick={() => setStage('consent')}>
+              이전
+            </button>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => {
+                setFocusSlot('')
+                setStage('final')
+              }}
+            >
+              제출 전 최종 확인
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── [5] 제출 전 최종 확인 ── */}
+      {stage === 'final' && appId !== null && (
+        <>
+          <FinalCheck
+            applicationId={appId}
+            onGoto={goto}
+            onSubmitted={(result) => {
+              setSubmitted(result)
+              setStage('mypage')
+              window.scrollTo({ top: 0 })
+            }}
+          />
+          <div className="flow__actions">
+            <button type="button" className="btn" onClick={() => setStage('upload')}>
+              이전
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── [6][7] 제출 완료 · 마이페이지 ── */}
+      {stage === 'mypage' && appId !== null && (
+        <>
+          {submitted && (
+            <div className="flow-block flow-block--ok">
+              <strong>{submitted.message}</strong>
+              <p>신청번호 {submitted.application_no}</p>
+              <ol className="flow-steps-list">
+                {submitted.next_steps.map((s) => (
+                  <li key={s}>{s}</li>
+                ))}
+              </ol>
+              <p className="flow-alt">{submitted.notice}</p>
+            </div>
+          )}
+          <div className="flow__gap" />
+          <MyPage applicationId={appId} />
+        </>
       )}
     </div>
   )
