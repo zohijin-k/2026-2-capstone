@@ -54,6 +54,7 @@ from .common import (
     load_application,
     subsidy_estimate,
 )
+from .forms import form_links
 
 router = APIRouter(prefix="/api/officer", tags=["officer"])
 
@@ -719,6 +720,9 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
         ),
         "supplement": _supplement_view(app, entry.program, review),
         "documents": documents,
+        # 작성 서식(P7, 선택). 업로드 서류와 같은 뷰어에서 나란히 본다 — 여기도
+        # 인라인이라 다운로드 0회가 유지된다. 준비가 안 됐으면 빈 목록이다.
+        "forms": form_links(application_id),
         "eligibility": _eligibility(entry, items),
         "exclusions": _exclusions(entry),
         "decision": {

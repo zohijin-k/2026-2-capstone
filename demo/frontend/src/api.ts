@@ -577,6 +577,16 @@ export interface OfficerDocument {
   uploaded_at: string
 }
 
+/** 작성 서식 한 장 (P7 / R9). 업로드 서류와 같은 뷰어에서 인라인으로 연다. */
+export interface FormExport {
+  form_no: string
+  title: string
+  label: string
+  /** 인라인 스트리밍 주소. 저장 링크가 아니다. */
+  file_url: string
+  file_name: string
+}
+
 export interface ReviewDetailData {
   application_id: number
   application_no: string
@@ -603,6 +613,8 @@ export interface ReviewDetailData {
   /** 7일 보완 기한. 보완이 없는 사업이거나 보완 대상이 아니면 null. */
   supplement: SupplementInfo | null
   documents: OfficerDocument[]
+  /** 신청자가 작성한 서식을 원본 서식 모양 그대로 내보낸 PDF. 없으면 빈 배열. */
+  forms: FormExport[]
   eligibility: { key: string; label: string; ok: boolean; basis: string }[]
   exclusions: { label: string; answer: string; ok: boolean; source: string }[]
   decision: {

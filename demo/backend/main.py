@@ -13,7 +13,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications, documents, files, officer, review, subsidy
+from .api import applications, documents, files, forms, officer, review, subsidy
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
@@ -50,6 +50,8 @@ app.include_router(documents.router)
 # 취업지원패키지 지원 항목 선택 + 실비 계산(P5). 사업이 두 개가 되는 지점이다.
 app.include_router(subsidy.router)
 app.include_router(review.router)
+# 작성 서식 PDF 내보내기(P7, 선택). 여기도 inline 으로만 나간다.
+app.include_router(forms.router)
 # 담당자 심사 화면(P4). 원본은 files 라우터가 inline으로만 흘린다 — 다운로드 경로는 없다.
 app.include_router(officer.router)
 app.include_router(files.router)

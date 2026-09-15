@@ -451,6 +451,23 @@
   font-weight: 700;
 }
 
+/* 작성 서식 탭 (P7). 업로드 서류와 색으로 갈라 둔다 — 올린 것과 쓴 것은 심사에서
+   성격이 다르다. */
+.review__tab--form {
+  background: #eef3fb;
+  border-color: #b9c9e4;
+  color: #1c3c6e;
+}
+
+.review__tab--form.review__tab--on {
+  background: #fff;
+}
+
+.review__tab-pen {
+  font-size: 11px;
+  color: #2f5ea8;
+}
+
 .tabdot {
   width: 7px;
   height: 7px;

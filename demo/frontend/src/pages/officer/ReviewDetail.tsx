@@ -16,6 +16,7 @@ import {
   postDecision,
   type BBox,
   type DecisionKey,
+  type FormExport,
   type OfficerDocument,
   type ReviewDetailData,
   type ScoreItemRow,
@@ -32,6 +33,35 @@ interface Props {
   onDecided: () => void
 }
 
+/**
+ * 작성 서식을 업로드 서류와 같은 모양으로 감싼다 (P7 / R9.3).
+ *
+ * 뷰어는 `file_url`만 있으면 되므로 판독 결과 자리는 비운다. 서식은 신청자가 화면에
+ * 입력한 값이라 판독할 것이 없다. 음수 id를 쓰는 이유는 업로드 서류 id와 섞이지
+ * 않게 하기 위해서다 — 탭을 옮길 때 뷰어가 쪽수를 되돌리는 기준이 id다.
+ */
+function asViewerDoc(form: FormExport, index: number): OfficerDocument {
+  return {
+    document_id: -(index + 1),
+    slot_key: `form:${form.form_no}`,
+    label: form.label,
+    expected_doc_type: null,
+    detected_doc_type: null,
+    status: null,
+    findings: [],
+    file_url: form.file_url,
+    file_name: form.file_name,
+    file_format: 'pdf',
+    page_index: null,
+    extracted: {},
+    bboxes: {},
+    ocr_confidence: null,
+    ocr_tier: null,
+    declared_issue_date: null,
+    uploaded_at: '',
+  }
+}
+
 interface Focus {
   documentId: number
   bbox: BBox | null
@@ -43,6 +73,8 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
   const [detail, setDetail] = useState<ReviewDetailData | null>(null)
   const [error, setError] = useState('')
   const [activeDocId, setActiveDocId] = useState<number | null>(null)
+  /** 작성 서식 탭이 켜져 있으면 서식 번호. 업로드 서류 탭을 누르면 꺼진다. */
+  const [activeForm, setActiveForm] = useState<string | null>(null)
   const [focus, setFocus] = useState<Focus | null>(null)
   const [memo, setMemo] = useState('')
   const [saving, setSaving] = useState(false)
@@ -68,6 +100,10 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
 
   if (error) return <p className="officer__error">{error}</p>
   if (!detail || !activeDoc) return <p className="officer__loading">심사 정보를 불러오는 중…</p>
+
+  const formIndex = detail.forms.findIndex((f) => f.form_no === activeForm)
+  const viewingForm = formIndex >= 0 ? detail.forms[formIndex] : null
+  const viewing = viewingForm ? asViewerDoc(viewingForm, formIndex) : activeDoc
 
   /** 심사표 항목 → 좌측 원본의 해당 위치. */
   const focusScoreItem = (item: ScoreItemRow) => {
@@ -100,7 +136,8 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
       .finally(() => setSaving(false))
   }
 
-  const highlight = focus && focus.documentId === activeDoc.document_id ? focus.bbox : null
+  const highlight =
+    !viewingForm && focus && focus.documentId === activeDoc.document_id ? focus.bbox : null
 
   return (
     <div className="review">
@@ -133,19 +170,39 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
                 key={d.document_id}
                 type="button"
                 className={
-                  d.document_id === activeDoc.document_id
+                  !viewingForm && d.document_id === activeDoc.document_id
                     ? 'review__tab review__tab--on'
                     : 'review__tab'
                 }
-                onClick={() => setActiveDocId(d.document_id)}
+                onClick={() => {
+                  setActiveForm(null)
+                  setActiveDocId(d.document_id)
+                }}
               >
                 <span className={dotClass(d.status)} />
                 {d.label}
               </button>
             ))}
+            {/* 작성 서식 탭 (P7). 업로드 서류와 나란히 두어 "올린 것"과 "쓴 것"을
+                같은 자리에서 본다. 여기도 내려받는 경로는 없다 (R9.3). */}
+            {detail.forms.map((f) => (
+              <button
+                key={f.form_no}
+                type="button"
+                className={
+                  activeForm === f.form_no
+                    ? 'review__tab review__tab--form review__tab--on'
+                    : 'review__tab review__tab--form'
+                }
+                onClick={() => setActiveForm(f.form_no)}
+              >
+                <span className="review__tab-pen">✎</span>
+                {f.form_no} 작성본
+              </button>
+            ))}
           </nav>
           <DocumentViewer
-            doc={activeDoc}
+            doc={viewing}
             highlight={highlight}
             highlightLabel={focus?.label}
           />
@@ -280,6 +337,20 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
               ))}
             </ul>
           </Panel>
+
+          {viewingForm && (
+            <Panel title={`작성 서식 — ${viewingForm.label}`}>
+              <p className="muted">
+                신청자가 화면에서 작성한 값을 원본 서식 PDF에 그대로 얹은 것입니다.
+                항목 순서·표 구조·문구가 종이 서식과 같습니다.
+              </p>
+              <p className="muted">
+                {viewingForm.form_no === '서식5'
+                  ? '서명란에는 캔버스 전자서명이 합성되어 있습니다. 동의 시각·IP는 동의 이력에 남습니다.'
+                  : '자동 판정 항목(거주기간·근로기간)은 신청 화면에서 선택된 구간 그대로 체크됩니다.'}
+              </p>
+            </Panel>
+          )}
 
           <Panel title={`판독 결과 — ${activeDoc.label}`}>
             <dl className="ocr">

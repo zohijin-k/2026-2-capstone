@@ -27,11 +27,16 @@ demo/
 │   ├── reset.py        시연 초기화 (파괴적)
 │   ├── engine_adapter.py   engine/ 와의 유일한 접점
 │   ├── api/ ocr/ rules/    라우터 · 판독 3계층 · 업무 규칙
-│   └── tests/          P2~P6 게이트 검증 스크립트 (pytest 없이 실행)
+│   ├── forms/          작성 서식 PDF 내보내기 (원본 위에 값 얹기)
+│   └── tests/          P2~P7 게이트 검증 스크립트 (pytest 없이 실행)
 ├── frontend/           React + Vite (신청자 화면 · 담당자 화면)
 ├── fixtures/
 │   ├── make_samples.py 시연용 더미 서류 생성기
+│   ├── cut_templates.py     원본 시행지침 → 서식 템플릿 잘라내기 (2-up 주의)
+│   ├── build_form_coords.py 템플릿 → 서식 좌표 맵 추출
 │   ├── samples/        생성된 더미 PDF (gitignore)
+│   ├── templates/      서식1·서식5 원본 쪽 (PDF 내보내기 템플릿, 커밋 대상)
+│   ├── form_coords/    서식별 필드 좌표 맵 JSON
 │   └── expected/       시연 시나리오 10종의 기대 결과 JSON
 ├── docs/demo-script.md 시연 대본
 ├── storage/            업로드 원본 (gitignore)
@@ -137,6 +142,7 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p3_scenario
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p4_scenarios  # 담당자 화면·다운로드 0회
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p5_scenarios  # 취업지원패키지 분기
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p6_scenarios  # 리셋 후 시연 10종 재현
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p7_scenarios  # 작성 서식 PDF 내보내기
 ```
 
 `run_p6_scenarios`는 **리셋 → S1~S10 연속 실행 → 기대값 대조**를 두 번 반복해,
@@ -159,7 +165,37 @@ npx tsc -b && npx oxlint && npx vite build
 
 ---
 
-## 6. 알아 둘 것
+## 6. 작성 서식 PDF 내보내기 (선택 기능)
+
+작성된 서식을 **원본 서식과 같은 모양의 PDF**로 내보낸다. 원본 PDF를 템플릿으로
+쓰고 그 위에 값·`✓`·전자서명을 얹는 방식이라, 결과물이 종이 서식과 구분되지 않는다.
+
+```
+GET /api/applications/{id}/forms           # 내보낼 수 있는 서식 목록
+GET /api/applications/{id}/forms/서식1.pdf  # 인라인 (내려받지 않는다)
+GET /api/applications/{id}/forms/서식5.pdf  # 서명란에 전자서명 합성
+```
+
+담당자 심사 화면의 서류 탭 오른쪽에 **"서식1 작성본 / 서식5 작성본"** 탭이 붙어,
+업로드 서류와 나란히 브라우저 안에서 본다. 여기서도 내려받는 경로는 없다.
+
+대상은 **두배적금 서식1·서식5 2종**이다. 취업지원패키지는 원본 서식이 사업계획서에
+없어 내보낼 것이 없고, 서식2~4는 좌표 맵 구조만 비워 두었다.
+
+템플릿과 좌표 맵은 **원본 시행지침 PDF에서 뽑아 만든 것**이다. 원본이 개정되면
+아래 두 줄을 다시 돌린다 (저장소 루트에 시행지침 PDF가 있어야 한다).
+
+```bash
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.cut_templates
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.build_form_coords
+```
+
+> ⚠️ 원본 PDF는 **2-up**이다. A4 가로 1장에 논리 2쪽이 들어 있어(물리 12쪽 = 논리
+> 23·24쪽) 반드시 반쪽씩 잘라야 한다. `cut_templates.py`가 쪽번호로 검증한다.
+
+---
+
+## 7. 알아 둘 것
 
 - **판독(OCR)은 3계층**이다. ① 파일명이 `fixtures/samples/`의 시연 파일과 같으면
   고정 결과(Tier1) ② 아니면 PDF 텍스트 레이어에서 실제로 읽는다(Tier2, PyMuPDF)
@@ -171,5 +207,8 @@ npx tsc -b && npx oxlint && npx vite build
 - **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100~130% 환산
   기준선, 판독 신뢰도·화질 컷라인, 취업패키지 서식 구성, 선착순 기준 시각이
   여기 해당한다. 화면과 코드 양쪽에 같은 문구로 노출된다.
+- **서식 좌표는 손으로 적지 않았다.** 원본 PDF의 표 선(`get_drawings`)과 글자
+  원점(`get_text("rawdict")`)에서 뽑는다. `run_p7_scenarios`가 좌표를 다시 뽑아
+  커밋된 JSON과 대조하므로, 좌표를 손으로 고치면 검증이 깨진다.
 - 담당자 화면에는 **다운로드 버튼이 없다.** 백엔드에도 `attachment` 응답 경로가
   없고, 그 사실을 `run_p4_scenarios`가 정적 검사로 확인한다.
