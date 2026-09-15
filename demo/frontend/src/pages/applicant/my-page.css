@@ -89,6 +89,72 @@
   font-size: 12.5px;
 }
 
+/* ---- 선착순 순번 · 보완 기한 ---- */
+
+.mypage__queue {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  border: 1px solid #b06000;
+  background: #fffaf2;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 12.5px;
+}
+
+.mypage__queue strong {
+  font-size: 15px;
+  color: #b06000;
+}
+
+.mypage__queue-note {
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.mypage__supplement {
+  border: 2px solid #b06000;
+  background: #fffaf2;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.mypage__supplement--over {
+  border-color: #c00;
+  background: #fff5f5;
+}
+
+.mypage__countdown {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12.5px;
+}
+
+.mypage__days {
+  font-size: 22px;
+  font-weight: 700;
+  color: #b06000;
+  font-variant-numeric: tabular-nums;
+}
+
+.mypage__supplement--over .mypage__days {
+  color: #c00;
+}
+
+.mypage__supplement p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.mypage__supplement-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
 /* ---- 서류·동의 ---- */
 
 .mypage__box {

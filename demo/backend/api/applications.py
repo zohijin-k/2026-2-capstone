@@ -107,15 +107,19 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
 
 @router.post("/{application_id}/self-check")
 def self_check(application_id: int, body: SelfCheckRequest) -> dict[str, Any]:
-    """자가진단 채점. 부적격이면 사유와 대안을 함께 돌려준다."""
-    result = evaluate(body.answers)
+    """자가진단 채점. 부적격이면 사유와 대안을 함께 돌려준다.
+
+    문항 수는 사업에서 나온다 — 두배적금 8문항, 취업지원패키지 2문항(나이·거주지).
+    """
+    app = _load(application_id)
+    result = evaluate(body.answers, app.program_code)
     with get_session() as s:
-        app = s.get(Application, application_id)
-        if app is None:
+        row = s.get(Application, application_id)
+        if row is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
-        app.self_check_json = dict(body.answers)
-        app.updated_at = datetime.now()
-        s.add(app)
+        row.self_check_json = dict(body.answers)
+        row.updated_at = datetime.now()
+        s.add(row)
         s.commit()
     return {
         "eligible": result.eligible,
@@ -123,6 +127,7 @@ def self_check(application_id: int, body: SelfCheckRequest) -> dict[str, Any]:
         "failed_item": result.failed_item,
         "reason": result.reason,
         "alternative": result.alternative,
+        "total_items": result.total_items,
     }
 
 

@@ -38,6 +38,28 @@ export default function ApplicationList({
 
   return (
     <div className="list">
+      {/* 선착순 사업을 고르면 시군 정원 대신 총 지원규모 대비 접수 진행률을 본다.
+          선발 방식이 다르므로 같은 배지를 쓸 수 없다. */}
+      {list.first_come && (
+        <div className="fcfs">
+          <span className="fcfs__name">{list.first_come.program_name}</span>
+          <span className="fcfs__count">
+            접수 {list.first_come.applied.toLocaleString('ko-KR')} /{' '}
+            {list.first_come.quota.toLocaleString('ko-KR')}건
+          </span>
+          <span className="fcfs__bar">
+            <i style={{ width: `${Math.min(100, list.first_come.rate_percent)}%` }} />
+          </span>
+          <span className="fcfs__meta">
+            선정 {list.first_come.selected}건 · 남은 규모 {list.first_come.remaining}건
+            {list.first_come.supplement_days !== null && (
+              <> · 보완 {list.first_come.supplement_days}일</>
+            )}
+          </span>
+          <span className="fcfs__notice">{list.first_come.notice}</span>
+        </div>
+      )}
+
       <div className="quota">
         {list.quota.map((q) => (
           <div key={q.region} className="quota__item">

@@ -35,12 +35,14 @@ const KIND_LABEL: Record<Blocker['kind'], string> = {
   consent: '동의',
   document: '서류',
   context: '근로유형',
+  subsidy: '지원 항목',
 }
 
 const GOTO_LABEL: Record<Blocker['goto'], string> = {
   form1: '신청서로 이동',
   consent: '동의 화면으로 이동',
   upload: '업로드 화면으로 이동',
+  subsidy: '지원 항목 화면으로 이동',
 }
 
 export default function FinalCheck({
@@ -79,6 +81,58 @@ export default function FinalCheck({
 
   return (
     <div className="fcheck">
+      {data.first_come && (
+        <section className="fcheck__queue">
+          <h3>이 사업은 선착순입니다</h3>
+          <p>
+            {data.first_come.notice} 지금 제출하시면{' '}
+            <strong>{data.first_come.position}번째</strong>로 접수됩니다.
+          </p>
+        </section>
+      )}
+
+      {data.subsidy && data.subsidy.lines.length > 0 && (
+        <section className="fcheck__box">
+          <h3>신청하신 지원 항목과 지급 예정액</h3>
+          <table className="fcheck__docs">
+            <thead>
+              <tr>
+                <th>항목</th>
+                <th>영수증 금액</th>
+                <th>지급 예정액</th>
+                <th>계산 근거</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.subsidy.lines.map((line) => (
+                <tr key={`${line.item_type}-${line.index}`}>
+                  <td>{line.label}</td>
+                  <td>
+                    {line.actual_cost
+                      ? line.receipt_amount === null
+                        ? '미입력'
+                        : `${line.receipt_amount.toLocaleString('ko-KR')}원`
+                      : '불요'}
+                  </td>
+                  <td>
+                    <strong>{line.granted_amount.toLocaleString('ko-KR')}원</strong>
+                  </td>
+                  <td>{line.calculation}</td>
+                </tr>
+              ))}
+              <tr>
+                <th colSpan={2}>합계</th>
+                <td colSpan={2}>
+                  <strong>
+                    {data.subsidy.total_granted.toLocaleString('ko-KR')}원
+                  </strong>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {!data.allows_supplement && (
         <section className="fcheck__alarm">
           <h3>이 사업은 서류를 보완할 기회가 없습니다</h3>

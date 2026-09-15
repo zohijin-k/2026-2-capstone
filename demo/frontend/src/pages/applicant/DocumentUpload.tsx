@@ -27,11 +27,15 @@ import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
 
-/** 신청자가 가장 많이 틀리는 것들. 업로드 전에 먼저 보여준다. */
+/** 두 사업에 공통으로 해당하는 실수. */
 const COMMON_MISTAKES = [
   ['등본 아닌 초본', '주민등록 "등본"이 아니라 "초본"입니다. 가장 흔한 탈락 사유입니다.'],
-  ['등록증 아닌 증명', '사업자등록"증"이 아니라 사업자등록"증명"입니다.'],
   ['PDF 암호 해제', '암호가 걸린 파일은 열리지 않아 그대로 부적합 처리됩니다.'],
+] as const
+
+/** 근로확인서류를 내는 사업(두배적금)에서만 해당하는 실수. */
+const WORK_PROOF_MISTAKES = [
+  ['등록증 아닌 증명', '사업자등록"증"이 아니라 사업자등록"증명"입니다.'],
   ['5년 주소변동내역 포함', '초본 발급 시 "과거의 주소 변동사항(최근 5년)"을 반드시 체크하세요.'],
 ] as const
 
@@ -130,6 +134,16 @@ function SlotCard({
         )}
       </div>
 
+      {item.doc_type_choices.length > 1 && (
+        <p className="dslot__note">
+          ※ {item.doc_type_choices.join(' 또는 ')} 중 하나만 올리면 됩니다.
+        </p>
+      )}
+      {item.required_fields.length > 0 && (
+        <p className="dslot__must">
+          {item.required_fields.join('·')} 표기가 반드시 있어야 인정됩니다.
+        </p>
+      )}
       {item.notes.map((n) => (
         <p key={n} className="dslot__note">
           ※ {n}
@@ -261,7 +275,10 @@ export default function DocumentUpload({
       <section className="dupload__mistakes">
         <h3>올리기 전에 꼭 확인하세요</h3>
         <ul>
-          {COMMON_MISTAKES.map(([title, body]) => (
+          {[
+            ...COMMON_MISTAKES,
+            ...(checklist.program.asks_work_category ? WORK_PROOF_MISTAKES : []),
+          ].map(([title, body]) => (
             <li key={title}>
               <strong>{title}</strong>
               <span>{body}</span>
@@ -270,55 +287,64 @@ export default function DocumentUpload({
         </ul>
       </section>
 
-      <section className="dupload__context">
-        <h3>근로유형</h3>
-        <p className="dupload__hint">
-          근로확인서류는 5종 중 1종만 내면 됩니다. 아래에서 고르면 본인에게 필요한 서류만 남습니다.
-        </p>
-        <Checks
-          name="work_category"
-          options={checklist.work_categories}
-          value={context.work_category ?? ''}
-          onChange={(v) => changeContext({ work_category: v })}
-          cols={2}
-        />
-        <div className="dupload__opts">
-          <label>
-            <input
-              type="checkbox"
-              checked={!!context.admin_fixed_term}
-              onChange={(e) => changeContext({ admin_fixed_term: e.target.checked })}
-            />
-            행정기관 기간제 근로자입니다 (근로계약서 사본 추가)
-          </label>
-          <label>
-            근무 사업장 수
-            <select
-              value={`${context.workplace_count ?? 1}개`}
-              onChange={(e) => changeContext({ workplace_count: Number(e.target.value[0]) })}
-            >
-              {WORKPLACE_COUNTS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={!!context.handwritten_admin_consent}
-              onChange={(e) => changeContext({ handwritten_admin_consent: e.target.checked })}
-            />
-            서식5를 자필서명 스캔본으로 제출하겠습니다
-          </label>
-        </div>
-      </section>
+      {/* 근로확인서류가 있는 사업에서만 근로유형을 묻는다. 취업패키지는 근로요건이
+          없어 이 구획 자체가 뜨지 않는다. */}
+      {checklist.program.asks_work_category && (
+        <section className="dupload__context">
+          <h3>근로유형</h3>
+          <p className="dupload__hint">
+            근로확인서류는 5종 중 1종만 내면 됩니다. 아래에서 고르면 본인에게 필요한 서류만 남습니다.
+          </p>
+          <Checks
+            name="work_category"
+            options={checklist.work_categories}
+            value={context.work_category ?? ''}
+            onChange={(v) => changeContext({ work_category: v })}
+            cols={2}
+          />
+          <div className="dupload__opts">
+            <label>
+              <input
+                type="checkbox"
+                checked={!!context.admin_fixed_term}
+                onChange={(e) => changeContext({ admin_fixed_term: e.target.checked })}
+              />
+              행정기관 기간제 근로자입니다 (근로계약서 사본 추가)
+            </label>
+            <label>
+              근무 사업장 수
+              <select
+                value={`${context.workplace_count ?? 1}개`}
+                onChange={(e) => changeContext({ workplace_count: Number(e.target.value[0]) })}
+              >
+                {WORKPLACE_COUNTS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={!!context.handwritten_admin_consent}
+                onChange={(e) => changeContext({ handwritten_admin_consent: e.target.checked })}
+              />
+              서식5를 자필서명 스캔본으로 제출하겠습니다
+            </label>
+          </div>
+        </section>
+      )}
 
       <div className="dupload__progress">
         제출 서류 <strong>{checklist.upload_done}</strong> / {checklist.upload_total}
-        {!context.work_category && (
+        {checklist.program.asks_work_category && !context.work_category && (
           <span className="dupload__progress-hint">근로유형을 고르면 서류가 1종 추가됩니다.</span>
+        )}
+        {checklist.program.has_subsidy_items && (
+          <span className="dupload__progress-hint">
+            고르신 지원 항목에 따라 서류가 늘고 줍니다. 항목을 바꾸면 이 목록도 바뀝니다.
+          </span>
         )}
       </div>
 

@@ -13,10 +13,12 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications, documents, files, officer, review
+from .api import applications, documents, files, officer, review, subsidy
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
+from .rules.self_check import item_numbers
+from .rules.subsidy import catalog
 
 
 @asynccontextmanager
@@ -45,6 +47,8 @@ app.add_middleware(
 
 app.include_router(applications.router)
 app.include_router(documents.router)
+# 취업지원패키지 지원 항목 선택 + 실비 계산(P5). 사업이 두 개가 되는 지점이다.
+app.include_router(subsidy.router)
 app.include_router(review.router)
 # 담당자 심사 화면(P4). 원본은 files 라우터가 inline으로만 흘린다 — 다운로드 경로는 없다.
 app.include_router(officer.router)
@@ -75,7 +79,10 @@ def _serialize(code: str) -> dict:
     program = get_program(code)
     data = asdict(program)
     data["allows_supplement"] = program.allows_supplement
-    data["quota_total"] = (
-        sum(program.quota_by_region.values()) if program.quota_by_region else None
-    )
+    data["is_first_come"] = program.is_first_come
+    data["quota_total"] = program.quota_total
+    #: 화면이 몇 문항을 물어야 하는지. 두배적금 8문항 / 취업패키지 2문항.
+    data["self_check_items"] = item_numbers(code)
+    #: 지원 항목 목록. 금액·횟수·추가서류가 전부 여기서 나간다.
+    data["subsidy_catalog"] = catalog() if program.has_subsidy_items else None
     return data

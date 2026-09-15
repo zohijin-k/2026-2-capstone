@@ -11,7 +11,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlmodel import select
 
-from ..models import Application, Consent, Document, get_session
+from ..models import Application, Consent, Document, SubsidyItem, get_session
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ApplicantDocInput,
@@ -19,6 +19,7 @@ from ..rules.required_docs import (
     WorkCategory,
     build_checklist,
 )
+from ..rules.subsidy import ITEM_ORDER, Selection, estimate as estimate_subsidy
 
 STORAGE = Path(__file__).resolve().parents[2] / "storage"
 
@@ -29,6 +30,46 @@ def load_application(application_id: int) -> Application:
         if app is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
         return app
+
+
+def subsidy_rows(application_id: int) -> list[SubsidyItem]:
+    """고른 지원 항목 전부. 회차 순서를 보장한다."""
+    with get_session() as s:
+        rows = list(
+            s.exec(
+                select(SubsidyItem).where(SubsidyItem.application_id == application_id)
+            ).all()
+        )
+    return sorted(rows, key=lambda r: (r.item_type, r.count_index))
+
+
+def subsidy_selections(application_id: int) -> list[Selection]:
+    """DB 행 → `rules/subsidy.Selection`. 체크리스트와 실비 계산이 같은 값을 본다."""
+    grouped: dict[str, list[SubsidyItem]] = {}
+    for row in subsidy_rows(application_id):
+        grouped.setdefault(row.item_type, []).append(row)
+
+    selections: list[Selection] = []
+    # 사업계획서 지원내용 표의 순서(면접비 → 정장비 → 사진비 → 자격증)를 따른다.
+    # DB 조회 순서를 그대로 쓰면 체크리스트 순서가 알파벳순으로 뒤바뀐다.
+    for key in ITEM_ORDER:
+        rows = grouped.get(str(key))
+        if not rows:
+            continue
+        ordered = sorted(rows, key=lambda r: r.count_index)
+        selections.append(
+            Selection(
+                item_type=key,
+                count=len(ordered),
+                receipts=[r.receipt_amount for r in ordered],
+            )
+        )
+    return selections
+
+
+def subsidy_estimate(application_id: int) -> dict[str, Any]:
+    """예상 지원금. 신청자 화면·최종 확인·담당자 화면이 같은 계산을 쓴다."""
+    return estimate_subsidy(subsidy_selections(application_id)).as_dict()
 
 
 def doc_context(app: Application) -> ApplicantDocInput:
@@ -43,6 +84,7 @@ def doc_context(app: Application) -> ApplicantDocInput:
         admin_fixed_term=bool(raw.get("admin_fixed_term")),
         workplace_count=int(raw.get("workplace_count") or 1),
         handwritten_admin_consent=bool(raw.get("handwritten_admin_consent")),
+        subsidy_selections=subsidy_selections(app.id or 0),
     )
 
 

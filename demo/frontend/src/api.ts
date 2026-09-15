@@ -1,5 +1,12 @@
 /** 백엔드 호출. vite dev 서버가 /api 를 :8000 으로 프록시한다. */
 
+/**
+ * 사업 설정. 화면 분기는 전부 이 값으로 한다.
+ *
+ * 컴포넌트 안에서 `code === 'job_package'` 같은 비교를 하지 않는 것이 규칙이다.
+ * 두 사업의 차이(선발 방식·보완 정책·연령 기준·소득요건·지원 항목)는 서버가
+ * 이 구조체 하나로 알려준다.
+ */
 export interface Program {
   code: string
   name: string
@@ -8,15 +15,96 @@ export interface Program {
   age_basis_date: string
   birth_range: [string, string]
   selection: 'scored' | 'first_come'
+  is_first_come: boolean
   supplement_days: number | null
   allows_supplement: boolean
   has_income_requirement: boolean
+  has_work_requirement: boolean
+  has_subsidy_items: boolean
   apply_period: [string, string]
   quota_by_region: Record<string, number> | null
   quota_total: number | null
+  /** 자가진단 문항 번호. 두배적금 8문항 / 취업패키지 2문항. */
+  self_check_items: number[]
+  /** 지원 항목표. 항목이 없는 사업은 null. */
+  subsidy_catalog: SubsidyCatalogItem[] | null
   site_url: string
   call_center: string
   notes: string[]
+}
+
+/** 취업지원패키지 지원 항목 1종 (사업계획서 「지원내용」 표). */
+export interface SubsidyCatalogItem {
+  item_type: string
+  label: string
+  description: string
+  unit_cap: number
+  max_count: number
+  /** true면 실비(영수증 금액과 한도 중 작은 값), false면 정액. */
+  actual_cost: boolean
+  needs_receipt: boolean
+  max_amount: number
+  note: string
+  amount_label: string
+  count_label: string
+  extra_docs: string[]
+  performance_target: number | null
+}
+
+export interface SubsidySelection {
+  item_type: string
+  count: number
+  receipts: (number | null)[]
+}
+
+/** 지급 계산 한 줄. `calculation`이 "왜 이 금액인가"의 답이다. */
+export interface SubsidyLine {
+  item_type: string
+  label: string
+  index: number
+  unit_cap: number
+  actual_cost: boolean
+  receipt_amount: number | null
+  granted_amount: number
+  calculation: string
+  pending: boolean
+}
+
+export interface SubsidyEstimate {
+  lines: SubsidyLine[]
+  total_granted: number
+  warnings: string[]
+  pending: boolean
+}
+
+export interface SubsidyState {
+  program_code: string
+  program_name: string
+  catalog: SubsidyCatalogItem[]
+  selections: SubsidySelection[]
+  estimate: SubsidyEstimate
+  notice: string
+}
+
+/** 선착순 접수 순번 (R6). 점수제 사업에서는 null. */
+export interface FirstComeInfo {
+  enabled: boolean
+  position: number
+  quota: number | null
+  remaining: number | null
+  submitted: boolean
+  notice: string
+}
+
+/** 서류 보완 기한 (E12). 보완이 없는 사업에서는 null. */
+export interface SupplementInfo {
+  days: number | null
+  deadline: string
+  days_left: number
+  hours_left: number
+  expired: boolean
+  targets: { label: string; reason: string }[]
+  notice: string
 }
 
 export interface ApplicationRow {
@@ -35,6 +123,8 @@ export interface SelfCheckResult {
   failed_item: number | null
   reason: string
   alternative: string
+  /** 이번 사업에서 물은 문항 수. 두배적금 8 / 취업패키지 2. */
+  total_items: number
 }
 
 export interface ConsentPayload {
@@ -77,6 +167,10 @@ export interface UploadedDocument {
 export interface DocRequirementRow {
   slot_key: string
   doc_type: string
+  /** 이 자리에 인정되는 서류들. 응시확인서 **또는** 성적표처럼 택1인 칸이 있다. */
+  doc_type_choices: string[]
+  /** 서류에 반드시 찍혀 있어야 하는 항목 (예: 응시확인서의 "응시일"). */
+  required_fields: string[]
   label: string
   required: boolean
   upload: boolean
@@ -100,8 +194,21 @@ export interface DocContext {
   handwritten_admin_consent?: boolean
 }
 
+/** 업로드 화면이 사업 코드로 분기하지 않도록 서버가 내려주는 안내. */
+export interface ChecklistProgram {
+  code: string
+  name: string
+  selection: 'scored' | 'first_come'
+  allows_supplement: boolean
+  supplement_days: number | null
+  document_cutoff: string
+  asks_work_category: boolean
+  has_subsidy_items: boolean
+}
+
 export interface Checklist {
   context: DocContext
+  program: ChecklistProgram
   work_categories: string[]
   accepted_formats: string[]
   items: DocRequirementRow[]
@@ -120,18 +227,22 @@ export interface MergedUploadResult {
 
 /** 제출을 막는 항목 하나. `goto`는 "어디로 가면 고칠 수 있는가"다. */
 export interface Blocker {
-  kind: 'form' | 'consent' | 'document' | 'context'
+  kind: 'form' | 'consent' | 'document' | 'context' | 'subsidy'
   target: string
   label: string
   message: string
-  goto: 'form1' | 'consent' | 'upload'
+  goto: 'form1' | 'consent' | 'upload' | 'subsidy'
 }
 
 export interface FinalCheck {
   application_no: string
+  program_code: string
   program_name: string
   allows_supplement: boolean
   supplement_days: number | null
+  selection: 'scored' | 'first_come'
+  first_come: FirstComeInfo | null
+  subsidy: SubsidyEstimate | null
   status: string
   can_submit: boolean
   already_submitted: boolean
@@ -147,6 +258,9 @@ export interface SubmitResult {
   status: string
   message: string
   next_steps: string[]
+  first_come: FirstComeInfo | null
+  supplement: SupplementInfo | null
+  subsidy: SubsidyEstimate | null
   notice: string
 }
 
@@ -158,11 +272,15 @@ export interface SubmitResult {
  */
 export interface ApplicationStatus {
   application_no: string
+  program_code: string
   program_name: string
   status: string
   submitted_at: string | null
   progress: { label: string; state: 'done' | 'current' | 'todo' }[]
   result_notice: string
+  first_come: FirstComeInfo | null
+  supplement: SupplementInfo | null
+  subsidy: SubsidyEstimate | null
   documents: UploadedDocument[]
   consents: {
     consent_type: string
@@ -261,6 +379,17 @@ export function uploadMerged(id: number, file: File) {
 export const deleteDocument = (id: number, documentId: number) =>
   json<{ deleted: string }>(`/api/applications/${id}/documents/${documentId}`, {
     method: 'DELETE',
+  })
+
+/** 취업지원패키지 지원 항목 — 저장된 선택과 예상 지원금. */
+export const fetchSubsidyItems = (id: number) =>
+  json<SubsidyState>(`/api/applications/${id}/subsidy-items`)
+
+/** 고른 항목을 통째로 저장하고, 다시 계산된 지급액을 받는다. */
+export const saveSubsidyItems = (id: number, items: SubsidySelection[]) =>
+  json<SubsidyState>(`/api/applications/${id}/subsidy-items`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
   })
 
 export const fetchFinalCheck = (id: number) =>
@@ -377,6 +506,18 @@ export interface OfficerList {
   }
   columns: { key: string; label: string }[]
   quota: QuotaRow[]
+  /** 선착순 사업을 고른 경우의 접수 진행률. 점수제 사업에서는 null. */
+  first_come: {
+    program_code: string
+    program_name: string
+    quota: number
+    applied: number
+    selected: number
+    remaining: number
+    rate_percent: number
+    supplement_days: number | null
+    notice: string
+  } | null
   total: number
   page: number
   page_size: number
@@ -453,6 +594,12 @@ export interface ReviewDetailData {
     reasons: { stage: string; code: string; message: string; doc_type: string | null }[]
   }
   score_sheet: ScoreSheetData
+  /** 선발 방식. 선착순 사업에는 심사표가 없다. */
+  selection: 'scored' | 'first_come'
+  /** 취업패키지 항목별 지급 내역. 점수제 사업에서는 null. */
+  subsidy: SubsidyEstimate | null
+  /** 7일 보완 기한. 보완이 없는 사업이거나 보완 대상이 아니면 null. */
+  supplement: SupplementInfo | null
   documents: OfficerDocument[]
   eligibility: { key: string; label: string; ok: boolean; basis: string }[]
   exclusions: { label: string; answer: string; ok: boolean; source: string }[]

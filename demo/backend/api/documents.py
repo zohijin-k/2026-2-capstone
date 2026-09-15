@@ -21,6 +21,7 @@ from ..ocr import read_document, split_pdf_pages
 from ..ocr.base import OcrResult
 from ..rules.doc_check import check_document
 from ..rules.doc_types import DocType
+from ..rules.programs import get_program
 from ..rules.required_docs import (
     ACCEPTED_FORMATS,
     WORK_CATEGORIES,
@@ -68,6 +69,8 @@ def _requirement_dict(req: DocRequirement, uploaded: list[Document]) -> dict[str
     return {
         "slot_key": req.slot_key,
         "doc_type": str(req.doc_type),
+        "doc_type_choices": [str(d) for d in req.doc_type_choices],
+        "required_fields": req.required_fields,
         "label": req.label,
         "required": req.required,
         "upload": req.upload,
@@ -87,6 +90,7 @@ def _requirement_dict(req: DocRequirement, uploaded: list[Document]) -> dict[str
 
 def _checklist_response(app: Application) -> dict[str, Any]:
     checklist = _checklist(app)
+    program = get_program(app.program_code)
     uploaded = _list_documents(app.id or 0)
     items = [_requirement_dict(r, uploaded) for r in checklist]
     upload_items = [i for i in items if i["upload"]]
@@ -96,6 +100,19 @@ def _checklist_response(app: Application) -> dict[str, Any]:
         "context": app.doc_context_json or {},
         "work_categories": [str(c) for c in WORK_CATEGORIES],
         "accepted_formats": ACCEPTED_FORMATS,
+        # 화면이 사업 코드로 분기하지 않도록, 무엇을 물어야 하는지를 여기서 알려준다.
+        "program": {
+            "code": program.code,
+            "name": program.name,
+            "selection": program.selection,
+            "allows_supplement": program.allows_supplement,
+            "supplement_days": program.supplement_days,
+            "document_cutoff": program.document_cutoff.isoformat(),
+            #: 근로확인서류가 있는 사업에서만 근로유형을 묻는다.
+            "asks_work_category": program.has_work_requirement,
+            #: 지원 항목을 먼저 골라야 추가서류가 생기는 사업인가.
+            "has_subsidy_items": program.has_subsidy_items,
+        },
         "items": items,
         "upload_total": len(upload_items),
         "upload_done": len(done),
@@ -316,7 +333,7 @@ async def _upload_merged(
             for candidate in checklist:
                 if (
                     candidate.upload
-                    and candidate.doc_type == ocr.detected_doc_type
+                    and candidate.accepts(ocr.detected_doc_type)
                     and candidate.slot_key not in taken
                 ):
                     req = candidate

@@ -87,6 +87,26 @@ class Document(SQLModel, table=True):
     uploaded_at: datetime = Field(default_factory=datetime.now)
 
 
+class SubsidyItem(SQLModel, table=True):
+    """취업지원패키지에서 고른 지원 항목 1회차.
+
+    항목별 복수 신청이 가능하므로(사업계획서 "복수선택가능") 회차마다 한 행이다.
+    `granted_amount`는 `rules/subsidy.py`가 계산한 실지급액이고, 계산 근거는
+    저장하지 않는다 — 한도가 바뀌면 근거 문장도 다시 계산돼야 하기 때문이다.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_id: int = Field(index=True, foreign_key="application.id")
+    #: interview | suit | photo | certificate
+    item_type: str
+    #: 1-based 회차.
+    count_index: int
+    #: 결제영수증 금액(원). 정액 항목(면접비)은 None.
+    receipt_amount: Optional[int] = None
+    granted_amount: int = 0
+    created_at: datetime = Field(default_factory=datetime.now)
+
+
 class Review(SQLModel, table=True):
     """제출 1건의 심사 결과.
 
@@ -113,6 +133,9 @@ class Review(SQLModel, table=True):
     review_payload_json: dict[str, Any] = Field(
         default_factory=dict, sa_column=Column(JSON)
     )
+    #: 서류 보완 기한. 보완이 허용되는 사업(취업패키지 7일)에서만 채워진다.
+    #: 두배적금은 보완 자체가 없으므로 항상 None이다.
+    supplement_deadline: Optional[datetime] = None
     #: 담당자 판단 — 여기부터는 officer 태스크가 채운다.
     officer_role: Optional[str] = None
     officer_decision: Optional[str] = None

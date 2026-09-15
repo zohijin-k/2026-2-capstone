@@ -12,7 +12,8 @@
 채점 근거가 들어가지 않는다 — 전부 `review` 테이블에만 남아 담당자 화면으로 간다.
 """
 
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -36,9 +37,10 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
-from ..rules.programs import DOUBLE_SAVINGS, get_program
+from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
-from ..rules.scoring import score_application
+from ..rules.scoring import ScoreSheet, score_application
+from ..rules.subsidy import get_limit
 from .common import (
     checklist_for,
     document_dict,
@@ -46,33 +48,50 @@ from .common import (
     list_consents,
     list_documents,
     load_application,
+    subsidy_estimate,
+    subsidy_rows,
 )
 
 router = APIRouter(prefix="/api/applications", tags=["review"])
 
-#: 마이페이지 진행 표시 5단계 (계획서 3.1절 [7]).
+#: 마이페이지 진행 표시 5단계 (계획서 3.1절 [7]). 두배적금의 선발절차다.
 PROGRESS_STEPS = ["접수", "서류검토", "자격심사", "선정심사", "결과발표"]
 
-#: 서식1에서 비어 있으면 제출할 수 없는 항목. 라벨은 서식 원문 표기를 쓴다.
-REQUIRED_FORM1_FIELDS: list[tuple[str, str]] = [
-    ("name", "신청자 이름"),
-    ("birth", "생년월일"),
-    ("address", "주소"),
-    ("mobile", "연락처(휴대전화)"),
-    ("transferIn", "전북특별자치도 최종 전입일"),
-    ("householdSize", "가구원 수"),
-    ("employedAt", "현 직장 취업일"),
-    ("bankName", "입금 받을 계좌 — 은행명"),
-    ("accountNo", "입금 받을 계좌 — 계좌번호"),
+#: 사업별 진행 단계. 취업패키지는 사업계획서 「3. 추진체계」를 그대로 따른다
+#: (접수 → 서류검토 → 지원대상자 및 보완 안내(1차) → 보완서류 검토 → 지원금 지급).
+PROGRESS_STEPS_BY_PROGRAM: dict[str, list[str]] = {
+    DOUBLE_SAVINGS: PROGRESS_STEPS,
+    JOB_PACKAGE: ["접수", "서류검토", "지원대상자·보완 안내", "보완서류 검토", "지원금 지급"],
+}
+
+NEXT_STEPS_DEFAULT = [
+    "읍·면·동에서 구비서류 완비 여부를 확인합니다.",
+    "자격요건(소득·거주·근로·연령)과 제외대상을 확인합니다.",
+    "시군이 심사표를 취합해 도에 제출하고, 도·청년허브센터가 최종 선정합니다.",
 ]
 
-#: 동의 종류 → 서식 표기.
+#: 제출 직후 안내하는 다음 절차. 사업의 추진체계가 그대로 들어간다.
+NEXT_STEPS: dict[str, list[str]] = {
+    DOUBLE_SAVINGS: NEXT_STEPS_DEFAULT,
+    JOB_PACKAGE: [
+        "전북청년허브센터가 항목별 제출서류를 검토합니다.",
+        "선착순에 따라 지원대상자를 안내하고, 서류가 미비하면 7일 내 보완을 안내합니다.",
+        "미보완 시 지원대상에서 제외되고 후순위자가 선정됩니다.",
+        "보완서류 검토 후 최종 지원대상자를 안내하고, 월별 취합해 10일 내 본인 명의 계좌로 지급합니다.",
+    ],
+}
+
+#: 동의 종류 → 서식 표기. 어느 동의를 받아야 하는지는 사업이 정한다
+#: (`ProgramConfig.consent_types`) — 취업패키지에는 서식5가 없다.
 CONSENT_LABELS = {
     "privacy": "서식3 개인정보 수집·이용 동의",
     "unique_id": "서식3 고유식별정보 수집·이용 동의",
     "third_party": "서식4 개인(신용)정보 제3자 제공 동의",
     "admin_info": "서식5 행정정보 공동이용 사전동의",
 }
+
+#: 년·월·일 3분할로 받는 입력값. 요약에서 ISO 날짜로 합쳐 보여준다.
+DATE_FIELDS = {"birth", "transferIn", "employedAt"}
 
 
 def _has_value(value: Any) -> bool:
@@ -89,9 +108,10 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
     사유만 나열하면 신청자는 화면을 처음부터 다시 훑는다. `goto`가 그걸 없앤다.
     """
     items: list[dict[str, Any]] = []
+    program = get_program(app.program_code)
     form1 = app.form1_json or {}
 
-    for key, label in REQUIRED_FORM1_FIELDS:
+    for key, label in program.required_form_fields:
         if not _has_value(form1.get(key)):
             items.append(
                 {
@@ -103,8 +123,39 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
                 }
             )
 
+    # 지원 항목을 고르는 사업은 항목 선택이 곧 신청 내용이다. 하나도 고르지
+    # 않았으면 제출할 것이 없다.
+    if program.has_subsidy_items:
+        rows = subsidy_rows(app.id or 0)
+        if not rows:
+            items.append(
+                {
+                    "kind": "subsidy",
+                    "target": "subsidy_items",
+                    "label": "지원 항목",
+                    "message": "지원받을 항목을 최소 1개 이상 선택해 주세요.",
+                    "goto": "subsidy",
+                }
+            )
+        for row in rows:
+            limit = get_limit(row.item_type)
+            if limit.actual_cost and not row.receipt_amount:
+                items.append(
+                    {
+                        "kind": "subsidy",
+                        "target": row.item_type,
+                        "label": f"{limit.label} {row.count_index}회차",
+                        "message": (
+                            f"{limit.label} {row.count_index}회차의 결제영수증 금액을 "
+                            "입력해야 지급액이 확정됩니다."
+                        ),
+                        "goto": "subsidy",
+                    }
+                )
+
     agreed = {c.consent_type for c in list_consents(app.id or 0) if c.agreed}
-    for consent_type, label in CONSENT_LABELS.items():
+    for consent_type in program.consent_types:
+        label = CONSENT_LABELS.get(consent_type, consent_type)
         if consent_type not in agreed:
             items.append(
                 {
@@ -146,7 +197,11 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
                 }
             )
 
-    if not (app.doc_context_json or {}).get("work_category"):
+    # 근로확인서류가 있는 사업에서만 근로유형을 묻는다. 취업패키지는 근로요건이
+    # 없으므로 이 항목 자체가 없다.
+    if program.has_work_requirement and not (app.doc_context_json or {}).get(
+        "work_category"
+    ):
         items.append(
             {
                 "kind": "context",
@@ -189,33 +244,133 @@ def _warnings(app: Application, documents: list[Any]) -> list[str]:
 
 
 def _form_summary(app: Application) -> list[dict[str, str]]:
-    """최종 확인 화면에 그대로 뿌리는 입력값 요약. 점수와 무관한 값만 담는다."""
+    """최종 확인 화면에 그대로 뿌리는 입력값 요약. 점수와 무관한 값만 담는다.
+
+    항목과 순서는 사업 설정(`summary_fields`)에서 나온다. 취업패키지는 거주기간·
+    가구원수·근로사항을 아예 묻지 않으므로 요약에도 뜨지 않는다.
+    """
+    program = get_program(app.program_code)
     form1 = app.form1_json or {}
 
-    def ymd(key: str) -> str:
-        parsed = parse_ymd(form1.get(key))
-        return parsed.isoformat() if parsed else ""
+    def value_of(key: str) -> str:
+        if key == "account":
+            return " ".join(
+                str(form1.get(k) or "")
+                for k in ("bankName", "accountNo", "accountHolder")
+            ).strip()
+        if key in DATE_FIELDS:
+            parsed = parse_ymd(form1.get(key))
+            return parsed.isoformat() if parsed else ""
+        return str(form1.get(key) or "")
 
     return [
-        {"label": "신청자 이름", "value": str(form1.get("name") or "")},
-        {"label": "생년월일", "value": ymd("birth")},
-        {"label": "성별", "value": str(form1.get("gender") or "")},
-        {"label": "주소", "value": str(form1.get("address") or "")},
-        {"label": "연락처", "value": str(form1.get("mobile") or "")},
-        {"label": "최종 전입일", "value": ymd("transferIn")},
-        {"label": "가구 특성", "value": str(form1.get("householdType") or "")},
-        {"label": "가구원 수", "value": str(form1.get("householdSize") or "")},
-        {"label": "근로유형", "value": str(form1.get("workType") or "")},
-        {"label": "현 직장 취업일", "value": ymd("employedAt")},
-        {"label": "근무처", "value": str(form1.get("workplaceName") or "")},
-        {"label": "저축목적", "value": str(form1.get("savingPurpose") or "")},
-        {
-            "label": "입금 받을 계좌",
-            "value": " ".join(
-                str(form1.get(k) or "") for k in ("bankName", "accountNo", "accountHolder")
-            ).strip(),
-        },
+        {"label": label, "value": value_of(key)}
+        for key, label in program.summary_fields
     ]
+
+
+def _queue_position(app: Application) -> int:
+    """선착순 접수 순번.
+
+    같은 사업에서 이 건보다 먼저(또는 같은 시각에) 제출된 건의 수다. 아직 제출
+    전이면 '지금 내면 몇 번째인가'를 보여주기 위해 다음 순번을 돌려준다.
+    """
+    with get_session() as s:
+        rows = list(
+            s.exec(
+                select(Application)
+                .where(Application.program_code == app.program_code)
+                .where(Application.status != STATUS_DRAFT)
+            ).all()
+        )
+    submitted = [r for r in rows if r.submitted_at is not None]
+    if app.submitted_at is None:
+        return len(submitted) + 1
+    return sum(
+        1
+        for r in submitted
+        if r.submitted_at is not None and r.submitted_at <= app.submitted_at
+    )
+
+
+def _first_come(app: Application, program: ProgramConfig) -> dict[str, Any] | None:
+    """선착순 안내 (R6).
+
+    두배적금은 선착순이 아니므로 None이다. 취업패키지는 "예산 소진 시 조기 마감,
+    총 900건"이라 접수 순번이 곧 선정 순서다.
+    """
+    if not program.is_first_come:
+        return None
+    position = _queue_position(app)
+    quota = program.quota_total
+    remaining = max(0, quota - position) if quota is not None else None
+    return {
+        "enabled": True,
+        "position": position,
+        "quota": quota,
+        "remaining": remaining,
+        "submitted": app.submitted_at is not None,
+        "notice": (
+            f"이 사업은 선착순입니다. 접수 순번 {position}번 / 총 지원규모 "
+            f"{quota:,}건 (예산 소진 시 조기 마감)"
+            if quota is not None
+            else "이 사업은 선착순입니다. 예산 소진 시 조기 마감됩니다."
+        ),
+    }
+
+
+def _supplement(
+    app: Application, program: ProgramConfig, review: Review | None
+) -> dict[str, Any] | None:
+    """서류 보완 안내와 기한 카운트다운 (E12).
+
+    두배적금은 보완 자체가 없어 None이다. 취업패키지는 "7일 내 서류 보완안내 /
+    미보완시 지원대상자 제외 및 후순위자 선정"이므로, 남은 일수를 숫자로 보여줘야
+    한다. 기한이 지나면 후순위자에게 자리가 넘어간다는 사실도 같이 적는다.
+    """
+    if not program.allows_supplement:
+        return None
+    deadline = review.supplement_deadline if review else None
+    if deadline is None:
+        return None
+
+    seconds = (deadline - datetime.now()).total_seconds()
+    expired = seconds <= 0
+    days_left = max(0, math.ceil(seconds / 86400))
+    hours_left = max(0, int(seconds // 3600))
+
+    documents = list_documents(app.id or 0)
+    by_slot = {d.slot_key: d for d in documents}
+    targets: list[dict[str, str]] = []
+    for req in upload_slots(checklist_for(app)):
+        doc = by_slot.get(req.slot_key)
+        if doc is None and req.required:
+            targets.append({"label": req.label, "reason": "아직 올리지 않았습니다."})
+        elif doc is not None and doc.stage1_status != "PASS":
+            reason = (doc.findings_json or [{}])[0].get("message", "확인이 필요합니다.")
+            targets.append({"label": req.label, "reason": reason})
+
+    return {
+        "days": program.supplement_days,
+        "deadline": deadline.isoformat(timespec="seconds"),
+        "days_left": days_left,
+        "hours_left": hours_left,
+        "expired": expired,
+        "targets": targets,
+        "notice": (
+            "보완 기한이 지났습니다. 미보완 시 후순위자가 선정됩니다."
+            if expired
+            else f"{program.supplement_days}일 내에 보완하지 않으면 지원대상에서 제외되고 "
+            "후순위자가 선정됩니다."
+        ),
+    }
+
+
+def _load_review(application_id: int) -> Review | None:
+    with get_session() as s:
+        return s.exec(
+            select(Review).where(Review.application_id == application_id)
+        ).first()
 
 
 @router.get("/{application_id}/final-check")
@@ -227,9 +382,15 @@ def final_check(application_id: int) -> dict[str, Any]:
     blockers = _blockers(app)
     return {
         "application_no": app.application_no,
+        "program_code": program.code,
         "program_name": program.name,
         "allows_supplement": program.allows_supplement,
         "supplement_days": program.supplement_days,
+        "selection": program.selection,
+        "first_come": _first_come(app, program),
+        "subsidy": (
+            subsidy_estimate(application_id) if program.has_subsidy_items else None
+        ),
         "status": app.status,
         "can_submit": not blockers and app.status == STATUS_DRAFT,
         "already_submitted": app.status != STATUS_DRAFT,
@@ -262,12 +423,17 @@ def _run_review(app: Application) -> Review:
         )
 
     # --- 심사표 채점 (엔진에 점수 기능이 없다 — E9) ---
+    #
+    # 점수제 사업만 채점한다. 취업패키지는 **선착순**이라 심사표 자체가 없고,
+    # 억지로 0점짜리 심사표를 만들면 담당자 목록에서 최하위로 줄을 서게 된다.
     facts = build_facts(form1, rows)
-    sheet = score_application(
-        facts,
-        announcement_date=program.announcement_date,
-        age_basis_date=program.age_basis_date,
-    )
+    sheet: ScoreSheet | None = None
+    if program.selection == "scored":
+        sheet = score_application(
+            facts,
+            announcement_date=program.announcement_date,
+            age_basis_date=program.age_basis_date,
+        )
 
     # --- 엔진 파이프라인 ---
     applicant = to_engine_applicant(
@@ -275,10 +441,12 @@ def _run_review(app: Application) -> Review:
         name=str(form1.get("name") or ""),
         birth_date=facts.birth_date,
         residence_region=extract_region(
-            str(form1.get("address") or ""), list(program.quota_by_region or {})
+            str(form1.get("address") or ""), program.target_regions
         ),
         program=program,
-        income_percent=sheet.income_percent,
+        # 소득요건이 없는 사업은 소득값을 넘기지 않는다. 엔진 2단계가 소득분위
+        # 검사를 건너뛴다.
+        income_percent=sheet.income_percent if sheet else None,
     )
     result = run_pipeline(applicant, to_engine_documents(rows))
     payload = inject_file_refs(result.review_payload, rows)
@@ -306,14 +474,21 @@ def _run_review(app: Application) -> Review:
         }
         inject_file_refs(payload, rows)
 
+    # 보완이 허용되는 사업에서 미비가 남은 채로 접수되면, 그 순간부터 기한이 돈다.
+    # (추진체계: 지원대상자 및 서류보완 안내(1차) → 7일 내 서류 보완안내)
+    supplement_deadline: datetime | None = None
+    if program.allows_supplement and result.status.value != "PASS":
+        supplement_deadline = datetime.now() + timedelta(days=program.supplement_days or 0)
+
     return Review(
         application_id=app.id or 0,
         final_status=result.status.value,
         stage1_status=result.stage1.status.value,
         stage2_status=result.stage2.status.value if result.stage2 else None,
-        score_json=sheet.as_dict(),
-        total_score=sheet.total,
-        tiebreak_json=sheet.tiebreak,
+        score_json=sheet.as_dict() if sheet else {},
+        total_score=sheet.total if sheet else None,
+        tiebreak_json=sheet.tiebreak if sheet else [],
+        supplement_deadline=supplement_deadline,
         review_payload_json=payload,
     )
 
@@ -355,20 +530,23 @@ def submit(application_id: int) -> dict[str, Any]:
         submitted_at = row.submitted_at
 
     program = get_program(app.program_code)
+    app = load_application(application_id)
+    saved = _load_review(application_id)
     return {
         "application_no": app.application_no,
         "submitted_at": submitted_at.isoformat(timespec="seconds") if submitted_at else None,
         "status": STATUS_SUBMITTED,
         "message": "신청이 접수되었습니다.",
-        "next_steps": [
-            "읍·면·동에서 구비서류 완비 여부를 확인합니다.",
-            "자격요건(소득·거주·근로·연령)과 제외대상을 확인합니다.",
-            "시군이 심사표를 취합해 도에 제출하고, 도·청년허브센터가 최종 선정합니다.",
-        ],
+        "next_steps": list(NEXT_STEPS.get(program.code, NEXT_STEPS_DEFAULT)),
+        "first_come": _first_come(app, program),
+        "supplement": _supplement(app, program, saved),
+        "subsidy": (
+            subsidy_estimate(application_id) if program.has_subsidy_items else None
+        ),
         "notice": (
-            "평가결과(심사 점수)는 공개하지 않습니다. 최종 선정 여부만 결과발표 시 안내됩니다."
-            if program.code == DOUBLE_SAVINGS
-            else "접수 순서대로 심사합니다."
+            "선착순 사업입니다. 접수 순서대로 심사하며 예산 소진 시 조기 마감됩니다."
+            if program.is_first_come
+            else "평가결과(심사 점수)는 공개하지 않습니다. 최종 선정 여부만 결과발표 시 안내됩니다."
         ),
     }
 
@@ -409,8 +587,10 @@ def status(application_id: int) -> dict[str, Any]:
         for c in list_consents(application_id)
     ]
 
+    steps = PROGRESS_STEPS_BY_PROGRAM.get(program.code, PROGRESS_STEPS)
     return {
         "application_no": app.application_no,
+        "program_code": program.code,
         "program_name": program.name,
         "status": app.status,
         "submitted_at": (
@@ -418,11 +598,20 @@ def status(application_id: int) -> dict[str, Any]:
         ),
         "progress": [
             {"label": label, "state": _step_state(i, current)}
-            for i, label in enumerate(PROGRESS_STEPS)
+            for i, label in enumerate(steps)
         ],
         "result_notice": (
-            "평가결과는 공개하지 않습니다. 심사 점수는 안내되지 않으며, "
+            "선착순 사업입니다. 접수 순서대로 심사하며 예산 소진 시 조기 마감되고, "
+            "선정 결과는 문자·전화로 개별 안내됩니다."
+            if program.is_first_come
+            else "평가결과는 공개하지 않습니다. 심사 점수는 안내되지 않으며, "
             "최종 선정 여부만 결과발표 시 확인할 수 있습니다."
+        ),
+        # 선착순 순번과 보완 기한. 두배적금은 둘 다 None이다(점수제·보완 불가).
+        "first_come": _first_come(app, program),
+        "supplement": _supplement(app, program, review),
+        "subsidy": (
+            subsidy_estimate(application_id) if program.has_subsidy_items else None
         ),
         "documents": [document_dict(d) for d in documents],
         "consents": consents,

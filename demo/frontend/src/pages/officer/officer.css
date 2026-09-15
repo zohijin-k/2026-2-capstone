@@ -111,6 +111,99 @@
   font-size: 11.5px;
 }
 
+/* ---- 선착순 사업 진행률 (취업지원패키지) ---- */
+
+.fcfs {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #b06000;
+  background: #fffaf2;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  font-size: 12px;
+}
+
+.fcfs__name {
+  font-weight: 700;
+}
+
+.fcfs__count {
+  color: #b06000;
+  font-weight: 700;
+}
+
+.fcfs__bar {
+  display: block;
+  width: 180px;
+  height: 6px;
+  background: #f0e2d2;
+}
+
+.fcfs__bar i {
+  display: block;
+  height: 100%;
+  background: #b06000;
+}
+
+.fcfs__meta {
+  color: var(--muted);
+}
+
+.fcfs__notice {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+/* ---- 보완 기한 · 지원 항목 (담당자 상세) ---- */
+
+.supplement {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border: 1px solid #b06000;
+  background: #fffaf2;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
+.supplement--over {
+  border-color: #c00;
+  background: #fff5f5;
+}
+
+.supplement__days {
+  font-size: 20px;
+  font-weight: 700;
+  color: #b06000;
+  font-variant-numeric: tabular-nums;
+}
+
+.supplement--over .supplement__days {
+  color: #c00;
+}
+
+.supplement__deadline {
+  font-size: 12px;
+}
+
+.subsidy-view {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.subsidy-view th,
+.subsidy-view td {
+  border: 1px solid #ddd;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.subsidy-view thead th {
+  background: #f2f2f2;
+}
+
 /* ---- 필터 ---- */
 
 .filters {

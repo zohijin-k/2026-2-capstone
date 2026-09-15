@@ -36,6 +36,26 @@
   font-size: 13px;
 }
 
+/* 선착순 사업의 접수 순번 안내. 보완 불가 경고와 같은 자리에 온다. */
+.fcheck__queue {
+  border: 2px solid #b06000;
+  background: #fffaf2;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+}
+
+.fcheck__queue h3 {
+  color: #b06000;
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+
+.fcheck__queue p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .fcheck__warn {
   border-left: 3px solid #b8860b;
   background: #fffaf0;

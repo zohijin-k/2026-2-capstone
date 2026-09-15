@@ -178,13 +178,78 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
             )}
           </Panel>
 
-          <Panel title="심사표 (서식6)">
-            <ScoreSheet6
-              sheet={detail.score_sheet}
-              activeKey={focus?.scoreKey ?? null}
-              onSelect={focusScoreItem}
-            />
-          </Panel>
+          {/* 선착순 사업에는 심사표가 없다. 대신 보완 기한과 항목별 지급 내역이
+              판단 근거다. 화면은 사업 코드가 아니라 `selection` 값으로 갈린다. */}
+          {detail.selection === 'scored' && (
+            <Panel title="심사표 (서식6)">
+              <ScoreSheet6
+                sheet={detail.score_sheet}
+                activeKey={focus?.scoreKey ?? null}
+                onSelect={focusScoreItem}
+              />
+            </Panel>
+          )}
+
+          {detail.supplement && (
+            <Panel title={`서류 보완 기한 (${detail.supplement.days}일)`}>
+              <div
+                className={
+                  detail.supplement.expired ? 'supplement supplement--over' : 'supplement'
+                }
+              >
+                <span className="supplement__days">
+                  {detail.supplement.expired
+                    ? '기한 종료'
+                    : `D-${detail.supplement.days_left}`}
+                </span>
+                <span className="supplement__deadline">
+                  {detail.supplement.deadline.replace('T', ' ')}까지
+                </span>
+              </div>
+              <p className="muted">{detail.supplement.notice}</p>
+            </Panel>
+          )}
+
+          {detail.subsidy && detail.subsidy.lines.length > 0 && (
+            <Panel title="지원 항목별 지급 내역">
+              <table className="subsidy-view">
+                <thead>
+                  <tr>
+                    <th>항목</th>
+                    <th>영수증</th>
+                    <th>지급액</th>
+                    <th>근거</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detail.subsidy.lines.map((line) => (
+                    <tr key={`${line.item_type}-${line.index}`}>
+                      <td>{line.label}</td>
+                      <td>
+                        {line.actual_cost
+                          ? line.receipt_amount === null
+                            ? '미입력'
+                            : `${line.receipt_amount.toLocaleString('ko-KR')}원`
+                          : '불요'}
+                      </td>
+                      <td>
+                        <strong>{line.granted_amount.toLocaleString('ko-KR')}원</strong>
+                      </td>
+                      <td className="muted">{line.calculation}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <th colSpan={2}>합계</th>
+                    <td colSpan={2}>
+                      <strong>
+                        {detail.subsidy.total_granted.toLocaleString('ko-KR')}원
+                      </strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </Panel>
+          )}
 
           <Panel title="자격요건 체크리스트">
             <ul className="checks">

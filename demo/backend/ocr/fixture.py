@@ -57,6 +57,67 @@ def _abstract(
     )
 
 
+def _interview_confirmation(company: str, interview_date: date) -> OcrResult:
+    """면접확인서 — 면접비·정장비의 근거 서류. 영수증 없이 이것만으로 정액 지급된다."""
+    return OcrResult(
+        detected_doc_type=DocType.INTERVIEW_CONFIRMATION,
+        confidence=0.92,
+        image_quality=0.9,
+        issue_date=interview_date,
+        fields={
+            "성명": "홍길동",
+            "면접기업": company,
+            "면접일": interview_date.isoformat(),
+            "발급일": interview_date.isoformat(),
+        },
+        tier=NAME,
+    )
+
+
+def _receipt(amount: int, item: str, paid_at: date) -> OcrResult:
+    """결제영수증 — 실비 항목의 지급액 근거. 금액이 한도와 비교된다."""
+    return OcrResult(
+        detected_doc_type=DocType.PAYMENT_RECEIPT,
+        confidence=0.91,
+        image_quality=0.89,
+        issue_date=paid_at,
+        fields={
+            "결제금액": str(amount),
+            "품목": item,
+            "결제일": paid_at.isoformat(),
+            "발급일": paid_at.isoformat(),
+        },
+        bboxes={"결제금액": BBox(0, 300.0, 280.0, 430.0, 296.0)},
+        tier=NAME,
+    )
+
+
+def _exam_document(
+    *,
+    doc_type: DocType = DocType.EXAM_CONFIRMATION,
+    exam_date: date | None,
+) -> OcrResult:
+    """응시확인서·성적표.
+
+    `exam_date=None`이면 응시일이 빠진 서류다. 사업계획서가 "(응시일 표기 필수)"로
+    못 박은 항목이라, 체크리스트의 `required_fields` 검사에서 부적합으로 떨어진다.
+    """
+    fields = {"성명": "홍길동", "자격종목": "정보처리기사", "발급일": "2026-03-23"}
+    bboxes: dict[str, BBox] = {}
+    if exam_date is not None:
+        fields["응시일"] = exam_date.isoformat()
+        bboxes["응시일"] = BBox(0, 120.0, 300.0, 280.0, 316.0)
+    return OcrResult(
+        detected_doc_type=doc_type,
+        confidence=0.92,
+        image_quality=0.9,
+        issue_date=date(2026, 3, 23),
+        fields=fields,
+        bboxes=bboxes,
+        tier=NAME,
+    )
+
+
 #: 시연 시나리오 → 고정 판독 결과.
 #: 키는 파일명(확장자 제외). 값 옆 주석의 S번호는 `implement.md` 시연 시나리오다.
 FIXTURES: dict[str, OcrResult] = {
@@ -137,6 +198,32 @@ FIXTURES: dict[str, OcrResult] = {
     "S8_주민등록초본_저해상도": _abstract(confidence=0.6, image_quality=0.72),
     # 공고문 미비 예시 ② 초본에 과거 주소이력 미포함
     "S11_주민등록초본_주소이력없음": _abstract(address_history="미포함"),
+    # ---- S10 취업지원패키지: 면접비 2회 + 정장비 1회 + 자격증 1회 복수 신청 ----
+    # 취업패키지는 서류 인정일이 2026-01-01이라 발급일이 두배적금과 다르다.
+    "S10_주민등록초본_취업패키지": _abstract(issue_date=date(2026, 4, 7)),
+    "S10_면접확인서_1회차": _interview_confirmation("(주)전북기업", date(2026, 4, 2)),
+    "S10_면접확인서_2회차": _interview_confirmation("전북테크(주)", date(2026, 4, 3)),
+    "S10_면접확인서_정장": _interview_confirmation("(주)전북기업", date(2026, 4, 2)),
+    # 정장 대여 70,000원 → 한도 50,000원 지급 (R6.2 게이트)
+    "S10_결제영수증_정장70000": _receipt(70_000, "정장 대여", date(2026, 4, 1)),
+    # 정장 대여 35,000원 → 35,000원 그대로 지급
+    "S10_결제영수증_정장35000": _receipt(35_000, "정장 대여", date(2026, 4, 1)),
+    "S10_결제영수증_응시료43000": _receipt(43_000, "자격증 응시료", date(2026, 3, 20)),
+    "S10_결제영수증_사진18000": _receipt(18_000, "증명사진 촬영", date(2026, 3, 25)),
+    "S10_응시확인서_적합": _exam_document(exam_date=date(2026, 3, 22)),
+    # 응시일이 없는 응시확인서 — 사업계획서 "(응시일 표기 필수)" 위반
+    "S10_응시확인서_응시일없음": _exam_document(exam_date=None),
+    "S10_성적표_적합": _exam_document(
+        doc_type=DocType.EXAM_TRANSCRIPT, exam_date=date(2026, 3, 22)
+    ),
+    "S10_면접용사진사본_적합": OcrResult(
+        detected_doc_type=DocType.ID_PHOTO_COPY,
+        confidence=0.9,
+        image_quality=0.9,
+        issue_date=date(2026, 3, 25),
+        fields={"성명": "홍길동", "용도": "면접용 증명사진"},
+        tier=NAME,
+    ),
     # 공고문 미비 예시 ⑤ 모니터 화면 캡처
     "S12_주민등록초본_화면캡처": OcrResult(
         detected_doc_type=DocType.RESIDENT_ABSTRACT,

@@ -61,6 +61,16 @@ _PREMIUM_RE = re.compile(
 )
 #: 초본의 과거 주소이력 블록.
 _ADDRESS_HISTORY_HINTS = ("주소변동", "변동사유", "세대주및관계", "번지")
+#: 응시확인서·성적표의 응시일. 취업패키지 사업계획서가 "응시일 표기 필수"를 명문화했다.
+_EXAM_DATE_RE = re.compile(
+    r"(?:응시일자?|시험일자?|검정일자?|시험시행일)\s*[:：]?\s*"
+    r"(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?"
+)
+#: 결제영수증의 금액. 실비 정산이 이 값과 한도를 비교한다.
+_PAYMENT_RE = re.compile(
+    r"(?:결제금액|승인금액|총결제금액|받은금액|판매금액|합계)\s*[:：]?\s*"
+    r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,})"
+)
 
 #: 흔한 모니터 해상도. 화면 캡처 휴리스틱에 쓴다.
 SCREEN_RESOLUTIONS = [
@@ -117,6 +127,18 @@ def extract_household_size(text: str) -> str | None:
 def extract_premium(text: str) -> str | None:
     """건강보험료 고지금액. 실납부액이 아니라 고지금액이 심사 기준이다."""
     m = _PREMIUM_RE.search(_squeeze(text))
+    return m.group(1).replace(",", "") if m else None
+
+
+def extract_exam_date(text: str) -> date | None:
+    """응시확인서·성적표의 응시일. 없으면 서류로 인정되지 않는다."""
+    m = _EXAM_DATE_RE.search(_squeeze(text))
+    return _to_date(m.groups()) if m else None  # type: ignore[arg-type]
+
+
+def extract_payment_amount(text: str) -> str | None:
+    """결제영수증 금액. 실비 한도 비교의 근거값이다."""
+    m = _PAYMENT_RE.search(_squeeze(text))
     return m.group(1).replace(",", "") if m else None
 
 
@@ -195,6 +217,24 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
 
     if doc_type is DocType.RESIDENT_ABSTRACT:
         fields["주소변동내역"] = "포함" if has_address_history(text) else "미포함"
+
+    # 취업지원패키지 추가서류. 응시일이 없으면 체크리스트의 `required_fields`
+    # 검사에서 부적합으로 떨어진다 — 사업계획서 "(응시일 표기 필수)".
+    if doc_type in (DocType.EXAM_CONFIRMATION, DocType.EXAM_TRANSCRIPT):
+        exam_date = extract_exam_date(text)
+        if exam_date:
+            fields["응시일"] = exam_date.isoformat()
+            box = _locate(page, f"{exam_date.year}", page_index) if page else None
+            if box:
+                bboxes["응시일"] = box
+
+    if doc_type is DocType.PAYMENT_RECEIPT:
+        amount = extract_payment_amount(text)
+        if amount:
+            fields["결제금액"] = amount
+            box = _locate(page, f"{int(amount):,}", page_index) if page else None
+            if box:
+                bboxes["결제금액"] = box
 
     # 서명란 감지: 텍스트 PDF에서는 "(서명 또는 인)" 문구 옆 서명 이미지 유무를
     # 판별할 수 없다. 서명이 필요한 서류(서식5)에서만 의미가 있으므로 None으로 둔다.

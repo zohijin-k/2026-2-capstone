@@ -146,6 +146,14 @@
   color: #444;
 }
 
+/* 서류에 반드시 찍혀 있어야 하는 항목 (응시확인서의 "응시일" 등). */
+.dslot__must {
+  margin: 2px 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #b06000;
+}
+
 .dslot__alt {
   margin: 2px 0;
   font-size: 12.5px;

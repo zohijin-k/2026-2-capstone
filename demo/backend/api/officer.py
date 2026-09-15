@@ -34,7 +34,7 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import extract_region, extract_town, parse_ymd
-from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS, get_program
+from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
 from ..rules.roles import (
     DECISION_APPROVE,
@@ -47,7 +47,13 @@ from ..rules.roles import (
     decision_label,
     get_role,
 )
-from .common import checklist_for, list_documents, load_application
+from ..rules.self_check import item_numbers
+from .common import (
+    checklist_for,
+    list_documents,
+    load_application,
+    subsidy_estimate,
+)
 
 router = APIRouter(prefix="/api/officer", tags=["officer"])
 
@@ -94,7 +100,7 @@ class Entry:
         form1 = app.form1_json or {}
         self.name = str(form1.get("name") or "")
         self.region = extract_region(
-            str(form1.get("address") or ""), list(program.quota_by_region or QUOTA)
+            str(form1.get("address") or ""), program.target_regions
         )
         self.town = extract_town(str(form1.get("address") or ""), self.region)
 
@@ -108,8 +114,11 @@ class Entry:
 
     @property
     def tiebreak(self) -> list[float]:
-        # 심사 결과가 없으면 맨 뒤로 보낸다.
-        return list(self.review.tiebreak_json or []) if self.review else [999.0]
+        # 심사 결과가 없거나 점수제가 아닌 사업(선착순)이면 맨 뒤로 보낸다.
+        # 점수순 목록에서 점수 없는 건이 앞줄을 차지하면 커트라인이 뒤틀린다.
+        if self.review is None:
+            return [999.0]
+        return list(self.review.tiebreak_json or []) or [999.0]
 
     @property
     def decision(self) -> str | None:
@@ -222,6 +231,39 @@ def _quota_rows(
             }
         )
     return rows
+
+
+def _first_come_summary(
+    entries: list[Entry], program_code: str | None
+) -> dict[str, Any] | None:
+    """선착순 사업의 접수 진행률 (C4 경계선 안의 배지).
+
+    시군별 정원 배지가 점수제 사업의 진행률이라면, 이쪽은 선착순 사업의
+    "총 900건 중 몇 건"이다. 사업 필터가 선착순 사업일 때만 낸다.
+    """
+    if not program_code:
+        return None
+    try:
+        program = get_program(program_code)
+    except ValueError:
+        return None
+    if not program.is_first_come:
+        return None
+
+    mine = [e for e in entries if e.app.program_code == program_code]
+    quota = program.quota_total or 0
+    applied = len(mine)
+    return {
+        "program_code": program.code,
+        "program_name": program.name,
+        "quota": quota,
+        "applied": applied,
+        "selected": sum(1 for e in mine if e.decision == DECISION_APPROVE),
+        "remaining": max(0, quota - applied),
+        "rate_percent": round(applied / quota * 100, 1) if quota else 0.0,
+        "supplement_days": program.supplement_days,
+        "notice": "선착순 접수이며 예산 소진 시 조기 마감됩니다.",
+    }
 
 
 # ---------------------------------------------------------------- 목록
@@ -397,6 +439,7 @@ def list_applications(
         },
         "columns": LIST_COLUMNS,
         "quota": quota,
+        "first_come": _first_come_summary(entries, program),
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -480,13 +523,22 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
     low, high = program.birth_range
     percent = score.get("income_percent")
 
+    #: 점수제 사업은 심사표 근거를, 선착순 사업은 신청서 입력값을 근거로 쓴다.
+    age_basis = items.get("age", {}).get("basis") or (
+        f"생년월일 {birth.isoformat()} · {program.age_basis_date.isoformat()} 기준"
+        if birth
+        else "생년월일을 확인할 수 없습니다."
+    )
+
     rows: list[dict[str, Any]] = [
         {
             "key": "residence",
             "label": "① 거주지 — 공고일 기준 전북특별자치도 주민등록",
             "ok": bool(entry.region),
             "basis": (
-                f"주소지 {entry.region} · {items.get('residence', {}).get('basis', '')}"
+                f"주소지 {entry.region} · {items.get('residence', {}).get('basis', '')}".strip(
+                    " ·"
+                )
                 if entry.region
                 else "주소에서 도내 시군을 확인하지 못했습니다."
             ),
@@ -495,15 +547,20 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
             "key": "age",
             "label": f"② 연령 — {program.age_basis_date.isoformat()} 기준 만 18~39세",
             "ok": bool(birth and low <= birth <= high),
-            "basis": items.get("age", {}).get("basis", "생년월일을 확인할 수 없습니다."),
-        },
-        {
-            "key": "work",
-            "label": "③ 근로 — 공고일 기준 계속 근로 중",
-            "ok": not items.get("work", {}).get("incomplete", True),
-            "basis": items.get("work", {}).get("basis", "근로기간을 확인할 수 없습니다."),
+            "basis": age_basis,
         },
     ]
+    # 근로요건이 있는 사업에서만 근로기간을 본다. 취업패키지의 자격요건은
+    # 사업계획서상 "나이, 거주지 등"이 전부다.
+    if program.has_work_requirement:
+        rows.append(
+            {
+                "key": "work",
+                "label": "③ 근로 — 공고일 기준 계속 근로 중",
+                "ok": not items.get("work", {}).get("incomplete", True),
+                "basis": items.get("work", {}).get("basis", "근로기간을 확인할 수 없습니다."),
+            }
+        )
     if program.has_income_requirement:
         rows.append(
             {
@@ -537,8 +594,12 @@ def _exclusions(entry: Entry) -> list[dict[str, Any]]:
     같은 자리를 채운다. 실연동 시 이 목록의 `source`만 바뀐다.
     """
     answers = entry.app.self_check_json or {}
+    asked = set(item_numbers(entry.app.program_code))
     rows: list[dict[str, Any]] = []
     for no, label in SELF_CHECK_EXCLUSION_ITEMS.items():
+        if int(no) not in asked:
+            # 취업패키지 자가진단은 나이·거주 2문항뿐이라 제외대상 문항이 없다.
+            continue
         answer = str(answers.get(no) or answers.get(int(no)) or "")
         rows.append(
             {
@@ -561,6 +622,33 @@ def _exclusions(entry: Entry) -> list[dict[str, Any]]:
             }
         )
     return rows
+
+
+def _supplement_view(
+    app: Application, program: ProgramConfig, review: Review | None
+) -> dict[str, Any] | None:
+    """담당자 화면의 보완 기한 카운트다운 (E12).
+
+    "7일 내 서류 보완안내 / 미보완시 지원대상자 제외 및 후순위자 선정"이 사업계획서
+    원문이다. 담당자가 이 건을 언제까지 붙들고 있어야 하는지가 숫자로 보여야 한다.
+    """
+    if not program.allows_supplement or review is None or review.supplement_deadline is None:
+        return None
+    deadline = review.supplement_deadline
+    seconds = (deadline - datetime.now()).total_seconds()
+    return {
+        "days": program.supplement_days,
+        "deadline": deadline.isoformat(timespec="seconds"),
+        "days_left": max(0, math.ceil(seconds / 86400)),
+        "hours_left": max(0, int(seconds // 3600)),
+        "expired": seconds <= 0,
+        "notice": (
+            "보완 기한이 지났습니다. 미보완 시 지원대상에서 제외하고 후순위자를 선정합니다."
+            if seconds <= 0
+            else f"{program.supplement_days}일 내 보완 안내 대상입니다. "
+            "미보완 시 후순위자로 교체됩니다."
+        ),
+    }
 
 
 @router.get("/applications/{application_id}")
@@ -623,6 +711,13 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
             "reasons": payload.get("reasons", []),
         },
         "score_sheet": score,
+        # 선발 방식이 갈리는 지점. 점수제는 심사표가, 선착순은 접수 순번과 보완
+        # 기한이 판단 근거다.
+        "selection": entry.program.selection,
+        "subsidy": (
+            subsidy_estimate(application_id) if entry.program.has_subsidy_items else None
+        ),
+        "supplement": _supplement_view(app, entry.program, review),
         "documents": documents,
         "eligibility": _eligibility(entry, items),
         "exclusions": _exclusions(entry),

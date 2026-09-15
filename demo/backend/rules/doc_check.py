@@ -22,6 +22,7 @@ from .required_docs import DocRequirement
 CODE_SCREEN_CAPTURE = "SCREEN_CAPTURE_SUSPECTED"
 CODE_MISSING_ADDRESS_HISTORY = "MISSING_ADDRESS_HISTORY"
 CODE_UNKNOWN_DOCUMENT_TYPE = "UNKNOWN_DOCUMENT_TYPE"
+CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -35,6 +36,7 @@ HOW_TO_FIX: dict[str, str] = {
     "MISSING_SIGNATURE": "서명란에 서명한 뒤 다시 올려 주세요.",
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
     CODE_MISSING_ADDRESS_HISTORY: "정부24에서 초본을 발급할 때 '과거의 주소 변동사항(최근 5년)' 포함을 체크해 다시 발급받아 주세요.",
+    CODE_MISSING_REQUIRED_FIELD: "{field}이(가) 표기된 서류로 다시 발급받아 올려 주세요. 발급 기관에 {field} 표기를 요청하시면 됩니다.",
     CODE_UNKNOWN_DOCUMENT_TYPE: "자동으로 서류 종류를 판별하지 못했습니다. 담당자가 직접 확인하므로 그대로 두셔도 되고, 더 선명한 파일이 있다면 교체해 주세요.",
 }
 
@@ -150,7 +152,9 @@ def check_document(
                     req,
                 )
             )
-        elif detected != req.doc_type:
+        elif not req.accepts(detected):
+            # 인정되는 서류가 여럿인 자리(응시확인서 또는 성적표)는 그중 아무것도
+            # 아닐 때만 오분류다.
             confusable = confusable_with(req.doc_type)
             extra = (
                 f" '{req.doc_type}'와 '{detected}'는 이름이 비슷하지만 다른 서류입니다."
@@ -179,6 +183,25 @@ def check_document(
                 req,
             )
         )
+
+    # 서류에 반드시 찍혀 있어야 하는 항목. 취업패키지 응시확인서·성적표의
+    # "응시일 표기 필수"가 여기로 들어온다. 사업별 하드코딩 없이 체크리스트가
+    # 요구한 필드만 본다.
+    #
+    # 서류 종류가 이미 틀렸다면 필드를 따지지 않는다. "엉뚱한 서류다 + 그 서류에
+    # 응시일이 없다"를 같이 띄우면 신청자는 무엇부터 고쳐야 할지 헷갈린다.
+    if not ocr.is_encrypted and req.accepts(ocr.detected_doc_type):
+        for name in req.required_fields:
+            if not str(ocr.fields.get(name) or "").strip():
+                findings.append(
+                    _finding(
+                        CODE_MISSING_REQUIRED_FIELD,
+                        f"'{req.label}'에서 {name}을(를) 찾지 못했습니다. "
+                        f"{name}이(가) 표기된 서류만 인정됩니다.",
+                        req,
+                        field=name,
+                    )
+                )
 
     if (
         req.doc_type is DocType.RESIDENT_ABSTRACT

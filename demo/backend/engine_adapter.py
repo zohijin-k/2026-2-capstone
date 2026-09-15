@@ -48,6 +48,19 @@ def apply_runtime_overrides() -> None:
     _override_document_cutoff()
     _override_required_documents()
     _override_confusion_groups()
+    _override_income_limit()
+
+
+def _override_income_limit() -> None:
+    """E7: 소득요건이 없는 사업에서는 소득 컷오프를 아예 끈다.
+
+    엔진 config는 취업지원패키지에도 9분위 컷오프를 걸어 두고 있는데, 사업계획서의
+    자격요건은 나이와 거주지뿐이다. 값을 None으로 두면 엔진 2단계가 소득 검사를
+    건너뛴다.
+    """
+    for code, program in PROGRAMS.items():
+        if not program.has_income_requirement:
+            engine_config.INCOME_DECILE_LIMIT[ENGINE_PROGRAM_KEY[code]] = None
 
 
 def _override_document_cutoff() -> None:

@@ -4,7 +4,12 @@
 신청자의 근로유형에 달려 있다. 엔진의 `RequiredDocumentSpec`에는 "택1 그룹" 개념이
 없으므로(E3), 신청자별 실제 목록을 여기서 조립해 엔진에 넘긴다.
 
-값의 출처: 공고문 제2026-443호 제출서류 표, `docs/demo-site-dev-plan.md` 2.3절.
+취업지원패키지는 갈리는 축이 다르다. 근로유형이 아니라 **고른 지원 항목**이
+체크리스트를 정한다(면접비→면접확인서, 정장비→면접확인서+영수증 …). 두 사업이
+같은 함수를 쓰되 입력만 다른 이유다.
+
+값의 출처: 공고문 제2026-443호 제출서류 표, 취업지원패키지 사업계획서 「신청서류」
+표, `docs/demo-site-dev-plan.md` 2.3·2.6절.
 """
 
 from dataclasses import dataclass, field
@@ -13,6 +18,7 @@ from enum import StrEnum
 
 from .doc_types import ISSUER_LINKS, DocType
 from .programs import DOUBLE_SAVINGS, ProgramConfig
+from .subsidy import Selection, clamp_count, get_limit
 
 #: 공고문 파일 규칙: "pdf, jpg, png만 허용 (pdf 권장)"
 ACCEPTED_FORMATS = ["pdf", "jpg", "jpeg", "png"]
@@ -53,6 +59,8 @@ class ApplicantDocInput:
     workplace_count: int = 1
     #: 서식5를 자필서명 스캔으로 내는 경우 True (데모 기본값은 전자서명).
     handwritten_admin_consent: bool = False
+    #: 취업지원패키지에서 고른 지원 항목. 항목별 추가서류가 여기서 나온다.
+    subsidy_selections: list[Selection] = field(default_factory=list)
 
 
 @dataclass
@@ -67,6 +75,12 @@ class DocRequirement:
     doc_type: DocType
     #: 화면 표기명. 공고문 표기를 그대로 쓴다.
     label: str
+    #: 이 자리에 인정되는 서류가 여럿인 경우(응시확인서 **또는** 성적표).
+    #: 비어 있으면 `doc_type` 1종만 인정한다.
+    accepted_doc_types: list[DocType] = field(default_factory=list)
+    #: 판독 결과에 반드시 있어야 하는 필드(예: 응시확인서의 "응시일").
+    #: 없으면 부적합이다 — 사업계획서가 "응시일 표기 필수"를 명문화했다.
+    required_fields: list[str] = field(default_factory=list)
     required: bool = True
     requires_signature: bool = False
     check_declared_date: bool = True
@@ -85,6 +99,14 @@ class DocRequirement:
     #: 업로드가 아닌 경우 무엇으로 갈음했는지.
     fulfilled_by: str = ""
     accept: list[str] = field(default_factory=lambda: list(ACCEPTED_FORMATS))
+
+    @property
+    def doc_type_choices(self) -> list[DocType]:
+        return self.accepted_doc_types or [self.doc_type]
+
+    def accepts(self, doc_type: DocType | None) -> bool:
+        """판독된 서류가 이 슬롯에 인정되는가."""
+        return doc_type is not None and doc_type in self.doc_type_choices
 
 
 #: 모든 업로드 서류에 공통으로 붙는 경고. 공고문 파일 규칙 원문.
@@ -109,12 +131,16 @@ def _make(
     requires_signature: bool = False,
     check_declared_date: bool = True,
     min_issue_date: date | None = None,
+    accepted_doc_types: list[DocType] | None = None,
+    required_fields: list[str] | None = None,
 ) -> DocRequirement:
     issuer, issuer_url = _issuer(doc_type)
     return DocRequirement(
         slot_key=slot_key,
         doc_type=doc_type,
         label=label or str(doc_type),
+        accepted_doc_types=accepted_doc_types or [],
+        required_fields=required_fields or [],
         requires_signature=requires_signature,
         check_declared_date=check_declared_date,
         min_issue_date=min_issue_date,
@@ -180,38 +206,119 @@ def _work_proof(
     )
 
 
+def _resident_abstract(program: ProgramConfig) -> DocRequirement:
+    """주민등록초본 — 두 사업 공통이지만 세부 요건이 다르다.
+
+    두배적금은 거주기간 배점(25점)과 병역사항 확인이 붙어 주소변동내역·병역사항이
+    필수다. 취업패키지는 도내 거주 확인이 전부라 그 요건이 없다.
+    """
+    notes = ["주민등록번호 뒷자리가 표시되어야 합니다."]
+    if program.code == DOUBLE_SAVINGS:
+        notes += [
+            "최근 5년 주소변동내역이 포함되어야 합니다.",
+            "하단 병역사항이 포함되어야 합니다.",
+        ]
+    else:
+        notes.append(
+            f"{program.document_cutoff.isoformat()} 이후 발급분만 인정됩니다."
+        )
+    return _make(
+        "resident_abstract",
+        DocType.RESIDENT_ABSTRACT,
+        label="주민등록초본",
+        notes=notes,
+        warnings=[
+            "'주민등록등본'이 아니라 '주민등록초본'입니다. 가장 많이 틀리는 항목입니다.",
+            "정부24 발급 화면에서 ① 주민등록번호 뒷자리 표시 ② 과거 주소변동 포함을 반드시 체크하세요.",
+        ]
+        if program.code == DOUBLE_SAVINGS
+        else ["'주민등록등본'이 아니라 '주민등록초본'입니다. 가장 많이 틀리는 항목입니다."],
+        min_issue_date=program.document_cutoff,
+    )
+
+
 def build_checklist(
     program: ProgramConfig, applicant: ApplicantDocInput
 ) -> list[DocRequirement]:
-    """근로유형·선택항목에 따라 실제로 올려야 할 서류만 반환한다.
+    """근로유형·선택항목에 따라 실제로 올려야 할 서류만 반환한다."""
+    if program.has_subsidy_items:
+        return _job_package_checklist(program, applicant)
+    return _double_savings_checklist(program, applicant)
 
-    취업지원패키지 분기는 형제 태스크(`09-16-demo-jobpkg`)가 채운다. 여기서는
-    공통 서류(주민등록초본)까지만 내고 항목별 추가서류는 넣지 않는다.
+
+def _job_package_checklist(
+    program: ProgramConfig, applicant: ApplicantDocInput
+) -> list[DocRequirement]:
+    """취업지원패키지 — 공통서류 3종 + 고른 항목별 추가서류.
+
+    사업계획서 신청서류 표:
+      공통 ① 신청서(개인정보 수집이용제공 동의서) ② 주민등록초본 ③ 통장 사본(본인 명의)
+      추가 면접비 → 면접확인서
+           정장비 → 면접확인서 + 결제영수증
+           사진비 → 면접용 사진사본 + 결제영수증
+           자격증 → 응시확인서 또는 성적표(응시일 표기 필수) + 결제영수증
+
+    ① 신청서는 온라인 작성으로, ③ 통장 사본은 계좌번호 입력으로 갈음한다(R1.3/R1.4).
+    업로드가 필요한 공통서류는 결국 초본 1종뿐이다.
     """
+    items: list[DocRequirement] = [
+        DocRequirement(
+            slot_key="application_form",
+            doc_type=DocType.RESIDENT_ABSTRACT,  # 업로드 대상이 아니라 표기용
+            label="청년 취업지원패키지 신청서 (개인정보 수집·이용·제공 동의서 포함)",
+            check_declared_date=False,
+            notes=["신청서와 동의서는 화면에서 작성합니다. 출력·서명·스캔이 필요 없습니다."],
+            upload=False,
+            fulfilled_by="온라인 신청서 작성 + 동의 기록",
+        ),
+        _resident_abstract(program),
+        DocRequirement(
+            slot_key="bank_account",
+            doc_type=DocType.RESIDENT_ABSTRACT,  # 업로드 대상이 아니라 표기용
+            label="통장 사본 (본인 명의)",
+            check_declared_date=False,
+            notes=["지원금은 본인 명의 계좌로만 지급됩니다."],
+            upload=False,
+            fulfilled_by="신청서의 계좌번호 입력",
+        ),
+    ]
+
+    for selection in applicant.subsidy_selections:
+        limit = get_limit(selection.item_type)
+        count = clamp_count(selection.item_type, selection.count)
+        for index in range(1, count + 1):
+            for extra in limit.extra_docs:
+                items.append(
+                    _make(
+                        f"{limit.key}_{index}_{extra.suffix}",
+                        extra.doc_type,
+                        label=(
+                            f"{extra.label} — {limit.label}"
+                            + (f" {index}회차" if limit.max_count > 1 else "")
+                        ),
+                        accepted_doc_types=list(extra.accepted),
+                        required_fields=list(extra.required_fields),
+                        notes=list(extra.notes),
+                        warnings=list(extra.warnings),
+                        min_issue_date=program.document_cutoff,
+                        # 영수증·확인서는 발급일 직접 입력을 받지 않는다. 신청자가
+                        # 회차마다 날짜를 다시 적게 하면 이탈이 늘고, 인정 기준일
+                        # 검사는 판독된 날짜만으로 충분하다.
+                        check_declared_date=False,
+                    )
+                )
+
+    return items
+
+
+def _double_savings_checklist(
+    program: ProgramConfig, applicant: ApplicantDocInput
+) -> list[DocRequirement]:
     cutoff = program.document_cutoff
     items: list[DocRequirement] = []
 
-    # ⑧ 주민등록초본 — 두 사업 공통.
-    items.append(
-        _make(
-            "resident_abstract",
-            DocType.RESIDENT_ABSTRACT,
-            label="주민등록초본",
-            notes=[
-                "주민등록번호 뒷자리가 표시되어야 합니다.",
-                "최근 5년 주소변동내역이 포함되어야 합니다.",
-                "하단 병역사항이 포함되어야 합니다.",
-            ],
-            warnings=[
-                "'주민등록등본'이 아니라 '주민등록초본'입니다. 가장 많이 틀리는 항목입니다.",
-                "정부24 발급 화면에서 ① 주민등록번호 뒷자리 표시 ② 과거 주소변동 포함을 반드시 체크하세요.",
-            ],
-            min_issue_date=cutoff,
-        )
-    )
-
-    if program.code != DOUBLE_SAVINGS:
-        return items
+    # ⑧ 주민등록초본.
+    items.append(_resident_abstract(program))
 
     # ⑦ 소득재산 증빙서류 3종 — 모두 제출.
     items.append(

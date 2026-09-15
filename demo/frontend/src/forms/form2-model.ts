@@ -117,13 +117,49 @@ export const SELF_CHECK_FOOTER = [
   '가입자격이 되어 신청서를 제출하여도 사업 참가자로 선정되지 않을 수 있으며, 필수 제출서류 및 추가 요구자료 미제출로 인한 피해는 신청인의 책임입니다.(일체의 제출서류는 반환하지 않습니다.)',
 ]
 
+/**
+ * 취업지원패키지 자가진단 (축소판).
+ *
+ * 사업계획서의 서류심사는 "신청자 자격요건 검토(나이, 거주지 등)"가 전부다.
+ * 소득·근로·계좌명의 문항이 없으므로 2문항으로 줄어든다. 서식 원본이 없는
+ * 항목이라 문구에 `(데모 추정치)` 라벨을 단다.
+ */
+export const JOB_PACKAGE_SELF_CHECK_ITEMS: SelfCheckItem[] = [
+  {
+    no: 1,
+    question: '귀하는 **전북특별자치도 내에 거주**하는 청년입니까?',
+    note: '※ 주민등록상 주소 기준 · 사업계획서 「신청대상 : 전북 도내 거주 청년(18세~39세)」',
+    ineligibleReason: '이 사업은 전북특별자치도 내에 거주하는 청년만 신청할 수 있습니다.',
+    alternative: '거주하시는 시·도의 청년 취업지원 사업을 확인해 보세요.',
+  },
+  {
+    no: 2,
+    question: '귀하의 연령은 **2026년 기준 18세 이상 ~ 39세 이하**입니까?',
+    note: '※ 1987. 1. 1. ~ 2008. 12. 31.까지 출생자',
+    ineligibleReason:
+      '1987. 1. 1. ~ 2008. 12. 31. 출생자만 신청할 수 있습니다(2026년 기준 18~39세).',
+  },
+]
+
+export const JOB_PACKAGE_SELF_CHECK_FOOTER = [
+  '※ 예산 소진 시 조기 마감되며, 접수 순서(선착순)로 지원 대상자를 선정합니다.',
+  '서류가 미비한 경우 7일 내 보완 안내를 드리며, 기한 내 보완하지 않으면 후순위자가 선정됩니다.',
+  '※ 이 자가진단 양식은 사업계획서에 서식 원본이 없어 데모가 구성한 것입니다. (데모 추정치)',
+]
+
 /** 문항번호 → '예' | '아니오' */
 export type SelfCheckAnswers = Record<number, '예' | '아니오' | undefined>
 
-export function firstFailure(answers: SelfCheckAnswers): SelfCheckItem | null {
-  return SELF_CHECK_ITEMS.find((i) => answers[i.no] === '아니오') ?? null
+export function firstFailure(
+  answers: SelfCheckAnswers,
+  items: SelfCheckItem[] = SELF_CHECK_ITEMS,
+): SelfCheckItem | null {
+  return items.find((i) => answers[i.no] === '아니오') ?? null
 }
 
-export function allAnswered(answers: SelfCheckAnswers): boolean {
-  return SELF_CHECK_ITEMS.every((i) => answers[i.no] !== undefined)
+export function allAnswered(
+  answers: SelfCheckAnswers,
+  items: SelfCheckItem[] = SELF_CHECK_ITEMS,
+): boolean {
+  return items.every((i) => answers[i.no] !== undefined)
 }
