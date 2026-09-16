@@ -8,6 +8,7 @@
 - 설계: `.trellis/tasks/09-16-demo-site/design.md`
 - 업무 규칙 원문(자격요건·제출서류·심사표 배점·중위소득 기준표): `docs/demo-site-dev-plan.md`
 - **시연 대본**: [`docs/demo-script.md`](docs/demo-script.md)
+- **담당자 화면 목업 데이터**: [`docs/officer-mock-data.md`](docs/officer-mock-data.md)
 
 > ⚠️ **PC 전용**이다. 서식 원형을 지키기 위해 폭 940px 고정 레이아웃을 쓴다(R8.6).
 > 좁은 화면에서는 셀을 재배치하지 않고 가로 스크롤만 생긴다.
@@ -39,6 +40,7 @@ demo/
 │   ├── form_coords/    서식별 필드 좌표 맵 JSON
 │   └── expected/       시연 시나리오 10종의 기대 결과 JSON
 ├── docs/demo-script.md 시연 대본
+├── docs/officer-mock-data.md 담당자 화면 목업 데이터 (+ 대안 2종)
 ├── storage/            업로드 원본 (gitignore)
 └── demo.db             SQLite (gitignore)
 ```
@@ -92,6 +94,10 @@ npm run dev
 
 브라우저에서 <http://localhost:5173> 을 연다. 상단 탭으로 **신청자 / 담당자** 화면을
 오간다. Vite가 `/api` 요청을 8000 포트로 프록시하므로 별도 설정은 없다.
+
+접수된 신청 건이 하나도 없으면 담당자 화면은 **목업 데이터**로 채워진다(상단에 노란
+배너가 뜬다). `?mock=1`로 강제로 켜고 `?mock=0`으로 끈다 —
+[`docs/officer-mock-data.md`](docs/officer-mock-data.md).
 
 확인용 엔드포인트:
 

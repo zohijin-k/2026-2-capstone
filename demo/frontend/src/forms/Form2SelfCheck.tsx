@@ -8,7 +8,7 @@
  * 콜센터 문의(자격요건 38%)를 줄이는 지점이기 때문이다.
  */
 
-import { Cell, FormSheet, FormTable, LabelCell } from './FormSheet.tsx'
+import { Cell, FormSheet, FormTable, LabelCell, Radio } from './FormSheet.tsx'
 import {
   SELF_CHECK_FOOTER,
   SELF_CHECK_ITEMS,
@@ -44,7 +44,7 @@ export default function Form2SelfCheck({
   answers,
   onChange,
   items = SELF_CHECK_ITEMS,
-  formNo = '서식2',
+  formNo = '서식1',
   title = '신청자격 자가진단 및 필수사항 확인·동의서',
   notices = [
     '신청서 작성 전 아래 내용을 잘 읽으시고, 필수 사항 동의에 모두 체크해 주시기 바랍니다.',
@@ -52,7 +52,9 @@ export default function Form2SelfCheck({
   ],
   footer = SELF_CHECK_FOOTER,
 }: Props) {
-  const pick = (no: number, v: '예' | '아니오') => onChange({ ...answers, [no]: v })
+  // 이미 고른 답을 다시 누르면 undefined 로 비운다 (오답 정정).
+  const pick = (no: number, v: '예' | '아니오' | undefined) =>
+    onChange({ ...answers, [no]: v })
 
   return (
     <FormSheet formNo={formNo} title={title} notices={notices}>
@@ -87,11 +89,10 @@ export default function Form2SelfCheck({
               <div className="form-checks form-checks--1" style={{ justifyItems: 'center' }}>
                 {(['예', '아니오'] as const).map((opt) => (
                   <label key={opt} className="form-check">
-                    <input
-                      type="radio"
+                    <Radio
                       name={`self-check-${item.no}`}
                       checked={answers[item.no] === opt}
-                      onChange={() => pick(item.no, opt)}
+                      onPick={(next) => pick(item.no, next ? opt : undefined)}
                     />
                     <span>{opt}</span>
                   </label>

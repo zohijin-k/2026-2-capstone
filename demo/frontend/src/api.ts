@@ -1,5 +1,13 @@
 /** 백엔드 호출. vite dev 서버가 /api 를 :8000 으로 프록시한다. */
 
+import {
+  MOCK_ROLES,
+  isMockId,
+  mockDecide,
+  mockOfficerList,
+  mockReviewDetail,
+} from './pages/officer/mock-data.ts'
+
 /**
  * 사업 설정. 화면 분기는 전부 이 값으로 한다.
  *
@@ -22,6 +30,8 @@ export interface Program {
   has_work_requirement: boolean
   has_subsidy_items: boolean
   apply_period: [string, string]
+  /** 2차 모집이 있는 사업의 2차 신청 기간. 없으면 null. */
+  apply_period_2: [string, string] | null
   quota_by_region: Record<string, number> | null
   quota_total: number | null
   /** 자가진단 문항 번호. 두배적금 8문항 / 취업패키지 2문항. */
@@ -31,6 +41,73 @@ export interface Program {
   site_url: string
   call_center: string
   notes: string[]
+  /** 공고문 전문을 카드에 펼칠 사업만 채워진다. null이면 요약 행만 그린다. */
+  detail: ProgramDetail | null
+  /** 사업계획서 구조로 카드를 펼칠 사업만 채워진다. */
+  package_detail: PackageDetail | null
+}
+
+/** 신청서류 표의 「항목별 추가서류」 한 행. */
+export interface DocRow {
+  item: string
+  docs: string[]
+}
+
+/** 서류심사 절차 한 단계. */
+export interface ReviewStep {
+  title: string
+  points: string[]
+}
+
+/**
+ * 사업계획서 「Ⅲ. 세부사업계획」 1~3절(사업신청·서류심사·지원금 지급).
+ *
+ * 금액·횟수·지원 항목은 여기 없다. 그 값은 `subsidy_catalog`가 유일한 출처다.
+ * 필드 의미는 백엔드 `PackageDetail` 참조.
+ */
+export interface PackageDetail {
+  early_close_note: string
+  target_points: string[]
+  apply_method: string
+  apply_items_note: string
+  common_docs: string[]
+  item_docs: DocRow[]
+  doc_cutoff_notice: string
+  review_steps: ReviewStep[]
+  supplement_notes: string[]
+  payment_methods: string[]
+}
+
+/** 적금 구조 한 행. 청년이 얼마를 넣으면 지자체가 얼마를 얹는지. */
+export interface SavingsPlan {
+  monthly_self: number
+  monthly_grant: number
+  months: number
+  maturity_label: string
+  note: string
+}
+
+/** 신청 절차 한 단계. `url`이 비어 있지 않으면 label 전체를 링크로 건다. */
+export interface ApplyStep {
+  label: string
+  url: string
+}
+
+/** 사업 선택 카드에 펼치는 공고문 상세. 필드 의미는 백엔드 `ProgramDetail` 참조. */
+export interface ProgramDetail {
+  target_summary: string
+  target_points: string[]
+  benefit_summary: string
+  savings_plan: SavingsPlan | null
+  announce_period: [string, string]
+  apply_open_time: string
+  apply_close_time: string
+  apply_method: string
+  apply_steps: ApplyStep[]
+  deadline_warning: string
+  cautions: string[]
+  missing_doc_examples: string[]
+  selection_methods: string[]
 }
 
 /** 취업지원패키지 지원 항목 1종 (사업계획서 「지원내용」 표). */
@@ -636,30 +713,97 @@ function query(params: Record<string, unknown>): string {
   return search.toString()
 }
 
-export const fetchOfficerRoles = () => json<OfficerRole[]>('/api/officer/roles')
+// ---------------------------------------------------------------- 담당자 목업
 
-export const fetchOfficerList = (params: OfficerListQuery) =>
-  json<OfficerList>(`/api/officer/applications?${query({ ...params })}`)
+/**
+ * 담당자 화면 목업 전환 (`pages/officer/mock-data.ts`).
+ *
+ * 켜지는 조건은 둘이다.
+ *
+ *   - `?mock=1` — 강제로 켠다. 백엔드가 떠 있어도 목업을 본다.
+ *   - 자동 — 담당자 목록 API가 실패했거나 **접수 건이 0건**일 때. 빈 표를 띄우고
+ *     "데이터가 없습니다"로 시연이 끊기는 것보다, 예시로 채운 화면을 보여주고
+ *     목업임을 상단에 밝히는 편이 낫다.
+ *
+ * `?mock=0`을 붙이면 어떤 경우에도 목업을 쓰지 않는다 — 실제 접수 건이 0건인 것을
+ * 확인해야 할 때 쓴다.
+ */
+const MOCK_PARAM = new URLSearchParams(window.location.search).get('mock')
+const MOCK_FORCED = MOCK_PARAM === '1' || MOCK_PARAM === 'on'
+const MOCK_BLOCKED = MOCK_PARAM === '0' || MOCK_PARAM === 'off'
+
+let mockActive = MOCK_FORCED
+
+/** 지금 담당자 화면이 목업을 보고 있는가. 화면 상단 배너가 이 값을 읽는다. */
+export const isOfficerMockActive = () => mockActive
+
+export const fetchOfficerRoles = async (): Promise<OfficerRole[]> => {
+  if (mockActive) return MOCK_ROLES
+  try {
+    return await json<OfficerRole[]>('/api/officer/roles')
+  } catch (e) {
+    if (MOCK_BLOCKED) throw e
+    mockActive = true
+    return MOCK_ROLES
+  }
+}
+
+export const fetchOfficerList = async (params: OfficerListQuery): Promise<OfficerList> => {
+  if (mockActive) return mockOfficerList(params)
+  try {
+    const body = await json<OfficerList>(`/api/officer/applications?${query({ ...params })}`)
+    // 필터를 걸어 0건인 것과 접수 자체가 0건인 것은 다르다. 후자일 때만 목업으로 넘어간다.
+    const unfiltered =
+      !params.program && !params.status && !params.ai_status && !params.submitted_from && !params.submitted_to
+    if (body.total === 0 && unfiltered && !MOCK_BLOCKED) {
+      mockActive = true
+      return mockOfficerList(params)
+    }
+    return body
+  } catch (e) {
+    if (MOCK_BLOCKED) throw e
+    mockActive = true
+    return mockOfficerList(params)
+  }
+}
 
 export const fetchReviewDetail = (applicationId: number, role: string) =>
-  json<ReviewDetailData>(`/api/officer/applications/${applicationId}?${query({ role })}`)
+  mockActive || isMockId(applicationId)
+    ? Promise.resolve(mockReviewDetail(applicationId, role))
+    : json<ReviewDetailData>(`/api/officer/applications/${applicationId}?${query({ role })}`)
 
 export const postDecision = (
   applicationId: number,
   body: { role: string; decision: DecisionKey; memo: string },
-) =>
-  json<{ decision: string; label: string; decided_at: string | null }>(
+) => {
+  if (mockActive || isMockId(applicationId)) {
+    mockDecide([applicationId], body.role, body.decision, body.memo)
+    const detail = mockReviewDetail(applicationId, body.role)
+    return Promise.resolve({
+      decision: body.decision,
+      label: detail.decision.label,
+      decided_at: detail.decision.decided_at,
+    })
+  }
+  return json<{ decision: string; label: string; decided_at: string | null }>(
     `/api/officer/applications/${applicationId}/decision`,
     { method: 'POST', body: JSON.stringify(body) },
   )
+}
 
 export const postBulkDecision = (body: {
   role: string
   decision: DecisionKey
   memo: string
   application_ids: number[]
-}) =>
-  json<{ processed: number }>('/api/officer/applications/decisions', {
+}) => {
+  if (mockActive) {
+    return Promise.resolve({
+      processed: mockDecide(body.application_ids, body.role, body.decision, body.memo),
+    })
+  }
+  return json<{ processed: number }>('/api/officer/applications/decisions', {
     method: 'POST',
     body: JSON.stringify(body),
   })
+}

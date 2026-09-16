@@ -70,6 +70,7 @@ JOB_FORM1 = {
     "bankName": "전북은행",
     "accountNo": "1010-00-000000",
     "accountHolder": "김청년",
+    "bankbookFileName": "통장사본_김청년.jpg",
 }
 
 JOB_CONSENTS = [
@@ -304,9 +305,9 @@ def test_checklist_assembly(client) -> None:
         "온라인 신청서 작성 + 동의 기록",
     )
     check(
-        "통장 사본은 계좌 입력으로 갈음 (R1.4)",
+        "통장 사본은 신청서 계좌 칸에서 첨부 (R1.4)",
         next(r.fulfilled_by for r in base if r.slot_key == "bank_account"),
-        "신청서의 계좌번호 입력",
+        "신청서의 계좌 칸에서 통장 사본 첨부",
     )
 
     print("\n  -- API로 항목을 고르면 서버가 다시 조립한다")
@@ -435,7 +436,15 @@ def test_s10_end_to_end(client) -> int:
     check(
         "요약에 거주기간·근로사항이 없다",
         [f["label"] for f in final["form_summary"]],
-        ["신청자 이름", "생년월일", "성별", "주소", "연락처", "입금 받을 계좌"],
+        [
+            "신청자 이름",
+            "생년월일",
+            "성별",
+            "주소",
+            "연락처",
+            "입금 받을 계좌",
+            "통장 사본(본인 명의)",
+        ],
     )
 
     body = client.post(f"/api/applications/{app_id}/submit").json()

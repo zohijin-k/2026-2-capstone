@@ -251,6 +251,48 @@
   background: #e8f0fe;
 }
 
+/* ---- 서식 안 파일 첨부 칸 ---- */
+
+/* 입력칸 아래에 한 줄로 붙는다. 표 칸 폭이 좁아지면 파일명이 아래로 접힌다. */
+.form-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.form-file__label {
+  border: 1px solid #555;
+  background: #f6f6f6;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.form-file input[type='file'] {
+  font-size: 12px;
+  max-width: 100%;
+}
+
+.form-file__name {
+  color: #0b57d0;
+  word-break: break-all;
+}
+
+.form-file__clear {
+  border: 1px solid #777;
+  background: #fff;
+  color: #333;
+  font-size: 11.5px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+.form-file__clear:hover {
+  background: #f0f0f0;
+}
+
 /* ---- 각주 / 근거 ---- */
 
 /* 원본은 ※ 각주에 옅은 형광 배경이 깔려 있다. */

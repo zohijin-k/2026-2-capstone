@@ -29,6 +29,26 @@
   padding: 24px 0;
 }
 
+/* 목업 데이터 안내. 경고(빨강)가 아니라 안내(노랑)다 — 잘못된 상태가 아니다. */
+.officer__mock {
+  border: 1px solid #e0b400;
+  background: #fffbe8;
+  color: #6b5200;
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.officer__mock strong {
+  margin-right: 8px;
+}
+
+.officer__mock code {
+  background: #fff3c4;
+  padding: 0 4px;
+}
+
 /* ---- 역할 전환 토글 (R4.5) ---- */
 
 .officer__roles {

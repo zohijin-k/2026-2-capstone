@@ -1,10 +1,14 @@
 /**
  * 데모 진입점. 신청자 화면과 담당자 화면을 한 번에 시연한다.
  *
- * 두 화면을 동시에 마운트해 두고 보이기만 전환한다. 신청자 화면은 처음 뜰 때
- * 임시저장용 신청 건을 하나 만드는데, 전환할 때마다 언마운트하면 빈 신청 건이
- * 계속 쌓이고 작성하던 내용도 날아간다. 시연 중 화면을 오가는 것이 기본 동선이라
+ * 두 화면을 동시에 마운트해 두고 보이기만 전환한다. 전환할 때마다 언마운트하면
+ * 작성하던 내용이 날아가는데, 시연 중 두 화면을 오가는 것이 기본 동선이라
  * 상태를 유지하는 편이 맞다.
+ *
+ * 다만 `신청자` 탭은 "처음으로" 버튼을 겸한다. 시연을 한 바퀴 돌린 뒤 다시
+ * 처음부터 보여줘야 하는데, 그때 눌러야 할 곳이 화면마다 다르면 안 된다.
+ * 누르면 신청자 화면을 새로 마운트해 사업 선택 화면부터 다시 시작한다.
+ * (담당자 탭으로 넘어갔다 돌아올 때도 마찬가지로 초기화된다.)
  */
 
 import { useState } from 'react'
@@ -22,6 +26,14 @@ const MODES: { key: Mode; label: string }[] = [
 
 export default function App() {
   const [mode, setMode] = useState<Mode>('applicant')
+  /** 값이 바뀌면 신청자 화면이 새로 마운트돼 사업 선택 화면으로 돌아간다. */
+  const [applicantKey, setApplicantKey] = useState(0)
+
+  const pick = (next: Mode) => {
+    if (next === 'applicant') setApplicantKey((k) => k + 1)
+    setMode(next)
+    window.scrollTo({ top: 0 })
+  }
 
   return (
     <>
@@ -35,7 +47,7 @@ export default function App() {
               key={m.key}
               type="button"
               className={m.key === mode ? 'shell__tab shell__tab--on' : 'shell__tab'}
-              onClick={() => setMode(m.key)}
+              onClick={() => pick(m.key)}
             >
               {m.label}
             </button>
@@ -44,7 +56,7 @@ export default function App() {
       </nav>
 
       <div style={{ display: mode === 'applicant' ? 'block' : 'none' }}>
-        <ApplyFlow />
+        <ApplyFlow key={applicantKey} />
       </div>
       <div style={{ display: mode === 'officer' ? 'block' : 'none' }}>
         <OfficerConsole />

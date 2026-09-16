@@ -113,12 +113,14 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
 
     for key, label in program.required_form_fields:
         if not _has_value(form1.get(key)):
+            # 서식 안에서 첨부하는 서류(통장 사본 등)는 '입력'이 아니라 '첨부'다.
+            verb = "첨부" if key.endswith("FileName") else "입력"
             items.append(
                 {
                     "kind": "form",
                     "target": key,
                     "label": label,
-                    "message": f"{label}을(를) 입력해 주세요.",
+                    "message": f"{label}을(를) {verb}해 주세요.",
                     "goto": "form1",
                 }
             )

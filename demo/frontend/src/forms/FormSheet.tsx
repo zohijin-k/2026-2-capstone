@@ -106,6 +106,53 @@ export function FormNote({ children }: { children: ReactNode }) {
   )
 }
 
+interface FileAttachProps {
+  /** 첨부해야 할 서류 이름. 셀 안에서 무엇을 올리는 칸인지 바로 읽히게 한다. */
+  label: string
+  fileName: string
+  onChange: (fileName: string) => void
+  /** 기본값은 관공서 제출 서류에서 실제로 받는 형식이다. */
+  accept?: string
+}
+
+/**
+ * 서식 안에서 서류 한 건을 첨부하는 칸.
+ *
+ * 데모는 파일을 서버로 올리지 않고 **파일명만** 들고 있는다 — 첨부 여부와 어떤
+ * 파일을 골랐는지가 보이면 시연에 필요한 것은 다 보인다. 서식5의 자필서명 스캔
+ * 업로드와 같은 방식이다.
+ */
+export function FileAttach({
+  label,
+  fileName,
+  onChange,
+  accept = '.pdf,.jpg,.jpeg,.png',
+}: FileAttachProps) {
+  return (
+    <div className="form-file">
+      <span className="form-file__label">{label}</span>
+      <input
+        type="file"
+        accept={accept}
+        aria-label={`${label} 첨부`}
+        onChange={(e) => onChange(e.target.files?.[0]?.name ?? '')}
+      />
+      {fileName && (
+        <>
+          <span className="form-file__name">{fileName}</span>
+          <button
+            type="button"
+            className="form-file__clear"
+            onClick={() => onChange('')}
+          >
+            지우기
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
 interface TextProps {
   value: string
   onChange: (v: string) => void
@@ -176,6 +223,44 @@ export function DateTriple({
   )
 }
 
+/**
+ * 라디오 한 칸. **이미 고른 것을 다시 누르면 선택이 풀린다.**
+ *
+ * 브라우저 기본 라디오는 한 번 고르면 같은 그룹의 다른 값으로 바꿀 수만 있고
+ * 비울 수는 없다. 그런데 이 서식들의 문항은 "예/아니오", "동의함/동의하지 않음"
+ * 같은 2지선다가 대부분이라 잘못 누르기 쉽고, 되돌릴 방법이 없으면 신청자는
+ * 틀린 답을 그대로 둔 채 다음 단계로 떠밀린다. 자가진단은 "아니오" 하나로
+ * 자격 없음이 뜨는 화면이라 더 그렇다.
+ *
+ * 이미 선택된 라디오에는 브라우저가 change 이벤트를 보내지 않으므로 click으로
+ * 처리한다. `onChange`는 controlled input 경고를 막기 위한 빈 핸들러다.
+ */
+export function Radio({
+  name,
+  checked,
+  onPick,
+  disabled,
+}: {
+  name: string
+  checked: boolean
+  /** 누른 뒤의 선택 상태. 이미 선택돼 있던 칸을 누르면 `false`가 온다. */
+  onPick: (next: boolean) => void
+  disabled?: boolean
+}) {
+  return (
+    <input
+      type="radio"
+      name={name}
+      checked={checked}
+      disabled={disabled}
+      onChange={noop}
+      onClick={() => onPick(!checked)}
+    />
+  )
+}
+
+function noop() {}
+
 interface ChecksProps {
   name: string
   options: readonly string[]
@@ -208,14 +293,23 @@ export function Checks({
             key={opt}
             className={derived ? 'form-check form-check--derived' : 'form-check'}
           >
-            <input
-              type={multiple ? 'checkbox' : 'radio'}
-              name={name}
-              checked={selected.includes(opt)}
-              readOnly={derived}
-              disabled={derived}
-              onChange={derived ? undefined : () => onChange?.(opt)}
-            />
+            {multiple ? (
+              <input
+                type="checkbox"
+                name={name}
+                checked={selected.includes(opt)}
+                readOnly={derived}
+                disabled={derived}
+                onChange={derived ? undefined : () => onChange?.(opt)}
+              />
+            ) : (
+              <Radio
+                name={name}
+                checked={selected.includes(opt)}
+                disabled={derived}
+                onPick={(next) => onChange?.(next ? opt : '')}
+              />
+            )}
             <span>{opt}</span>
           </label>
         ))}

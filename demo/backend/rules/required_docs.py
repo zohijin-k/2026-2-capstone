@@ -155,14 +155,19 @@ def _make(
 def _work_proof(
     slot_key: str, category: WorkCategory, cutoff: date, ordinal: str = ""
 ) -> DocRequirement:
-    """근로확인서류 ⑥ — 근로유형에 따라 딱 1종만 남긴다."""
+    """근로확인서류 ⑥ — 근로유형에 따라 딱 1종만 남긴다.
+
+    표기는 `근로확인서류(<해당 서류명>)` 꼴로 통일한다. 공고문에서 ⑥은 5종 중
+    택1이라, 서류명만 보여 주면 신청자는 이것이 5종 중 자기 몫으로 정해진
+    한 줄이라는 것을 알 수 없다.
+    """
     suffix = f" ({ordinal})" if ordinal else ""
 
     if category is WorkCategory.EMPLOYEE:
         return _make(
             slot_key,
             DocType.INSURANCE_4,
-            label=f"4대보험 가입내역 확인서{suffix}",
+            label=f"근로확인서류(4대보험 가입내역 확인서){suffix}",
             notes=[
                 "직장가입자에 해당합니다.",
                 "4대보험(국민연금·건강보험·고용보험·산재보험) 중 1개 이상 가입 시 반드시 제출해야 합니다.",
@@ -173,10 +178,10 @@ def _work_proof(
         return _make(
             slot_key,
             DocType.DAILY_WORK_RECORD,
-            label=f"고용·산재보험 일용근로내역서{suffix}",
+            label=f"근로확인서류(고용·산재보험 일용근로내역서){suffix}",
             notes=["지역가입자·피부양자에 해당합니다."],
             alternatives=[
-                "고용·산재보험 미가입자는 예외적으로 근로계약서 사본으로 갈음할 수 있습니다.",
+                "(예외)근로계약서 (주 15시간 이상 근로함에도, 고용·산재보험(일용근로) 미가입 시)",
             ],
             min_issue_date=cutoff,
         )
@@ -184,7 +189,7 @@ def _work_proof(
         return _make(
             slot_key,
             DocType.BIZ_REG_PROOF,
-            label=f"사업자등록증명{suffix}",
+            label=f"근로확인서류(사업자등록증명){suffix}",
             notes=["사업소득이 있는 사업자만 해당합니다."],
             warnings=["'사업자등록증'이 아니라 '사업자등록증명'입니다. 이름이 한 글자 다릅니다."],
             min_issue_date=cutoff,
@@ -193,14 +198,14 @@ def _work_proof(
         return _make(
             slot_key,
             DocType.FARM_BIZ_CERT,
-            label=f"농업경영체 증명서{suffix}",
+            label=f"근로확인서류(농업경영체 증명서){suffix}",
             notes=["단독·공동경영주만 해당합니다."],
             min_issue_date=cutoff,
         )
     return _make(
         slot_key,
         DocType.FISHERY_BIZ_CERT,
-        label=f"어업경영체 증명서{suffix}",
+        label=f"근로확인서류(어업경영체 증명서){suffix}",
         notes=["단독·공동경영주만 해당합니다."],
         min_issue_date=cutoff,
     )
@@ -258,8 +263,9 @@ def _job_package_checklist(
            사진비 → 면접용 사진사본 + 결제영수증
            자격증 → 응시확인서 또는 성적표(응시일 표기 필수) + 결제영수증
 
-    ① 신청서는 온라인 작성으로, ③ 통장 사본은 계좌번호 입력으로 갈음한다(R1.3/R1.4).
-    업로드가 필요한 공통서류는 결국 초본 1종뿐이다.
+    ① 신청서는 온라인 작성으로 갈음한다(R1.3). ③ 통장 사본은 신청서의 계좌 칸에서
+    바로 첨부하므로 업로드 화면에서 다시 묻지 않는다 — 갈음이 아니라 첨부 위치를
+    옮긴 것이다. 업로드 화면에 남는 공통서류는 결국 초본 1종뿐이다.
     """
     items: list[DocRequirement] = [
         DocRequirement(
@@ -277,9 +283,10 @@ def _job_package_checklist(
             doc_type=DocType.RESIDENT_ABSTRACT,  # 업로드 대상이 아니라 표기용
             label="통장 사본 (본인 명의)",
             check_declared_date=False,
-            notes=["지원금은 본인 명의 계좌로만 지급됩니다."],
+            notes=["지원금은 본인 명의 계좌로만 지급됩니다.",
+                   "신청서의 계좌 칸에서 통장 사본을 첨부합니다."],
             upload=False,
-            fulfilled_by="신청서의 계좌번호 입력",
+            fulfilled_by="신청서의 계좌 칸에서 통장 사본 첨부",
         ),
     ]
 

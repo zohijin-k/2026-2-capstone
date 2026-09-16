@@ -7,7 +7,7 @@
 
 import type { ReactNode } from 'react'
 
-import { Cell, FormSheet, FormTable } from './FormSheet.tsx'
+import { Cell, FormSheet, FormTable, Radio } from './FormSheet.tsx'
 import { CONSENT_OPTIONS, type ConsentValue } from './consent-model.ts'
 
 const COLS = [100]
@@ -38,11 +38,10 @@ function AgreeRow({
           <span style={{ display: 'flex', gap: 28 }}>
             {CONSENT_OPTIONS.map((opt) => (
               <label key={opt} className="form-check">
-                <input
-                  type="radio"
+                <Radio
                   name={name}
                   checked={value === opt}
-                  onChange={() => onChange(opt)}
+                  onPick={(next) => onChange(next ? opt : '')}
                 />
                 <span>{opt}</span>
               </label>

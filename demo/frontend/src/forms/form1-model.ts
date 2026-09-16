@@ -80,6 +80,8 @@ export interface Form1Value {
   bankName: string
   accountNo: string
   accountHolder: string
+  /** 통장 사본(본인 명의) 첨부 파일명. 데모는 파일 자체를 보내지 않고 이름만 든다. */
+  bankbookFileName: string
   referralPaths: string[]
 }
 
@@ -111,5 +113,6 @@ export const EMPTY_FORM1: Form1Value = {
   bankName: '',
   accountNo: '',
   accountHolder: '',
+  bankbookFileName: '',
   referralPaths: [],
 }

@@ -167,6 +167,7 @@ JOB_FORM1: dict[str, Any] = {
     "bankName": "전북은행",
     "accountNo": "1010-00-000000",
     "accountHolder": "최청년",
+    "bankbookFileName": "통장사본_최청년.jpg",
 }
 
 #: 1×1 투명 PNG. 캔버스 전자서명 대신 넣는 더미 이미지다.

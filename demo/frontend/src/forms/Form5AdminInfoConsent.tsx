@@ -9,11 +9,11 @@
  * (TF 확인사항: 전자서명 대체 가능 여부)
  *
  * ※ 공동이용 행정정보 코드가 공고문(371)과 시행지침(46+388)에서 다르다.
- *   여기서는 시행지침 값을 쓴다 — 이것도 TF 확인사항.
+ *   여기서는 공고문 값을 쓴다 — 이것도 TF 확인사항.
  */
 
 import SignaturePad from '../components/SignaturePad.tsx'
-import { Cell, DateTriple, FormSheet, FormTable, Text } from './FormSheet.tsx'
+import { Cell, DateTriple, FormSheet, FormTable, Radio, Text } from './FormSheet.tsx'
 import { SIGN_MODES, type Form5Value, type SignMode } from './form5-model.ts'
 
 const COLS = [100]
@@ -45,30 +45,23 @@ export default function Form5AdminInfoConsent({
           </Cell>
         </tr>
         <tr>
-          <Cell>1. 이용기관 명칭 : 전북특별자치도, 시군, 읍면동 행정복지센터</Cell>
-        </tr>
-        <tr>
           <Cell>
-            2. 이용목적 : 전북청년 함께 두배적금 사업 대상자 선정 후 모니터링(거주 확인) 목적
-          </Cell>
-        </tr>
-        <tr>
-          <Cell>
-            3. 공동이용 행정정보(구비서류) :{' '}
-            <span style={{ color: '#c00' }}>46(건강보험자격득실확인서 A형)</span>
-            <br />
-            <span style={{ paddingLeft: '11em', color: '#c00' }}>
-              388(주민등록표 등·초본 J형)
-            </span>
-          </Cell>
-        </tr>
-        <tr>
-          <Cell>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>4. 정보주체(본인) 동의사항</div>
-            <div style={{ paddingLeft: 12, lineHeight: 1.9 }}>
-              ○ 본인은 위 사무의 처리를 위하여 「전자정부법」제36조에 따른 행정정보 공동이용을
-              통해 이용기관의 업무처리담당자가 전자적으로 본인의 구비서류(공동이용 행정정보)를
-              확인하는 것에 동의합니까?
+            <div style={{ lineHeight: 1.9 }}>
+              <div>1. 이용기관 명칭 : 전북특별자치도, 시군, 읍면동 행정복지센터</div>
+              <div>
+                2. 이용목적 : 전북청년 함께 두배적금 사업 대상자 선정 후 모니터링(거주 확인)
+                목적
+              </div>
+              <div>
+                3. 공동이용 행정정보(구비서류) :{' '}
+                <span style={{ color: '#c00' }}>371(주민등록표 등·초본 A형)</span>
+              </div>
+              <div style={{ fontWeight: 700 }}>4. 정보주체(본인) 동의사항</div>
+              <div style={{ paddingLeft: 12 }}>
+                ○ 본인은 위 사무의 처리를 위하여 「전자정부법」제36조에 따른 행정정보
+                공동이용을 통해 이용기관의 업무처리담당자가 전자적으로 본인의
+                구비서류(공동이용 행정정보)를 확인하는 것에 동의합니까?
+              </div>
             </div>
           </Cell>
         </tr>
@@ -77,11 +70,10 @@ export default function Form5AdminInfoConsent({
             <span style={{ display: 'inline-flex', gap: 40 }}>
               {['동의함', '동의하지 않음'].map((opt) => (
                 <label key={opt} className="form-check">
-                  <input
-                    type="radio"
+                  <Radio
                     name="form5-agree"
                     checked={value.agree === opt}
-                    onChange={() => set('agree')(opt)}
+                    onPick={(next) => set('agree')(next ? opt : '')}
                   />
                   <span>{opt}</span>
                 </label>
@@ -196,7 +188,7 @@ export default function Form5AdminInfoConsent({
         <p>
           ※ 공동이용 행정정보 코드가 공고문(371 주민등록표 A형)과 시행지침(46
           건강보험자격득실확인서 A형 + 388 주민등록표 J형)에서 다릅니다. 위 화면은
-          시행지침 값을 썼습니다. 어느 쪽이 유효한지는 TF 확인이 필요합니다.{' '}
+          공고문 값을 썼습니다. 어느 쪽이 유효한지는 TF 확인이 필요합니다.{' '}
           <strong>(데모 추정치)</strong>
         </p>
         <p>

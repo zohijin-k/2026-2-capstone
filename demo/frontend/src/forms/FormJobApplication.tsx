@@ -8,13 +8,15 @@
  *
  * 묻지 않는 것이 이 서식의 핵심이다. 두배적금 서식1과 달리 거주기간·가구원수·
  * 근로사항·저축목적이 없다 — 자격요건이 나이와 거주지뿐이고 소득요건이 없기
- * 때문이다. 통장 사본은 계좌번호 입력으로 갈음한다(R1.4).
+ * 때문이다. 다만 **통장 사본(본인 명의)은 공통 제출서류**라서, 계좌를 적는 칸에서
+ * 바로 첨부하게 한다. 계좌번호 입력만으로 갈음하지 않는다.
  */
 
 import {
   Cell,
   Checks,
   DateTriple,
+  FileAttach,
   FormBand,
   FormNote,
   FormSheet,
@@ -117,9 +119,14 @@ export default function FormJobApplication({ value: v, onChange }: Props) {
           <LabelCell>계좌번호</LabelCell>
           <Cell span={3}>
             <Text ariaLabel="계좌번호" value={v.accountNo} onChange={set('accountNo')} />
+            <FileAttach
+              label="통장 사본 (본인 명의)"
+              fileName={v.bankbookFileName}
+              onChange={set('bankbookFileName')}
+            />
             <FormNote>
-              ※ 반드시 <strong>본인 명의</strong> 계좌여야 합니다. 계좌번호를 입력하면
-              통장 사본을 따로 올리지 않아도 됩니다.
+              ※ 반드시 <strong>본인 명의</strong> 계좌여야 합니다. 예금주와 계좌번호가
+              보이도록 <strong>통장 사본</strong>을 함께 첨부해 주세요. (PDF·JPG·PNG)
             </FormNote>
           </Cell>
         </tr>

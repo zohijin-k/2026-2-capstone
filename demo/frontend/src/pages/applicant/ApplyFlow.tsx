@@ -293,7 +293,7 @@ export default function ApplyFlow() {
           <Form2SelfCheck
             answers={answers}
             items={selfCheckItems}
-            formNo={program.has_subsidy_items ? '자가진단' : '서식2'}
+            formNo={program.has_subsidy_items ? '자가진단' : '서식1'}
             title={
               program.has_subsidy_items
                 ? '신청자격 자가진단 (나이·거주지)'
@@ -372,7 +372,7 @@ export default function ApplyFlow() {
                     checked={wholeSheet}
                     onChange={(e) => setWholeSheet(e.target.checked)}
                   />
-                  서식1 전체 보기
+                  서식2 전체 보기
                 </label>
               </div>
 

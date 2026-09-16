@@ -12,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   fetchOfficerList,
   fetchOfficerRoles,
+  isOfficerMockActive,
   postBulkDecision,
   type DecisionKey,
   type OfficerList,
@@ -32,6 +33,8 @@ export default function OfficerConsole() {
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** 목업으로 넘어갔는지는 목록을 한 번 읽어 봐야 안다 — 응답이 온 뒤에 다시 잰다. */
+  const [mock, setMock] = useState(isOfficerMockActive())
 
   useEffect(() => {
     fetchOfficerRoles()
@@ -43,6 +46,7 @@ export default function OfficerConsole() {
     fetchOfficerList(query)
       .then((body) => {
         setList(body)
+        setMock(isOfficerMockActive())
         setError('')
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
@@ -85,6 +89,15 @@ export default function OfficerConsole() {
     <div className="officer">
       <header className="officer__head">
         <h1>담당자 심사</h1>
+        {/* 목업을 보고 있다는 사실을 숨기지 않는다. 이 배너가 없으면 시연을 보는
+            사람이 실제 접수 건으로 오해한다. */}
+        {mock && (
+          <p className="officer__mock">
+            <strong>목업 데이터</strong> 실제 접수 건이 없어 예시로 채운 화면입니다. 판단
+            버튼은 눌리지만 브라우저 메모리에만 남고 새로고침하면 되돌아갑니다.
+            <code>?mock=0</code>을 붙이면 실제 데이터만 봅니다.
+          </p>
+        )}
         <div className="officer__roles" role="group" aria-label="역할 전환">
           {roles.map((r) => (
             <button
