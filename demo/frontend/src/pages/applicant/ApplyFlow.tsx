@@ -202,6 +202,21 @@ export default function ApplyFlow() {
     window.scrollTo({ top: 0 })
   }
 
+  /**
+   * 상단 단계 표시를 눌러 바로 그 단계로 간다.
+   *
+   * 시연에서는 앞 단계를 다 통과해야만 다음 화면을 볼 수 있으면 곤란하다.
+   * 신청 건은 사업을 고른 시점에 이미 만들어져 있으므로, 어느 단계로 건너뛰든
+   * 그 화면이 필요로 하는 `appId`는 준비돼 있다. 각 화면의 저장·판정은 그대로
+   * 동작하고, 최종 제출 시점의 검증(최종 확인)이 미비를 잡아 준다.
+   */
+  const jumpTo = (next: Stage) => {
+    if (next === stage) return
+    setStage(next)
+    setFocusSlot('')
+    window.scrollTo({ top: 0 })
+  }
+
   if (error) return <p className="flow-error">{error}</p>
 
   if (program === null || stage === 'program') {
@@ -260,7 +275,13 @@ export default function ApplyFlow() {
         <ol className="flow__stages">
           {stages.map(([key, label]) => (
             <li key={key} className={stage === key ? 'is-current' : undefined}>
-              {label}
+              <button
+                type="button"
+                aria-current={stage === key ? 'step' : undefined}
+                onClick={() => jumpTo(key)}
+              >
+                {label}
+              </button>
             </li>
           ))}
         </ol>

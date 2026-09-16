@@ -36,13 +36,23 @@
   font-size: 12.5px;
 }
 
-.flow__stages li {
+.flow__stages button {
+  font: inherit;
+  font-size: 12.5px;
   border: 1px solid #ccc;
+  background: transparent;
   padding: 3px 10px;
   color: #888;
+  cursor: pointer;
 }
 
-.flow__stages li.is-current {
+.flow__stages button:hover {
+  border-color: #1f3864;
+  background: #eaf0fb;
+  color: #1f3864;
+}
+
+.flow__stages li.is-current button {
   border-color: #1f3864;
   background: #1f3864;
   color: #fff;
