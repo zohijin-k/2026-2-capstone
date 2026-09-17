@@ -17,7 +17,6 @@ import { useEffect, useState } from 'react'
 import {
   fetchFinalCheck,
   submitApplication,
-  type Blocker,
   type DocStatus,
   type FinalCheck as FinalCheckData,
   type SubmitResult,
@@ -30,28 +29,11 @@ const STATUS_LABEL: Record<DocStatus, string> = {
   NEEDS_REVIEW: '확인필요',
 }
 
-const KIND_LABEL: Record<Blocker['kind'], string> = {
-  form: '신청서',
-  consent: '동의',
-  document: '서류',
-  context: '근로유형',
-  subsidy: '지원 항목',
-}
-
-const GOTO_LABEL: Record<Blocker['goto'], string> = {
-  form1: '신청서로 이동',
-  consent: '동의 화면으로 이동',
-  upload: '업로드 화면으로 이동',
-  subsidy: '지원 항목 화면으로 이동',
-}
-
 export default function FinalCheck({
   applicationId,
-  onGoto,
   onSubmitted,
 }: {
   applicationId: number
-  onGoto: (blocker: Blocker) => void
   onSubmitted: (result: SubmitResult) => void
 }) {
   const [data, setData] = useState<FinalCheckData | null>(null)
@@ -132,46 +114,6 @@ export default function FinalCheck({
           </table>
         </section>
       )}
-
-      {!data.allows_supplement && (
-        <section className="fcheck__alarm">
-          <h3>이 사업은 서류를 보완할 기회가 없습니다</h3>
-          <p>
-            {data.program_name}은(는) 서류 미비가 있어도 <strong>별도의 보완(추가서류)
-            요청 없이 선발에서 제외</strong>됩니다. 제출 후에는 고칠 수 없으니, 아래 내용을
-            지금 확인해 주세요.
-          </p>
-        </section>
-      )}
-
-      {data.warnings
-        .filter((w) => data.allows_supplement || !w.includes('보완'))
-        .map((w) => (
-          <p key={w} className="fcheck__warn">
-            {w}
-          </p>
-        ))}
-
-      <section className="fcheck__box">
-        <h3>제출할 수 있는 상태인가</h3>
-        {data.blockers.length === 0 ? (
-          <p className="fcheck__ok">
-            확인이 필요한 항목이 없습니다. 아래 내용을 마지막으로 확인한 뒤 제출해 주세요.
-          </p>
-        ) : (
-          <ul className="fcheck__blockers">
-            {data.blockers.map((b) => (
-              <li key={`${b.kind}-${b.target}`}>
-                <span className="fcheck__kind">{KIND_LABEL[b.kind]}</span>
-                <span className="fcheck__msg">{b.message}</span>
-                <button type="button" className="btn btn--small" onClick={() => onGoto(b)}>
-                  {GOTO_LABEL[b.goto]}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
 
       <section className="fcheck__box">
         <h3>작성하신 내용</h3>

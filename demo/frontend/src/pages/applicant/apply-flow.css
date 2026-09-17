@@ -6,6 +6,18 @@
   padding: 20px 0 80px;
 }
 
+/*
+ * 서식1~5는 R8.6(PC 전용 고정 레이아웃)을 그대로 지킨다 — PDF 표 좌표를
+ * 그대로 쓰므로 폭이 바뀌면 구조가 깨진다. 서류 업로드 화면은 서식 재현이
+ * 아닌 신청 도구 화면이라 이 예외에서 제외한다(`upload` 단계에서만 붙는
+ * `.flow--fluid`).
+ */
+.flow--fluid {
+  width: 100%;
+  max-width: 940px;
+  padding: 20px 16px 80px;
+}
+
 .flow__head {
   display: flex;
   align-items: flex-end;
@@ -14,6 +26,14 @@
   padding-bottom: 12px;
   border-bottom: 2px solid #1f3864;
   margin-bottom: 18px;
+}
+
+.flow--fluid .flow__head {
+  flex-wrap: wrap;
+}
+
+.flow--fluid .flow__stages {
+  flex-wrap: wrap;
 }
 
 .flow__head h1 {
@@ -107,15 +127,27 @@
   font-size: 14px;
   padding: 8px 20px;
   border: 1px solid #888;
+  border-radius: var(--radius-sm);
   background: #fff;
   cursor: pointer;
+  transition: background var(--ease), border-color var(--ease), transform var(--ease);
+}
+
+.btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .btn--primary {
-  border-color: #1f3864;
-  background: #1f3864;
+  border-color: var(--brand);
+  background: var(--brand);
   color: #fff;
   font-weight: 700;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: #16294d;
+  color: #fff;
 }
 
 .btn:disabled {

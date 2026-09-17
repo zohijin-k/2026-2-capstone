@@ -12,8 +12,6 @@
  * 비교를 두지 않는다. 자가진단 문항 수, 신청서 서식, 동의 항목, 지원 항목 단계의
  * 유무가 전부 서버의 사업 설정에서 나온다.
  *
- * [5]의 "해당 위치로 이동"이 이 컴포넌트에서 처리된다. 사유만 보여주고 신청자가
- * 직접 찾아가게 하면 결국 처음부터 다시 훑게 된다.
  */
 
 import { useState } from 'react'
@@ -23,7 +21,6 @@ import {
   patchApplication,
   postConsents,
   postSelfCheck,
-  type Blocker,
   type ConsentPayload,
   type Program,
   type SelfCheckResult,
@@ -68,26 +65,6 @@ const FORM1_STEPS = [
   { key: 'tail' as const, label: 'Ⅱ~Ⅳ. 납입·계좌·기타' },
 ]
 
-/** 최종 확인에서 되돌아갈 때, 그 항목이 들어 있는 서식1 스텝. */
-const FIELD_STEP: Record<string, number> = {
-  savingPurpose: 0,
-  priorJoined: 0,
-  name: 1,
-  birth: 1,
-  gender: 1,
-  address: 1,
-  mobile: 1,
-  transferIn: 1,
-  householdType: 1,
-  householdSize: 1,
-  workType: 1,
-  employedAt: 1,
-  workplaceName: 1,
-  bankName: 2,
-  accountNo: 2,
-  accountHolder: 2,
-}
-
 type ConsentType = ConsentPayload['consent_type']
 
 /**
@@ -123,8 +100,6 @@ export default function ApplyFlow() {
   const [signMode, setSignMode] = useState<SignMode>('전자서명')
 
   const [submitted, setSubmitted] = useState<SubmitResult | null>(null)
-  /** 업로드 화면에서 스크롤해 보여줄 슬롯. 최종 확인의 "이동"이 채운다. */
-  const [focusSlot, setFocusSlot] = useState('')
   /** 지원 항목이 바뀌면 업로드 화면의 체크리스트를 다시 읽게 하는 키. */
   const [checklistKey, setChecklistKey] = useState(0)
 
@@ -185,23 +160,6 @@ export default function ApplyFlow() {
     setStage(program.has_subsidy_items ? 'subsidy' : 'upload')
   }
 
-  /** 최종 확인의 "해당 위치로 이동". 스텝·슬롯까지 정확히 되돌려 놓는다. */
-  const goto = (b: Blocker) => {
-    if (b.goto === 'form1') {
-      setWholeSheet(false)
-      setStep(FIELD_STEP[b.target] ?? 1)
-      setStage('form1')
-    } else if (b.goto === 'upload') {
-      setFocusSlot(b.kind === 'document' ? b.target : '')
-      setStage('upload')
-    } else if (b.goto === 'subsidy') {
-      setStage('subsidy')
-    } else {
-      setStage('consent')
-    }
-    window.scrollTo({ top: 0 })
-  }
-
   /**
    * 상단 단계 표시를 눌러 바로 그 단계로 간다.
    *
@@ -213,7 +171,6 @@ export default function ApplyFlow() {
   const jumpTo = (next: Stage) => {
     if (next === stage) return
     setStage(next)
-    setFocusSlot('')
     window.scrollTo({ top: 0 })
   }
 
@@ -263,7 +220,7 @@ export default function ApplyFlow() {
   ]
 
   return (
-    <div className="flow">
+    <div className={stage === 'upload' ? 'flow flow--fluid' : 'flow'}>
       <header className="flow__head">
         <div>
           <h1>{program.name} 신청</h1>
@@ -488,26 +445,7 @@ export default function ApplyFlow() {
       {/* ── [5] 서류 업로드 ── */}
       {stage === 'upload' && appId !== null && (
         <>
-          <div className="flow-block flow-block--ok">
-            <strong>
-              {program.has_subsidy_items
-                ? '고르신 항목에 필요한 서류만 남겼습니다.'
-                : '서식1~5 작성이 끝났습니다. 종이·자필서명 0건.'}
-            </strong>
-            <p>신청번호 {appNo}</p>
-            <p>
-              발급받아야만 하는 서류만 올리면 됩니다. 올리는 즉시 적합 여부를 알려 드립니다.
-              {program.allows_supplement
-                ? ` 미비가 있으면 접수 후 ${program.supplement_days}일 내에 보완할 수 있습니다.`
-                : ' 이 사업은 보완 요청이 없으니 제출 전에 꼭 확인해 주세요.'}
-            </p>
-          </div>
-          <div className="flow__gap" />
-          <DocumentUpload
-            key={checklistKey}
-            applicationId={appId}
-            focusSlot={focusSlot}
-          />
+          <DocumentUpload key={checklistKey} applicationId={appId} />
           <div className="flow__actions">
             <button
               type="button"
@@ -516,14 +454,7 @@ export default function ApplyFlow() {
             >
               이전
             </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() => {
-                setFocusSlot('')
-                setStage('final')
-              }}
-            >
+            <button type="button" className="btn btn--primary" onClick={() => setStage('final')}>
               제출 전 최종 확인
             </button>
           </div>
@@ -535,7 +466,6 @@ export default function ApplyFlow() {
         <>
           <FinalCheck
             applicationId={appId}
-            onGoto={goto}
             onSubmitted={(result) => {
               setSubmitted(result)
               setStage('mypage')

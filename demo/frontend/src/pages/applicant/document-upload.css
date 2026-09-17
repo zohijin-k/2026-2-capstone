@@ -1,10 +1,11 @@
 /*
  * 서류 업로드 화면. 서식 재현이 아니라 신청 도구 화면이므로 관공서 표 스타일을
- * 쓰지 않는다. 다만 폭(940px)과 색은 서식 화면과 맞춘다.
+ * 쓰지 않는다. 카드는 슬림하게 두고, 요건 설명은 ⓘ 모달로 뺀다 — 핵심 액션인
+ * 파일 업로드가 안내문에 묻히지 않게 하는 것이 이 화면의 목표다.
  */
 
 .dupload {
-  width: 940px;
+  width: 100%;
   margin: 0 auto;
 }
 
@@ -28,10 +29,11 @@
 /* ---- 자주 틀리는 것 ---- */
 
 .dupload__mistakes {
-  border: 1px solid #c00;
-  background: #fff5f5;
-  padding: 12px 16px;
-  margin-bottom: 18px;
+  border: 1px solid var(--fail);
+  border-radius: var(--radius-md);
+  background: var(--fail-tint);
+  padding: 16px 18px;
+  margin-bottom: 20px;
 }
 
 .dupload__mistake-list {
@@ -50,7 +52,7 @@
 .dupload__mistakes strong {
   display: inline-block;
   min-width: 132px;
-  color: #c00;
+  color: var(--fail);
 }
 
 /* TF 미확정 가정값 안내. 경고와 섞이지 않게 회색 각주로 깐다. */
@@ -58,7 +60,7 @@
   margin: 10px 0 0;
   padding: 8px 0 0;
   list-style: none;
-  border-top: 1px dashed #d99;
+  border-top: 1px dashed rgb(204 0 0 / 30%);
   color: #555;
   font-size: 11.5px;
   line-height: 1.6;
@@ -67,9 +69,11 @@
 /* ---- 근로유형 선택 ---- */
 
 .dupload__context {
-  border: 1px solid #1f3864;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-md);
+  background: var(--brand-tint);
+  padding: 16px 18px;
+  margin-bottom: 16px;
 }
 
 .dupload__opts {
@@ -90,47 +94,89 @@
 .dupload__opts select {
   font: inherit;
   font-size: 12.5px;
-  padding: 2px 4px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
 }
 
+/* ---- 진행 상황 ---- */
+
 .dupload__progress {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
   font-size: 13px;
-  padding: 8px 0 12px;
-  border-bottom: 1px solid #ddd;
-  margin-bottom: 14px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
 }
 
 .dupload__progress strong {
-  font-size: 16px;
-  color: #1f3864;
+  font-size: 18px;
+  color: var(--brand);
 }
 
 .dupload__progress-hint {
-  margin-left: 10px;
   color: var(--muted);
   font-size: 12.5px;
 }
 
-/* ---- 슬롯 ---- */
+.dupload__bar {
+  flex-basis: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.dupload__bar-fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+  transition: width var(--ease);
+}
+
+/* ---- 슬롯 카드 ---- */
 
 .dslots {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .dslot {
-  border: 1px solid #bbb;
-  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 14px 16px;
+  transition: border-color var(--ease), box-shadow var(--ease);
+}
+
+.dslot:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.dslot--pass {
+  border-color: var(--success);
+}
+
+.dslot--fail {
+  border-color: var(--fail);
+}
+
+.dslot--needs_review {
+  border-color: var(--warning);
 }
 
 .dslot__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
 }
 
 .dslot__label {
@@ -140,43 +186,49 @@
 
 .dslot__req {
   font-size: 11px;
-  background: #1f3864;
+  font-weight: 700;
+  background: var(--brand);
   color: #fff;
-  padding: 1px 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+
+/* ⓘ 요건 안내 — 요건 설명은 여기서 모달로만 보여준다. */
+.dslot__info {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+}
+
+.dslot__info:hover {
+  background: var(--brand-tint);
+  color: var(--brand);
 }
 
 .dslot__issuer {
   margin-left: auto;
   font-size: 12.5px;
-  color: #1f3864;
+  color: var(--brand);
 }
 
-.dslot__note {
-  margin: 2px 0;
-  font-size: 12.5px;
-  color: #444;
-}
-
-/* 서류에 반드시 찍혀 있어야 하는 항목 (응시확인서의 "응시일" 등). */
-.dslot__must {
-  margin: 2px 0;
-  font-size: 12.5px;
+.dslot__check {
+  margin-left: auto;
+  color: var(--success);
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-weight: 700;
-  color: #b06000;
-}
-
-.dslot__alt {
-  margin: 2px 0;
-  font-size: 12.5px;
-  border-left: 3px solid #1f3864;
-  padding-left: 8px;
-}
-
-.dslot__warn {
-  margin: 6px 0;
-  padding: 6px 10px 6px 26px;
-  background: #fdf0d5;
-  font-size: 12.5px;
 }
 
 .dslot__row {
@@ -197,6 +249,7 @@
   align-items: center;
   gap: 8px;
   font-size: 12.5px;
+  color: var(--muted);
 }
 
 .btn--small {
@@ -204,27 +257,26 @@
   padding: 5px 12px;
 }
 
-/* ---- 판정 결과 3종 ---- */
+/* ---- 판정 결과 ---- */
+/* 카드 테두리(.dslot--pass 등)가 이미 판정을 알려주므로 여기서는 통짜 색박스
+   대신 좌측 악센트만 남겨 조용하게 표시한다. */
 
 .dresult {
-  margin-top: 10px;
-  border: 1px solid #ccc;
-  padding: 10px 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
 }
 
 .dresult--pass {
-  border-color: #177245;
-  background: #f2fbf5;
+  --accent: var(--success);
 }
 
 .dresult--fail {
-  border-color: #c00;
-  background: #fff5f5;
+  --accent: var(--fail);
 }
 
 .dresult--needs_review {
-  border-color: #b8860b;
-  background: #fffaf0;
+  --accent: var(--warning);
 }
 
 .dresult__head {
@@ -246,12 +298,15 @@
 .dresult__meta {
   margin-left: auto;
   color: var(--muted);
+  font-size: 11.5px;
 }
 
 .dfinding {
   margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #ccc;
+  padding: 8px 12px;
+  border-left: 3px solid var(--accent, var(--border));
+  background: var(--surface-subtle);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
 .dfinding__msg {
@@ -263,24 +318,28 @@
 .dfinding__fix {
   margin: 4px 0 0;
   font-size: 12.5px;
+  color: #444;
 }
 
 .dfinding__link {
+  display: inline-block;
+  margin-top: 4px;
   font-size: 12.5px;
-  color: #1f3864;
+  color: var(--brand);
 }
 
 .dfinding__ok {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
   font-size: 12.5px;
-  color: #177245;
+  color: var(--success);
+  font-weight: 700;
 }
 
 .dextract {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 18px;
-  margin: 8px 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
   color: #444;
 }
@@ -299,14 +358,56 @@
   font-weight: 700;
 }
 
-/* ---- 온라인 작성으로 대체된 서류 / 병합 업로드 / 미배정 ---- */
+/* ---- 모달 내부(요건 안내) ---- */
+
+.dinfo__section {
+  margin: 0 0 16px;
+}
+
+.dinfo__section:last-child {
+  margin-bottom: 0;
+}
+
+.dinfo__section h4 {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.dinfo__section p,
+.dinfo__section ul {
+  margin: 0 0 4px;
+}
+
+.dinfo__section ul {
+  padding-left: 18px;
+}
+
+.dinfo__alt {
+  background: var(--brand-tint);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  margin: 0 0 6px;
+}
+
+.dinfo__warn {
+  background: var(--warning-tint);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin: 0;
+  list-style: disc;
+}
+
+/* ---- 온라인 작성으로 대체된 서류 / 미배정 ---- */
 
 .dupload__online,
-.dupload__merged,
 .dupload__unassigned {
   margin-top: 18px;
-  border: 1px solid #ccc;
-  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  padding: 14px 18px;
   font-size: 12.5px;
 }
 
@@ -317,8 +418,8 @@
 }
 
 .dupload__unassigned {
-  border-color: #b8860b;
-  background: #fffaf0;
+  border-color: var(--warning);
+  background: var(--warning-tint);
 }
 
 .dupload__unassigned li {
@@ -328,13 +429,17 @@
   margin: 4px 0;
 }
 
-.dupload__merged-result {
-  margin: 10px 0 0;
-  padding: 8px 10px;
-  background: #eaf0fb;
-}
-
 .dupload__error {
   margin-top: 14px;
-  color: #c00;
+  color: var(--fail);
+}
+
+@media (max-width: 560px) {
+  .dupload__mistake-list {
+    grid-template-columns: 1fr;
+  }
+
+  .dslot {
+    padding: 12px;
+  }
 }

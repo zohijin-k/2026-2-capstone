@@ -16,28 +16,15 @@ import {
   fetchChecklist,
   putDocContext,
   uploadDocument,
-  uploadMerged,
   type Checklist,
   type DocRequirementRow,
   type DocStatus,
-  type MergedUploadResult,
   type UploadedDocument,
 } from '../../api.ts'
+import Modal from '../../components/Modal.tsx'
 import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
-
-/** 두 사업에 공통으로 해당하는 실수. */
-const COMMON_MISTAKES = [
-  ['등본 아닌 초본', '주민등록 "등본"이 아니라 "초본"입니다. 가장 흔한 탈락 사유입니다.'],
-  ['PDF 암호 해제', '암호가 걸린 파일은 열리지 않아 그대로 부적합 처리됩니다.'],
-] as const
-
-/** 근로확인서류를 내는 사업(두배적금)에서만 해당하는 실수. */
-const WORK_PROOF_MISTAKES = [
-  ['등록증 아닌 증명', '사업자등록"증"이 아니라 사업자등록"증명"입니다.'],
-  ['5년 주소변동내역 포함', '초본 발급 시 "과거의 주소 변동사항(최근 5년)"을 반드시 체크하세요.'],
-] as const
 
 const STATUS_LABEL: Record<DocStatus, string> = {
   PASS: '적합',
@@ -104,6 +91,66 @@ function DocumentResult({
   )
 }
 
+/** ⓘ에 보여줄 내용이 하나라도 있는지. 없으면 아이콘 자체를 띄우지 않는다. */
+function hasInfo(item: DocRequirementRow): boolean {
+  return (
+    item.doc_type_choices.length > 1 ||
+    item.required_fields.length > 0 ||
+    item.notes.length > 0 ||
+    item.alternatives.length > 0 ||
+    item.warnings.length > 0
+  )
+}
+
+/** 카드에서 뺀 요건 설명 · 체크포인트를 모아 보여주는 모달. 발급처 링크는 원래대로
+    카드에 남겨 새 창으로 바로 열리게 한다 — 모달 안에 숨기지 않는다. */
+function SlotInfoModal({ item, onClose }: { item: DocRequirementRow; onClose: () => void }) {
+  return (
+    <Modal title={item.label} onClose={onClose}>
+      {item.doc_type_choices.length > 1 && (
+        <div className="dinfo__section">
+          <h4>인정되는 서류</h4>
+          <p>{item.doc_type_choices.join(' 또는 ')} 중 하나만 올리면 됩니다.</p>
+        </div>
+      )}
+      {item.required_fields.length > 0 && (
+        <div className="dinfo__section">
+          <h4>반드시 있어야 하는 표기</h4>
+          <p>{item.required_fields.join('·')} 표기가 반드시 있어야 인정됩니다.</p>
+        </div>
+      )}
+      {item.notes.length > 0 && (
+        <div className="dinfo__section">
+          <h4>안내</h4>
+          {item.notes.map((n) => (
+            <p key={n}>※ {n}</p>
+          ))}
+        </div>
+      )}
+      {item.alternatives.length > 0 && (
+        <div className="dinfo__section">
+          <h4>대체 가능</h4>
+          {item.alternatives.map((n) => (
+            <p key={n} className="dinfo__alt">
+              {n}
+            </p>
+          ))}
+        </div>
+      )}
+      {item.warnings.length > 0 && (
+        <div className="dinfo__section">
+          <h4>자주 틀리는 부분</h4>
+          <ul className="dinfo__warn">
+            {item.warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 function SlotCard({
   item,
   busy,
@@ -120,47 +167,32 @@ function SlotCard({
   onRetry: (doc: UploadedDocument) => void
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const [infoOpen, setInfoOpen] = useState(false)
   const doc = item.documents[0]
+  const status = doc?.status ?? null
 
   return (
-    <li className="dslot" id={`slot-${item.slot_key}`}>
+    <li className={`dslot${status ? ` dslot--${status.toLowerCase()}` : ''}`} id={`slot-${item.slot_key}`}>
       <div className="dslot__head">
         <span className="dslot__label">{item.label}</span>
         {item.required && <span className="dslot__req">필수</span>}
+        {hasInfo(item) && (
+          <button
+            type="button"
+            className="dslot__info"
+            onClick={() => setInfoOpen(true)}
+            aria-label={`${item.label} 요건 안내`}
+          >
+            ⓘ
+          </button>
+        )}
         {item.issuer_url && (
           <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
             {item.issuer} 바로가기 ↗
           </a>
         )}
+        {status === 'PASS' && <span className="dslot__check">✓ 확인 완료</span>}
       </div>
-
-      {item.doc_type_choices.length > 1 && (
-        <p className="dslot__note">
-          ※ {item.doc_type_choices.join(' 또는 ')} 중 하나만 올리면 됩니다.
-        </p>
-      )}
-      {item.required_fields.length > 0 && (
-        <p className="dslot__must">
-          {item.required_fields.join('·')} 표기가 반드시 있어야 인정됩니다.
-        </p>
-      )}
-      {item.notes.map((n) => (
-        <p key={n} className="dslot__note">
-          ※ {n}
-        </p>
-      ))}
-      {item.alternatives.map((n) => (
-        <p key={n} className="dslot__alt">
-          {n}
-        </p>
-      ))}
-      {item.warnings.length > 0 && (
-        <ul className="dslot__warn">
-          {item.warnings.map((w) => (
-            <li key={w}>{w}</li>
-          ))}
-        </ul>
-      )}
 
       <div className="dslot__row">
         <input
@@ -191,36 +223,22 @@ function SlotCard({
       </div>
 
       {doc && <DocumentResult doc={doc} onRetry={() => onRetry(doc)} />}
+      {infoOpen && <SlotInfoModal item={item} onClose={() => setInfoOpen(false)} />}
     </li>
   )
 }
 
-export default function DocumentUpload({
-  applicationId,
-  focusSlot = '',
-}: {
-  applicationId: number
-  /** 최종 확인 화면에서 "이동"으로 들어온 슬롯. 그 자리로 스크롤한다. */
-  focusSlot?: string
-}) {
+export default function DocumentUpload({ applicationId }: { applicationId: number }) {
   const [checklist, setChecklist] = useState<Checklist | null>(null)
   const [declared, setDeclared] = useState<Record<string, YMD>>({})
   const [busySlot, setBusySlot] = useState('')
-  const [merged, setMerged] = useState<MergedUploadResult | null>(null)
   const [error, setError] = useState('')
-  const mergedInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     fetchChecklist(applicationId)
       .then(setChecklist)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [applicationId])
-
-  // 목록이 그려진 뒤에 해당 슬롯으로 스크롤한다.
-  useEffect(() => {
-    if (!focusSlot || !checklist) return
-    document.getElementById(`slot-${focusSlot}`)?.scrollIntoView({ block: 'center' })
-  }, [focusSlot, checklist])
 
   const context = checklist?.context ?? {}
 
@@ -251,19 +269,6 @@ export default function DocumentUpload({
     await refresh()
   }
 
-  const uploadAll = async (file: File) => {
-    setBusySlot('__merged__')
-    setError('')
-    try {
-      setMerged(await uploadMerged(applicationId, file))
-      await refresh()
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setBusySlot('')
-    }
-  }
-
   if (error && !checklist) return <p className="flow-error">{error}</p>
   if (!checklist) return <p className="dupload__loading">서류 목록을 불러오는 중…</p>
 
@@ -272,27 +277,6 @@ export default function DocumentUpload({
 
   return (
     <div className="dupload">
-      <section className="dupload__mistakes">
-        <h3>올리기 전에 꼭 확인하세요</h3>
-        <ul className="dupload__mistake-list">
-          {[
-            ...COMMON_MISTAKES,
-            ...(checklist.program.asks_work_category ? WORK_PROOF_MISTAKES : []),
-          ].map(([title, body]) => (
-            <li key={title}>
-              <strong>{title}</strong>
-              <span>{body}</span>
-            </li>
-          ))}
-        </ul>
-        {/* 판정 컷라인은 TF 미확정 값이다. 숨기지 않고 그대로 드러낸다. */}
-        <ul className="dupload__assumptions">
-          {checklist.assumption_notes.map((note) => (
-            <li key={note}>※ {note}</li>
-          ))}
-        </ul>
-      </section>
-
       {/* 근로확인서류가 있는 사업에서만 근로유형을 묻는다. 취업패키지는 근로요건이
           없어 이 구획 자체가 뜨지 않는다. */}
       {checklist.program.asks_work_category && (
@@ -352,6 +336,14 @@ export default function DocumentUpload({
             고르신 지원 항목에 따라 서류가 늘고 줍니다. 항목을 바꾸면 이 목록도 바뀝니다.
           </span>
         )}
+        <div className="dupload__bar">
+          <div
+            className="dupload__bar-fill"
+            style={{
+              width: `${checklist.upload_total ? (checklist.upload_done / checklist.upload_total) * 100 : 0}%`,
+            }}
+          />
+        </div>
       </div>
 
       <ul className="dslots">
@@ -380,41 +372,6 @@ export default function DocumentUpload({
           </ul>
         </section>
       )}
-
-      <section className="dupload__merged">
-        <h3>이미 하나로 합쳐 두셨나요?</h3>
-        <p className="dupload__hint">
-          공고문은 여러 서류를 1개 파일로 압축해 올리도록 안내합니다. 합쳐진 pdf를 그대로 올리면
-          페이지마다 서류 종류를 판별해 위 칸에 자동으로 넣어 드립니다.
-        </p>
-        <input
-          ref={mergedInput}
-          className="dslot__file"
-          type="file"
-          accept=".pdf"
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) void uploadAll(file)
-            e.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn--small"
-          disabled={busySlot === '__merged__'}
-          onClick={() => mergedInput.current?.click()}
-        >
-          {busySlot === '__merged__' ? '페이지 분리 중…' : '합쳐진 pdf 올리기'}
-        </button>
-
-        {merged && (
-          <p className="dupload__merged-result">
-            {merged.page_count}쪽 중 {merged.assigned.length}쪽을 자동 배정했습니다.
-            {merged.unassigned.length > 0 &&
-              ` ${merged.unassigned.length}쪽은 어느 서류인지 판별하지 못해 담당자 확인 대상으로 남겼습니다.`}
-          </p>
-        )}
-      </section>
 
       {checklist.unassigned.length > 0 && (
         <section className="dupload__unassigned">

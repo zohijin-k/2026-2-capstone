@@ -1,0 +1,91 @@
+/* 범용 모달. 기존 엔진 톤(브랜드 네이비, 판정 3색, .btn)을 그대로 물려받는다. */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(20 20 30 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+  animation: modal-fade var(--ease);
+}
+
+.modal {
+  width: 100%;
+  max-width: 480px;
+  max-height: min(640px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  animation: modal-pop var(--ease);
+}
+
+.modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.modal__head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.modal__close {
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  border: none;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--ease), color var(--ease);
+}
+
+.modal__close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.modal__body {
+  overflow-y: auto;
+  padding: 0 20px 20px;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.modal__foot {
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+}
+
+@media (max-width: 520px) {
+  .modal {
+    max-width: none;
+  }
+}
