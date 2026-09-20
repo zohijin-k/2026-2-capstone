@@ -5,6 +5,30 @@
   --text: #1a1a1a;
   --muted: #666;
 
+  /* 공용 컬러 토큰. 값 자체는 기존 화면들과 동일하게 유지한다 — 판정 3색은
+     업로드·최종확인·마이페이지가 같은 색이어야 하므로 여기서 값을 바꾸지
+     않고 변수로만 묶는다. */
+  --brand: #1f3864;
+  --brand-tint: #eaf0fb;
+  --success: #177245;
+  --success-tint: #f2fbf5;
+  --fail: #c00;
+  --fail-tint: #fff5f5;
+  --warning: #b8860b;
+  --warning-tint: #fffaf0;
+  --border: #ddd;
+  --border-strong: #bbb;
+  --surface: #fff;
+  --surface-subtle: #fafafa;
+
+  /* 신청 도구 화면(서식 재현이 아닌 화면)에서만 쓰는 현대적 톤. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 3px rgb(20 20 30 / 6%);
+  --shadow-md: 0 12px 32px rgb(20 20 30 / 14%);
+  --ease: 160ms ease;
+
   font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo',
     'Noto Sans KR', system-ui, sans-serif;
   color: var(--text);
@@ -31,13 +55,13 @@ body {
 }
 
 .dstatus--pass {
-  background: #177245;
+  background: var(--success);
 }
 
 .dstatus--fail {
-  background: #c00;
+  background: var(--fail);
 }
 
 .dstatus--needs_review {
-  background: #b8860b;
+  background: var(--warning);
 }
