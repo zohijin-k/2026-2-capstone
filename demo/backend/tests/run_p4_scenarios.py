@@ -258,9 +258,17 @@ def test_list_and_filters(client, ids) -> None:
     # 목록의 `미비서류` 숫자와 서류 칸이 따로 계산되면 "미비 3건인데 빨간 칸은 2개"가
     # 된다. 그 표는 담당자가 더 이상 믿지 않는다 — 전 행에서 두 값이 맞는지 본다.
     for row in everything["rows"]:
-        bad = sum(1 for c in row["documents"] if c["status"] != "PASS")
+        # 정의 그대로 센다: **필수** 서류의 미제출 + 올렸지만 적합 아님.
+        # "적합 아닌 칸 전부"로 세면 선택 서류가 생기는 날 이 단언이 엉뚱하게
+        # 깨진다 — 안 낸 선택 서류는 칸이 비어도 미비가 아니다.
+        bad = sum(
+            1
+            for c in row["documents"]
+            if (c["status"] is None and c["required"]) or
+            (c["status"] is not None and c["status"] != "PASS")
+        )
         check(
-            f"{row['name']}: 미비 개수 = 적합 아닌 칸 수",
+            f"{row['name']}: 미비 개수 = 필수 미제출 + 적합 아님",
             (row["missing_count"], bad),
             (bad, bad),
         )

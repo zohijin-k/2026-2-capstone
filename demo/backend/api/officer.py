@@ -117,21 +117,12 @@ DOC_COLUMNS: list[tuple[str, str]] = [
 DOC_COLUMN_KEYS = {slot for slot, _ in DOC_COLUMNS}
 
 #: 헤더가 서류명을 쥐는 칸. 이 칸들은 상태 점만 찍는다.
-FIXED_DOC_COLUMNS = {"resident_abstract", "nhis_payment", "nhis_qualification", "nhis_acquisition_loss"}
-
-
-def _doc_column(slot_key: str) -> str:
-    """서류 슬롯이 들어갈 컬럼.
-
-    복수 사업장 근무자는 슬롯이 `work_proof_1`·`work_proof_2`로 갈린다
-    (`_double_savings_checklist`). 그 경우에도 근로확인서류 칸에 나란히 들어가야
-    한다 — 사업장이 둘이라는 사실 자체가 그 칸에서 읽혀야 할 정보다.
-    """
-    if slot_key in DOC_COLUMN_KEYS:
-        return slot_key
-    if slot_key.startswith("work_proof"):
-        return "work_proof"
-    return OTHER_DOC_COLUMN
+FIXED_DOC_COLUMNS = {
+    "resident_abstract",
+    "nhis_payment",
+    "nhis_qualification",
+    "nhis_acquisition_loss",
+}
 
 #: 서류 칸에 들어갈 짧은 이름.
 #:
@@ -155,6 +146,20 @@ DOC_STATE_LABELS = {
     "NEEDS_REVIEW": "확인필요",
     None: "미제출",
 }
+
+def _doc_column(slot_key: str) -> str:
+    """서류 슬롯이 들어갈 컬럼.
+
+    복수 사업장 근무자는 슬롯이 `work_proof_1`·`work_proof_2`로 갈린다
+    (`_double_savings_checklist`). 그 경우에도 근로확인서류 칸에 나란히 들어가야
+    한다 — 사업장이 둘이라는 사실 자체가 그 칸에서 읽혀야 할 정보다.
+    """
+    if slot_key in DOC_COLUMN_KEYS:
+        return slot_key
+    if slot_key.startswith("work_proof"):
+        return "work_proof"
+    return OTHER_DOC_COLUMN
+
 
 DEFAULT_PAGE_SIZE = 20
 

@@ -59,7 +59,14 @@ function DocCell({
   return (
     <td className="grid__doc" onClick={(e) => e.stopPropagation()}>
       {cells.map((cell) => (
-        <DocMark key={cell.slot_key} row={row} cell={cell} onOpenDoc={onOpenDoc} />
+        // 미배정 병합 페이지는 여러 장이 **같은 slot_key**로 온다. 슬롯만으로
+        // 키를 잡으면 `기타` 칸에서 키가 겹쳐 리액트가 칸을 잘못 재사용한다.
+        <DocMark
+          key={`${cell.slot_key}:${cell.document_id ?? 'none'}`}
+          row={row}
+          cell={cell}
+          onOpenDoc={onOpenDoc}
+        />
       ))}
     </td>
   )

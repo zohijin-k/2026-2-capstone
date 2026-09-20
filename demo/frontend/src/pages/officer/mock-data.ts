@@ -1153,7 +1153,7 @@ function makeSavingsEntry(
 
   for (const reason of reasons) {
     const slot = DOC_TYPE_TO_SLOT[reason.doc_type ?? ''] ?? 'nhis_payment'
-    const target = docs.find((d) => d.slotKey === slot) ?? docs[1]
+    const target = docs.find((d) => d.slotKey === slot)
     if (!target) continue
     target.findings.push({
       code: reason.code,
