@@ -1,7 +1,7 @@
 /* 신청 플로우 껍데기. 서식 내부 스타일은 forms/form-sheet.css 가 담당한다. */
 
 .flow {
-  width: 940px;
+  width: var(--sheet-w);
   margin: 0 auto;
   padding: 20px 0 80px;
 }
@@ -14,7 +14,7 @@
  */
 .flow--fluid {
   width: 100%;
-  max-width: 940px;
+  max-width: var(--sheet-w);
   padding: 20px 16px 80px;
 }
 

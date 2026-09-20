@@ -1,0 +1,31 @@
+{
+  "name": "2026-2-capstone",
+  "private": true,
+  "description": "전북청년 두배적금·취업지원패키지 신청서류 자동 검토 시스템 — 실행 진입점",
+  "scripts": {
+    "setup": "npm run setup:api && npm run setup:web && npm run setup:fixtures",
+    "setup:api": "pip install -r demo/backend/requirements.txt",
+    "setup:web": "npm install --prefix demo/frontend",
+    "setup:fixtures": "python -X utf8 -m demo.fixtures.make_samples",
+
+    "dev:api": "uvicorn demo.backend.main:app --reload --port 8000",
+    "dev:web": "npm run dev --prefix demo/frontend",
+
+    "build": "npm run build --prefix demo/frontend",
+    "lint": "npm run lint --prefix demo/frontend",
+    "preview": "npm run preview --prefix demo/frontend",
+
+    "reset": "python -X utf8 -m demo.backend.reset",
+
+    "test": "npm run test:engine && npm run test:api && npm run build",
+    "test:engine": "python -X utf8 -m tools.engine_smoke",
+    "test:api": "npm run test:p2 && npm run test:p3 && npm run test:p4 && npm run test:p5 && npm run test:p6 && npm run test:p7 && npm run test:p8",
+    "test:p2": "python -X utf8 -m demo.backend.tests.run_p2_scenarios",
+    "test:p3": "python -X utf8 -m demo.backend.tests.run_p3_scenarios",
+    "test:p4": "python -X utf8 -m demo.backend.tests.run_p4_scenarios",
+    "test:p5": "python -X utf8 -m demo.backend.tests.run_p5_scenarios",
+    "test:p6": "python -X utf8 -m demo.backend.tests.run_p6_scenarios",
+    "test:p7": "python -X utf8 -m demo.backend.tests.run_p7_scenarios",
+    "test:p8": "python -X utf8 -m demo.backend.tests.run_p8_scenarios"
+  }
+}

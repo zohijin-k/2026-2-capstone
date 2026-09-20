@@ -171,6 +171,13 @@ function increment(map: Map<string, number>, key: string): void {
 
 export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionName | null): Snapshot {
   const { applications, schedule } = dataset
+  /**
+   * 배점은 담당자 권한으로만 내려온다. 배열이 없으면 배점 분포와 커트라인을
+   * **아예 계산하지 않는다** — 없는 값을 0으로 그리면 "다들 최저점"이라는 거짓
+   * 그림이 되고, 화면에서 숨기기만 하면 값은 브라우저 메모리에 그대로 남는다.
+   */
+  const scoreOf = new Map((dataset.scores ?? []).map((row) => [row.id, row.score]))
+  const hasScores = dataset.scores !== undefined
   const confirmed = asOf >= schedule.secondVerificationAt
   const accumulators = new Map<RegionName, Accumulator>(REGIONS.map((profile) => [profile.name, createAccumulator()]))
   const stages = new Array<ReviewStage | null>(applications.length)
@@ -184,9 +191,12 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
 
     acc.submitted++
     acc[stage]++
-    const slot = app.score - MIN_SCORE
-    if (stage === 'eligible') acc.eligibleByScore[slot]++
-    if (stage === 'waiting' || stage === 'reviewing') acc.pendingByScore[slot]++
+    const score = scoreOf.get(app.id)
+    if (score !== undefined) {
+      const slot = score - MIN_SCORE
+      if (stage === 'eligible') acc.eligibleByScore[slot]++
+      if (stage === 'waiting' || stage === 'reviewing') acc.pendingByScore[slot]++
+    }
     if (stage === 'eligible' || stage === 'rejected') {
       acc.processingDaysSum += ((decisionAt(app) ?? asOf) - (app.submittedAt ?? asOf)) / DAY_MS
       acc.processingCount++
@@ -194,7 +204,7 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
     if (app.firstSelected && asOf >= schedule.firstSelectionAt[app.region]) acc.firstSelected++
     if (app.finalSelected && confirmed) {
       acc.finalSelected++
-      acc.finalMinScore = Math.min(acc.finalMinScore, app.score)
+      if (score !== undefined) acc.finalMinScore = Math.min(acc.finalMinScore, score)
     }
   })
 
@@ -209,19 +219,23 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
   const regions: RegionRow[] = REGIONS.map((profile) => {
     const acc = accumulators.get(profile.name)!
     const decided = acc.eligible + acc.rejected
+    //: 실데이터에서는 서버가 정원표의 정본을 내려준다. 목업은 regions.ts 값을 쓴다.
+    const quota = dataset.quotaByRegion?.[profile.name] ?? profile.quota
     return {
       name: profile.name,
-      quota: profile.quota,
+      quota,
       submitted: acc.submitted,
       waiting: acc.waiting,
       reviewing: acc.reviewing,
       eligible: acc.eligible,
       rejected: acc.rejected,
-      competition: acc.submitted / profile.quota,
+      competition: acc.submitted / quota,
       progress: acc.submitted ? decided / acc.submitted : 0,
       eligibleRate: decided ? acc.eligible / decided : null,
       avgProcessingDays: acc.processingCount ? acc.processingDaysSum / acc.processingCount : null,
-      cutoff: estimateCutoff(acc, profile.quota, confirmed, fallbackRate),
+      cutoff: hasScores
+        ? estimateCutoff(acc, quota, confirmed, fallbackRate)
+        : { score: null, kind: 'none' },
       firstSelected: acc.firstSelected,
       finalSelected: acc.finalSelected,
     }
@@ -268,9 +282,11 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
     increment(insuranceCounts, app.insuranceType)
     increment(householdCounts, HOUSEHOLD_LABELS[Math.min(app.householdSize, HOUSEHOLD_LABELS.length) - 1])
 
-    const bin = scoreBins[app.score - MIN_SCORE]
+    // 배점을 못 받았으면 bin 이 없다. 부적합 사유 집계는 배점과 무관하므로 계속한다.
+    const score = scoreOf.get(app.id)
+    const bin = score === undefined ? undefined : scoreBins[score - MIN_SCORE]
     if (stage === 'rejected') {
-      bin.rejected++
+      if (bin) bin.rejected++
       if (app.rejectReason && app.rejectStage) {
         const item = reasons.get(app.rejectReason) ?? { reason: app.rejectReason, stage: app.rejectStage, count: 0 }
         item.count++
@@ -278,8 +294,9 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
       }
       return
     }
+    if (bin === undefined || score === undefined) return
     const cutoff = cutoffByRegion.get(app.region)
-    if (cutoff?.score != null && app.score >= cutoff.score) bin.withinCutoff++
+    if (cutoff?.score != null && score >= cutoff.score) bin.withinCutoff++
     else bin.outsideCutoff++
   })
 
@@ -318,7 +335,7 @@ export function computeSnapshot(dataset: Dataset, asOf: number, region: RegionNa
     },
     regions,
     daily,
-    scoreBins,
+    scoreBins: hasScores ? scoreBins : [],
     rejectReasons: [...reasons.values()].sort((a, b) => b.count - a.count),
     demographics: {
       applicants,

@@ -2,7 +2,7 @@
    강조 블록은 진행 단계와 안내 문구뿐이다. */
 
 .mypage {
-  width: 940px;
+  width: var(--sheet-w);
   margin: 0 auto;
 }
 

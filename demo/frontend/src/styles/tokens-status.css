@@ -1,0 +1,88 @@
+/* 현황 대시보드의 디자인 토큰. 스코프를 나눈 이유는 tokens-form.css 머리말 참고.
+
+   다크 모드는 이 화면에만 있다. 토글 버튼도 전역 셸이 아니라 현황 화면 헤더
+   안에 둔다 — 그래야 사용자에게 "앱 테마"가 아니라 "차트 테마"로 읽힌다.
+   신청자·담당자 화면은 다크 모드를 켜도 아무 변화가 없고, 그것이 의도다. */
+
+body[data-view='status'] {
+  color-scheme: light;
+  --page: #f3f3f0;
+  --surface: #fcfcfb;
+  --surface-2: #f0efec;
+  --text: #0b0b0b;
+  --text-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.1);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --accent-strong: #1c5cab;
+  --accent-soft: #cde2fb;
+  --selected-row: rgba(42, 120, 214, 0.08);
+  --mock-bg: rgba(235, 104, 52, 0.12);
+  --mock-text: #a8431a;
+  --live-bg: rgba(27, 175, 122, 0.12);
+  --live-text: #127a55;
+  --shadow: 0 1px 2px rgba(11, 11, 11, 0.04);
+
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--page);
+  -webkit-font-smoothing: antialiased;
+  min-width: 320px;
+}
+
+html[data-theme='dark'] body[data-view='status'] {
+  color-scheme: dark;
+  --page: #0d0d0d;
+  --surface: #1a1a19;
+  --surface-2: #242422;
+  --text: #ffffff;
+  --text-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --border: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --accent-strong: #86b6ef;
+  --accent-soft: rgba(57, 135, 229, 0.2);
+  --selected-row: rgba(57, 135, 229, 0.14);
+  --mock-bg: rgba(217, 89, 38, 0.2);
+  --mock-text: #f0a07e;
+  --live-bg: rgba(27, 175, 122, 0.2);
+  --live-text: #6fd6ae;
+  --shadow: none;
+}
+
+/* 아래 넷은 원래 대시보드에서 전역 규칙이었다. 그대로 두면 신청자·담당자 화면의
+   폼 컨트롤 외형과 포커스 링까지 바뀐다(게다가 --series-1 은 그쪽 스코프에 없어
+   outline 이 아예 그려지지 않는다). 현황 화면으로 한정한다.
+
+   스코프를 :where() 로 감싸는 이유: 그냥 `body[data-view='status'] button` 이라고
+   쓰면 특정도가 (0,1,1)로 올라가 원본 `button` (0,0,1)보다 세진다. 그러면 이 규칙이
+   컴포넌트의 클래스 규칙을 이겨 버린다 — 실제로 `color: inherit` 이 상단 탭 바의
+   `.shell__tab--on { color: #1f3864 }` 를 눌러서, 활성 탭 글자가 흰 배경에 흰 글자로
+   사라졌다. :where() 는 특정도에 0을 기여하므로 원본과 똑같은 세기가 된다. */
+:where(body[data-view='status']) *::before,
+:where(body[data-view='status']) *::after {
+  box-sizing: border-box;
+}
+
+:where(body[data-view='status']) button,
+:where(body[data-view='status']) input,
+:where(body[data-view='status']) select {
+  font: inherit;
+  color: inherit;
+}
+
+:where(body[data-view='status']) button {
+  cursor: pointer;
+}
+
+:where(body[data-view='status']) :focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}

@@ -22,7 +22,7 @@ dist/
 .env.*
 !.env.example
 
-# ---- Node (데모사이트 / 대시보드 합류 대비) ----
+# ---- Node (프론트엔드는 demo/frontend 하나다 — 현황 대시보드도 그 안의 한 탭이다) ----
 node_modules/
 npm-debug.log*
 yarn-error.log*

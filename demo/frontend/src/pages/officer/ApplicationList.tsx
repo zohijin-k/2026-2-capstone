@@ -46,7 +46,7 @@ function DocCell({
   // 읽히므로 해당 없음을 명시한다.
   if (!row.documents || row.documents.length === 0) {
     return (
-      <td className="grid__doc grid__doc--na" title={`${row.program_name}에는 없는 서류입니다`}>
+      <td className="officer-grid__doc officer-grid__doc--na" title={`${row.program_name}에는 없는 서류입니다`}>
         —
       </td>
     )
@@ -54,10 +54,10 @@ function DocCell({
 
   const slot = columnKey.slice(DOC_PREFIX.length)
   const cells = row.documents.filter((d) => d.column === slot)
-  if (cells.length === 0) return <td className="grid__doc" />
+  if (cells.length === 0) return <td className="officer-grid__doc" />
 
   return (
-    <td className="grid__doc" onClick={(e) => e.stopPropagation()}>
+    <td className="officer-grid__doc" onClick={(e) => e.stopPropagation()}>
       {cells.map((cell) => (
         // 미배정 병합 페이지는 여러 장이 **같은 slot_key**로 온다. 슬롯만으로
         // 키를 잡으면 `기타` 칸에서 키가 겹쳐 리액트가 칸을 잘못 재사용한다.
@@ -132,7 +132,7 @@ function Cell({
 
   switch (column.key) {
     case 'application_no':
-      return <td className="grid__no">{row.application_no}</td>
+      return <td className="officer-grid__no">{row.application_no}</td>
     case 'name':
       return <td>{row.name}</td>
     case 'region':
@@ -142,7 +142,7 @@ function Cell({
         </td>
       )
     case 'items':
-      return <td className="grid__items">{row.items_label || '-'}</td>
+      return <td className="officer-grid__items">{row.items_label || '-'}</td>
     case 'ai_status':
       return (
         <td>
@@ -150,10 +150,10 @@ function Cell({
         </td>
       )
     case 'total_score':
-      return <td className="grid__score">{row.total_score === null ? '-' : `${row.total_score}`}</td>
+      return <td className="officer-grid__score">{row.total_score === null ? '-' : `${row.total_score}`}</td>
     case 'missing_count':
       return (
-        <td className={row.missing_count > 0 ? 'grid__missing' : undefined}>
+        <td className={row.missing_count > 0 ? 'officer-grid__missing' : undefined}>
           {row.missing_count}
         </td>
       )
@@ -375,12 +375,12 @@ export default function ApplicationList({
         </p>
       )}
 
-      <div className="grid-scroll">
-        <table className="grid">
+      <div className="officer-grid-scroll">
+        <table className="officer-grid">
         <thead>
           <tr>
             {list.role.can_bulk && (
-              <th className="grid__check">
+              <th className="officer-grid__check">
                 <input
                   type="checkbox"
                   aria-label="전체 선택"
@@ -399,7 +399,7 @@ export default function ApplicationList({
           {list.rows.map((row) => (
             <tr key={row.application_id} onClick={() => onOpen(row.application_id)}>
               {list.role.can_bulk && (
-                <td className="grid__check" onClick={(e) => e.stopPropagation()}>
+                <td className="officer-grid__check" onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     aria-label={`${row.application_no} 선택`}
@@ -414,7 +414,7 @@ export default function ApplicationList({
                   />
                 </td>
               )}
-              <td className="grid__rank">{row.rank ?? '-'}</td>
+              <td className="officer-grid__rank">{row.rank ?? '-'}</td>
               {list.columns.map((c) => (
                 <Cell key={c.key} row={row} column={c} onOpenDoc={onOpen} />
               ))}
@@ -422,7 +422,7 @@ export default function ApplicationList({
           ))}
           {list.rows.length === 0 && (
             <tr>
-              <td className="grid__empty" colSpan={list.columns.length + 2}>
+              <td className="officer-grid__empty" colSpan={list.columns.length + 2}>
                 조건에 맞는 접수 건이 없습니다.
               </td>
             </tr>

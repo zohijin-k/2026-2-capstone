@@ -39,8 +39,12 @@ DEMO_ROOT = Path(__file__).resolve().parents[1]
 DELETABLE: tuple[str, ...] = ("demo.db", "demo.db-wal", "demo.db-shm", "storage")
 
 #: 하나라도 있으면 "데모 폴더가 아니다"로 보고 거부한다. 저장소 루트를 잘못
-#: 가리켰을 때 engine/·dashboard/가 통째로 날아가는 것을 막는 1차 방어선이다.
-REPO_MARKERS: tuple[str, ...] = (".git", "engine", "dashboard")
+#: 가리켰을 때 engine/이 통째로 날아가는 것을 막는 1차 방어선이다.
+#:
+#: 예전에는 `dashboard`도 여기 있었다. 대시보드가 demo/frontend 안의 한 탭이 되면서
+#: 루트에서 사라졌으므로 뺀다 — 없는 폴더를 마커로 두면 방어선이 실제로 무엇을
+#: 막는지 읽는 사람이 오해한다.
+REPO_MARKERS: tuple[str, ...] = (".git", "engine")
 
 #: 데모 폴더 안에서도 절대 건드리지 않는 것. 참고용 목록이자 출력용이다.
 PROTECTED: tuple[str, ...] = ("backend", "frontend", "fixtures", "docs", "README.md")

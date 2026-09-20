@@ -627,6 +627,12 @@ SCAN_SKIP = {"run_p4_scenarios.py", "run_p6_scenarios.py"}
 
 
 def _scan(root: Path, suffixes: tuple[str, ...]) -> list[str]:
+    # rglob()은 없는 폴더에 대해 예외 없이 빈 목록을 돌려준다. 폴더를 옮기거나
+    # 개명해서 경로가 틀어지면 이 검사가 아무것도 훑지 않은 채 통과한다 —
+    # "담당자 화면에 다운로드 경로가 없다"를 지키는 유일한 정적 게이트가
+    # 조용히 무력화되는 것이다. 그래서 대상이 실제로 있는지 먼저 확인한다.
+    if not root.is_dir():
+        raise FileNotFoundError(f"스캔 대상 폴더가 없습니다: {root}")
     hits: list[str] = []
     for path in sorted(root.rglob("*")):
         if path.suffix not in suffixes or path.name in SCAN_SKIP:

@@ -34,12 +34,47 @@
 
 ```
 .
-├── engine/           # 서류 적합성·자격 판단 엔진 (담당: 진) — 상세는 engine/README.md 참고
-├── demo_run.py       # 엔진 단독 동작 확인용 데모 스크립트
-└── README.md         # 이 문서
+├── engine/            판정 엔진 — 서류 적합성·자격 심사 로직 (담당: 진)
+│                      외부 의존성 없는 순수 파이썬. 상세는 engine/README.md
+├── demo/              제품 구현체 전부 (담당: 지빈 · 채운)
+│   ├── backend/       FastAPI — 신청·업로드·심사·담당자·현황 API.
+│   │                  engine/ 을 import 해서 쓴다 (engine_adapter.py 가 유일한 접점)
+│   ├── frontend/      React + Vite 단일 앱 — 신청자 / 담당자 / 현황 3탭
+│   │   └── src/pages/dashboard/   현황 대시보드 (담당: 채운)
+│   ├── fixtures/      시연용 더미 서류 · 기대값 · 서식 좌표
+│   └── docs/          시연 대본, 담당자 화면 목업 기준
+├── docs/              저장소 전체 문서
+│   ├── demo-site-dev-plan.md   업무 규칙 원문 (자격요건·제출서류·심사표 배점·
+│   │                           중위소득 기준표). engine·backend·dashboard 가
+│   │                           공통으로 참조하는 도메인 단일 출처다
+│   └── TRELLIS_SETUP*.md       개발 하네스 셋업
+├── tools/             보조 스크립트
+│   └── engine_smoke.py         엔진 단독 회귀 확인 (판정 분기 8종)
+├── package.json       실행 진입점 (아래 "빠른 시작")
+└── README.md          이 문서
 ```
 
-데모 사이트, 대시보드 코드는 각 담당자 저장소/폴더가 별도로 합류할 예정.
+`demo/` 가 이 프로젝트의 **유일한 제품 구현체**다. 시연을 목적으로 만들어 이름이
+`demo` 이고, 신청자 화면·담당자 화면·현황 대시보드가 전부 여기 한 앱에 있다.
+
+## 빠른 시작
+
+검증에 쓴 환경: **Python 3.13 이상 · Node 22 이상** (Windows 11).
+
+```powershell
+npm run setup      # pip + npm 설치 + 시연용 더미 서류 생성 (최초 1회)
+
+npm run dev:api    # 터미널 1 — 백엔드 :8000
+npm run dev:web    # 터미널 2 — 프론트 :5173
+```
+
+브라우저에서 <http://localhost:5173> 을 연다. 상단 탭으로 **신청자 / 담당자 / 현황**을
+오간다. 시연 준비·초기화·검증 절차는 [`demo/README.md`](demo/README.md).
+
+```powershell
+npm test           # 엔진 회귀 + 검증 스크립트 7종 + 프론트 빌드
+npm run reset      # 시연 초기화 (파괴적 — demo/README.md 4절을 먼저 읽을 것)
+```
 
 ## 일정
 

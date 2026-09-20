@@ -303,57 +303,60 @@
   color: #333;
 }
 
-/* ---- 목록 표 ---- */
+/* ---- 목록 표 ----
+   `officer-` 접두사가 붙은 이유: CSS가 전역 네임스페이스라 현황 대시보드의
+   12컬럼 레이아웃 컨테이너(`.grid`)와 이름이 겹쳤다. 접두사 없는 범용 이름을
+   쓰면 같은 앱 안의 다른 화면이 이 표를 그리드로 바꿔 버린다. */
 
-.grid {
+.officer-grid {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
 }
 
-.grid th,
-.grid td {
+.officer-grid th,
+.officer-grid td {
   border: 1px solid #ddd;
   padding: 6px 8px;
   text-align: left;
   white-space: nowrap;
 }
 
-.grid th {
+.officer-grid th {
   background: #f2f2f2;
   font-weight: 700;
 }
 
-.grid tbody tr {
+.officer-grid tbody tr {
   cursor: pointer;
 }
 
-.grid tbody tr:hover {
+.officer-grid tbody tr:hover {
   background: #f0f6ff;
 }
 
-.grid__check {
+.officer-grid__check {
   width: 34px;
   text-align: center;
 }
 
-.grid__rank,
-.grid__score {
+.officer-grid__rank,
+.officer-grid__score {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-.grid__no {
+.officer-grid__no {
   font-family: Consolas, monospace;
 }
 
 /* 선착순 사업의 신청 항목 칸. 항목이 셋까지 붙어 길어질 수 있다. */
-.grid__items {
+.officer-grid__items {
   white-space: nowrap;
   color: #24406b;
 }
 
-.grid__missing {
+.officer-grid__missing {
   color: #c00;
   font-weight: 700;
 }
@@ -362,13 +365,13 @@
    컬럼이 6개 늘어난 표라 한 칸의 가로 폭이 곧 표의 읽을 수 있음이다. 고정 4칸은
    점 하나(폭 26px), 이름이 붙는 칸만 넓어진다. */
 
-.grid__doc {
+.officer-grid__doc {
   padding: 4px 6px;
   text-align: center;
 }
 
 /* 이 사업에 없는 서류 칸. 빈 칸으로 두면 "안 냈다"로 읽힌다. */
-.grid__doc--na {
+.officer-grid__doc--na {
   color: #bbb;
 }
 
@@ -415,7 +418,7 @@
 
 /* 서류 컬럼 6개가 붙으면 표가 창보다 넓어질 수 있다. 표만 가로로 흐르게 하고
    위의 필터·정원 배지는 제자리에 둔다. */
-.grid-scroll {
+.officer-grid-scroll {
   overflow-x: auto;
 }
 
@@ -423,7 +426,7 @@
   font-size: 12px;
 }
 
-.grid__empty {
+.officer-grid__empty {
   text-align: center;
   color: var(--muted);
   padding: 24px 0;
@@ -952,4 +955,11 @@
   padding: 6px 10px;
   margin: 8px 0 0;
   font-size: 12.5px;
+}
+
+/* 서류 뷰어 청크(pdfjs)를 받는 동안 잠깐 보인다. */
+.review__viewer-loading {
+  margin: 0;
+  padding: 40px 12px;
+  color: var(--muted);
 }

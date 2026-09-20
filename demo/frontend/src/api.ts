@@ -1,12 +1,6 @@
 /** 백엔드 호출. vite dev 서버가 /api 를 :8000 으로 프록시한다. */
 
-import {
-  MOCK_ROLES,
-  isMockId,
-  mockDecide,
-  mockOfficerList,
-  mockReviewDetail,
-} from './pages/officer/mock-data.ts'
+import { createMockGate, isMockId } from './lib/mock-gate.ts'
 
 /**
  * 사업 설정. 화면 분기는 전부 이 값으로 한다.
@@ -774,62 +768,73 @@ function query(params: Record<string, unknown>): string {
  * `?mock=0`을 붙이면 어떤 경우에도 목업을 쓰지 않는다 — 실제 접수 건이 0건인 것을
  * 확인해야 할 때 쓴다.
  */
-const MOCK_PARAM = new URLSearchParams(window.location.search).get('mock')
-const MOCK_FORCED = MOCK_PARAM === '1' || MOCK_PARAM === 'on'
-const MOCK_BLOCKED = MOCK_PARAM === '0' || MOCK_PARAM === 'off'
+/**
+ * **이 스위치는 담당자 화면 전용이다.** 현황 화면도 같은 방식을 쓰지만 자기
+ * 스위치를 따로 갖는다 — 이유는 `lib/mock-gate.ts` 머리말에 적어 두었다.
+ */
+const officerMock = createMockGate()
 
-let mockActive = MOCK_FORCED
+/**
+ * 목업 모듈(106KB)은 **정적으로 불러오지 않는다.** 여기서 정적 import 하면
+ * `api.ts`를 쓰는 화면 13곳이 전부 그걸 끌고 오기 때문에, 신청자가 첫 화면을
+ * 여는 순간 담당자 목업까지 같이 내려온다. 아래 함수들이 원래부터 Promise를
+ * 돌려주고 있어서, 내부만 동적 import로 바꿔도 호출부는 한 곳도 안 바뀐다.
+ */
+const loadMock = () => import('./pages/officer/mock-data.ts')
 
 /** 지금 담당자 화면이 목업을 보고 있는가. 화면 상단 배너가 이 값을 읽는다. */
-export const isOfficerMockActive = () => mockActive
+export const isOfficerMockActive = () => officerMock.active
 
 export const fetchOfficerRoles = async (): Promise<OfficerRole[]> => {
-  if (mockActive) return MOCK_ROLES
+  if (officerMock.active) return (await loadMock()).MOCK_ROLES
   try {
     return await json<OfficerRole[]>('/api/officer/roles')
   } catch (e) {
-    if (MOCK_BLOCKED) throw e
-    mockActive = true
-    return MOCK_ROLES
+    if (!officerMock.trip()) throw e
+    return (await loadMock()).MOCK_ROLES
   }
 }
 
 export const fetchOfficerList = async (params: OfficerListQuery): Promise<OfficerList> => {
-  if (mockActive) return mockOfficerList(params)
+  if (officerMock.active) return (await loadMock()).mockOfficerList(params)
   try {
     const body = await json<OfficerList>(`/api/officer/applications?${query({ ...params })}`)
     // 필터를 걸어 0건인 것과 접수 자체가 0건인 것은 다르다. 후자일 때만 목업으로 넘어간다.
     const unfiltered =
       !params.program && !params.status && !params.ai_status && !params.submitted_from && !params.submitted_to
-    if (body.total === 0 && unfiltered && !MOCK_BLOCKED) {
-      mockActive = true
-      return mockOfficerList(params)
+    if (body.total === 0 && unfiltered && officerMock.trip()) {
+      return (await loadMock()).mockOfficerList(params)
     }
     return body
   } catch (e) {
-    if (MOCK_BLOCKED) throw e
-    mockActive = true
-    return mockOfficerList(params)
+    if (!officerMock.trip()) throw e
+    return (await loadMock()).mockOfficerList(params)
   }
 }
 
-export const fetchReviewDetail = (applicationId: number, role: string) =>
-  mockActive || isMockId(applicationId)
-    ? Promise.resolve(mockReviewDetail(applicationId, role))
-    : json<ReviewDetailData>(`/api/officer/applications/${applicationId}?${query({ role })}`)
+export const fetchReviewDetail = async (
+  applicationId: number,
+  role: string,
+): Promise<ReviewDetailData> => {
+  if (officerMock.active || isMockId(applicationId)) {
+    return (await loadMock()).mockReviewDetail(applicationId, role)
+  }
+  return json<ReviewDetailData>(`/api/officer/applications/${applicationId}?${query({ role })}`)
+}
 
-export const postDecision = (
+export const postDecision = async (
   applicationId: number,
   body: { role: string; decision: DecisionKey; memo: string },
-) => {
-  if (mockActive || isMockId(applicationId)) {
-    mockDecide([applicationId], body.role, body.decision, body.memo)
-    const detail = mockReviewDetail(applicationId, body.role)
-    return Promise.resolve({
+): Promise<{ decision: string; label: string; decided_at: string | null }> => {
+  if (officerMock.active || isMockId(applicationId)) {
+    const mock = await loadMock()
+    mock.mockDecide([applicationId], body.role, body.decision, body.memo)
+    const detail = mock.mockReviewDetail(applicationId, body.role)
+    return {
       decision: body.decision,
       label: detail.decision.label,
       decided_at: detail.decision.decided_at,
-    })
+    }
   }
   return json<{ decision: string; label: string; decided_at: string | null }>(
     `/api/officer/applications/${applicationId}/decision`,
@@ -837,16 +842,17 @@ export const postDecision = (
   )
 }
 
-export const postBulkDecision = (body: {
+export const postBulkDecision = async (body: {
   role: string
   decision: DecisionKey
   memo: string
   application_ids: number[]
-}) => {
-  if (mockActive) {
-    return Promise.resolve({
-      processed: mockDecide(body.application_ids, body.role, body.decision, body.memo),
-    })
+}): Promise<{ processed: number }> => {
+  if (officerMock.active) {
+    const mock = await loadMock()
+    return {
+      processed: mock.mockDecide(body.application_ids, body.role, body.decision, body.memo),
+    }
   }
   return json<{ processed: number }>('/api/officer/applications/decisions', {
     method: 'POST',

@@ -1,6 +1,13 @@
-/* 신청자 / 담당자 화면 전환 띠. 시연용이라 최소한만 둔다. */
+/* 신청자 / 담당자 / 현황 화면 전환 띠. 시연용이라 최소한만 둔다.
+
+   셸은 폭을 갖지 않는다. 세 화면의 최소 폭 계약이 940 / 1280 / 320 으로 서로
+   양보할 수 없어서, 셸이 어느 하나를 고르면 나머지 둘이 깨진다. 대신 문서 최소
+   폭을 body[data-view] 로 바꾼다(styles/tokens-form.css). */
 
 .shell {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -10,6 +17,12 @@
   color: #fff;
   padding: 8px 20px;
   font-size: 14px;
+  /* 화면마다 body 폰트가 다르다(신청자·담당자 맑은 고딕 / 현황 system-ui).
+     상속받으면 탭을 옮길 때마다 탭 바 글꼴이 같이 바뀐다. 셸은 셋 중 어디에도
+     속하지 않으므로 여기서 고정한다. */
+  font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo',
+    'Noto Sans KR', system-ui, sans-serif;
+  line-height: 1.6;
 }
 
 .shell__title {
@@ -36,4 +49,11 @@
   background: #fff;
   color: #1f3864;
   font-weight: 700;
+}
+
+/* 현황 화면 청크를 받는 동안 잠깐 보인다. */
+.shell__loading {
+  margin: 0;
+  padding: 40px 20px;
+  color: #666;
 }

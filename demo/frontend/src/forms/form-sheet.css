@@ -10,7 +10,9 @@
  */
 
 .form-sheet {
-  --sheet-w: 940px;
+  /* --sheet-w 는 styles/tokens-form.css 가 화면 스코프에서 준다. 신청자 화면의
+     다른 컨테이너들도 같은 폭을 써야 해서 한 군데로 모았다. 담당자 심사 화면은
+     officer.css 가 이 요소에 직접 100% 를 얹어 덮는다. */
   --line: #000;
   --label-bg: #fff;
   --band-bg: #e8e8e8;

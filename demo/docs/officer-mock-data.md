@@ -246,7 +246,7 @@ bbox가 실제 판독 좌표이고, 승인/반려가 DB에 남는다.
 1. 샘플 PDF를 만든다 (저장소에 커밋되지 않는다).
 
    ```bash
-   PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.make_samples
+   python -X utf8 -m demo.fixtures.make_samples
    ```
 
 2. `demo/backend/seed.py`를 새로 만들어, 건마다 아래를 호출한다.

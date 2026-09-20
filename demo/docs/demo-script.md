@@ -19,14 +19,15 @@
 
 | # | 할 일 | 명령 / 확인 |
 |---|---|---|
-| 1 | 더미 서류가 있는지 | `demo/fixtures/samples/`에 PDF 25개 (없으면 `python -m demo.fixtures.make_samples`) |
-| 2 | 백엔드 중지 후 **리셋** | `python -m demo.backend.reset --yes` |
-| 3 | 백엔드 기동 | 저장소 루트에서 `uvicorn demo.backend.main:app --port 8000` |
-| 4 | 프론트 기동 | `demo/frontend`에서 `npm run dev` |
+| 1 | 더미 서류가 있는지 | `demo/fixtures/samples/`에 PDF 25개 (없으면 `npm run setup:fixtures`) |
+| 2 | 백엔드 중지 후 **리셋** | `npm run reset -- --yes` |
+| 3 | 백엔드 기동 | `npm run dev:api` |
+| 4 | 프론트 기동 | `npm run dev:web` |
 | 5 | 열어 두기 | <http://localhost:5173> · 파일 탐색기에서 `demo/fixtures/samples/` |
 | 6 | 브라우저 | 개발자도구 **Network 탭**을 미리 열어 둔다 (S9에서 쓴다) |
 
-명령 앞에는 전부 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1`을 붙인다 (Windows 한글 깨짐 방지).
+명령은 전부 **저장소 루트에서** 돌린다. 파이썬을 직접 부를 때는 `python -X utf8` 로
+시작한다 (Windows 한글 깨짐 방지 — 위 `npm run` 스크립트에는 이미 들어 있다).
 
 **리셋을 건너뛰지 마라.** 이전 시연의 신청 건이 담당자 목록에 남아 있으면 S9의
 "1등 99점"이 달라진다.
@@ -290,7 +291,7 @@
 | 업로드했는데 판정이 이상하다 | 파일명이 바뀌면 Tier1 고정 결과를 못 찾고 Tier2(실제 판독)로 넘어간다. `fixtures/samples/`의 **원래 파일명 그대로** 쓴다 |
 | 담당자 목록에 모르는 건이 있다 | 리셋을 안 했다. 시연을 멈추고 `reset --yes` 후 백엔드 재기동 |
 | 리셋이 실패한다 | uvicorn을 먼저 멈춘다 (Windows는 실행 중인 SQLite 파일을 못 지운다) |
-| 한글이 깨진다 | `PYTHONIOENCODING=utf-8 PYTHONUTF8=1`을 명령 앞에 붙였는지 확인 |
+| 한글이 깨진다 | 파이썬을 `python -X utf8` 로 불렀는지 확인 (`npm run` 스크립트에는 이미 들어 있다) |
 | 화면이 좁아 서식이 잘린다 | PC 전용이다. 가로 스크롤로 보거나 브라우저 폭을 넓힌다 (1280px 이상 권장) |
 | 질문: "실제 OCR인가?" | 시연 파일은 고정 결과를 쓰지만, **아무 정부24 PDF나 올려도** Tier2가 텍스트 레이어에서 문서종류·발급일·가구원수·건보료를 실제로 읽는다. 그 자리에서 임의 PDF를 올려 보여 줄 수 있다 |
 | 질문: "점수가 맞나?" | 시행지침 서식6 배점표와 숫자까지 대조했고, 수기 검산(40+25+25+9=99)과 일치하는지를 검증 스크립트가 매번 확인한다 |

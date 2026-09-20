@@ -9,7 +9,7 @@
  * 화면 어디에도 파일을 내려받는 버튼이 없다 (R4.1).
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import {
   fetchReviewDetail,
@@ -21,9 +21,12 @@ import {
   type ReviewDetailData,
   type ScoreItemRow,
 } from '../../api.ts'
-import DocumentViewer from './DocumentViewer.tsx'
 import { badgeClass, dotClass } from './format.ts'
 import ScoreSheet6 from './ScoreSheet6.tsx'
+
+//: pdfjs(435KB)가 통째로 딸려 오는 컴포넌트다. 담당자가 심사 상세를 열 때만
+//: 필요하므로 지연 로드한다 — 접수 목록만 보고 나가면 받지 않는다.
+const DocumentViewer = lazy(() => import('./DocumentViewer.tsx'))
 
 interface Props {
   applicationId: number
@@ -231,11 +234,13 @@ export default function ReviewDetail({
               </button>
             ))}
           </nav>
-          <DocumentViewer
-            doc={viewing}
-            highlight={highlight}
-            highlightLabel={focus?.label}
-          />
+          <Suspense fallback={<p className="review__viewer-loading">서류 뷰어를 불러오는 중…</p>}>
+            <DocumentViewer
+              doc={viewing}
+              highlight={highlight}
+              highlightLabel={focus?.label}
+            />
+          </Suspense>
         </section>
 
         {/* ---------------- 우 45% 판독 결과 ---------------- */}

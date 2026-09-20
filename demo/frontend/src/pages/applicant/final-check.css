@@ -1,7 +1,7 @@
 /* 제출 전 최종 확인. 폭(940px)과 색은 서식 화면과 맞춘다. */
 
 .fcheck {
-  width: 940px;
+  width: var(--sheet-w);
   margin: 0 auto;
 }
 

@@ -1,0 +1,70 @@
+/* 신청자 · 담당자 화면의 디자인 토큰.
+
+   :root 가 아니라 body[data-view] 에 선언한다. 현황 화면이 같은 이름의 변수
+   (--surface --text --muted --border)를 **다른 값으로** 쓰기 때문이다. 한 앱으로
+   합치면서 둘 다 :root 에 두면 나중에 로드된 쪽이 이겨 반대쪽 화면이 조용히
+   틀어진다 — 에러도 경고도 없이 서식의 선 농도와 행간만 달라진다.
+
+   커스텀 프로퍼티는 상속되므로 선언 위치만 내리면 되고, var() 호출부는 한 곳도
+   건드릴 필요가 없다. 변수 이름과 값은 한 글자도 바꾸지 않았다.
+
+   다크 모드는 여기 없다. 이 두 화면은 관공서 서식을 재현하는 것이 목적이고
+   서식은 흰 종이에 검은 선이다. --form-border: #333 을 반전시키면 그것은 더
+   이상 "서식과 같은 구조"가 아니다. */
+
+body[data-view='apply'],
+body[data-view='officer'] {
+  --form-border: #333;
+  --form-label-bg: #f2f2f2;
+  --text: #1a1a1a;
+  --muted: #666;
+
+  /* 공용 컬러 토큰. 값 자체는 기존 화면들과 동일하게 유지한다 — 판정 3색은
+     업로드·최종확인·마이페이지가 같은 색이어야 하므로 여기서 값을 바꾸지
+     않고 변수로만 묶는다. */
+  --brand: #1f3864;
+  --brand-tint: #eaf0fb;
+  --success: #177245;
+  --success-tint: #f2fbf5;
+  --fail: #c00;
+  --fail-tint: #fff5f5;
+  --warning: #b8860b;
+  --warning-tint: #fffaf0;
+  --border: #ddd;
+  --border-strong: #bbb;
+  --surface: #fff;
+  --surface-subtle: #fafafa;
+
+  /* 서식 본문 폭. 신청자 화면의 컨테이너들이 이 폭에 맞춰 서야 종이 서식과 같은
+     구조가 유지된다(R8.6). 예전에는 6개 CSS 에 940px 이 따로 박혀 있었다.
+     담당자 심사 화면은 officer.css 가 .form-sheet 요소에 직접 100% 를 얹어 덮는다. */
+  --sheet-w: 940px;
+
+  /* 신청 도구 화면(서식 재현이 아닌 화면)에서만 쓰는 현대적 톤. */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 3px rgb(20 20 30 / 6%);
+  --shadow-md: 0 12px 32px rgb(20 20 30 / 14%);
+  --ease: 160ms ease;
+
+  /* 관공서 서식을 재현해야 하므로 기본 폰트를 맑은 고딕 계열로 고정한다. */
+  font-family: 'Malgun Gothic', '맑은 고딕', 'Apple SD Gothic Neo',
+    'Noto Sans KR', system-ui, sans-serif;
+  line-height: 1.6;
+  color: var(--text);
+  background: #fff;
+}
+
+/* 최소 폭 계약이 화면마다 다르다(신청자 940 고정 / 담당자 1280 / 현황 320).
+   셸이 어느 하나를 고르면 나머지 둘이 깨지므로 셸은 폭을 갖지 않고, 문서
+   최소 폭만 화면별로 바꾼다. body 에 주어야 full-bleed 인 탭 바의 width:100%
+   가 뷰포트가 아니라 스크롤 폭 기준으로 풀린다 — 그러지 않으면 담당자 화면을
+   좁은 창에서 가로 스크롤했을 때 탭 바 오른쪽이 잘린 채 빈 띠가 남는다. */
+body[data-view='apply'] {
+  min-width: 980px;
+}
+
+body[data-view='officer'] {
+  min-width: 1280px;
+}

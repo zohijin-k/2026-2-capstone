@@ -1,7 +1,7 @@
 /* 사업 선택 화면. 두 사업의 차이가 한눈에 대조되도록 2열 고정이다. */
 
 .ppick {
-  width: 940px;
+  width: var(--sheet-w);
   margin: 0 auto;
 }
 
@@ -352,7 +352,7 @@
 @media (max-width: 980px) {
   .ppick {
     width: 100%;
-    max-width: 940px;
+    max-width: var(--sheet-w);
     padding: 0 12px;
   }
 

@@ -1,4 +1,4 @@
-import type { Application } from './types'
+import type { ScoredApplication } from './types'
 
 /** '26년 참여자 선정 심사표 (시행지침 서식6) */
 export const INCOME_BANDS = [
@@ -56,7 +56,7 @@ export function totalScore(incomeBand: number, residenceBand: number, workBand: 
 }
 
 /** 고득점 순, 동점 시 ①가구소득이 적은 ②도 거주기간이 긴 ③근로기간이 긴 ④연령이 낮은 순 */
-export function compareApplicants(a: Application, b: Application): number {
+export function compareApplicants(a: ScoredApplication, b: ScoredApplication): number {
   return (
     b.score - a.score ||
     a.incomeBand - b.incomeBand ||

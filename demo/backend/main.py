@@ -13,7 +13,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications, documents, files, forms, officer, review, subsidy
+from .api import applications, dashboard, documents, files, forms, officer, review, subsidy
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
@@ -55,6 +55,8 @@ app.include_router(forms.router)
 # 담당자 심사 화면(P4). 원본은 files 라우터가 inline으로만 흘린다 — 다운로드 경로는 없다.
 app.include_router(officer.router)
 app.include_router(files.router)
+# 현황 대시보드. 집계가 아니라 행을 내려준다 — 이유는 api/dashboard.py 머리말 참고.
+app.include_router(dashboard.router)
 
 
 @app.get("/api/health")

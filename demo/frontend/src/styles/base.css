@@ -1,0 +1,18 @@
+/* 세 화면이 진짜로 공유하는 것만 둔다.
+
+   색·폰트·행간은 화면마다 계약이 달라서 여기 두면 안 된다. tokens-form.css 와
+   tokens-status.css 가 body[data-view] 스코프로 따로 준다. */
+
+html {
+  /* 탭마다 세로 스크롤바 유무가 달라 콘텐츠가 좌우로 흔들리던 것을 막는다. */
+  scrollbar-gutter: stable;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-size: 14px;
+}

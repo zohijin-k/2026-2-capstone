@@ -1,79 +1,10 @@
-:root {
-  color-scheme: light;
-  --page: #f3f3f0;
-  --surface: #fcfcfb;
-  --surface-2: #f0efec;
-  --text: #0b0b0b;
-  --text-2: #52514e;
-  --muted: #898781;
-  --grid: #e1e0d9;
-  --axis: #c3c2b7;
-  --border: rgba(11, 11, 11, 0.1);
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --accent-strong: #1c5cab;
-  --accent-soft: #cde2fb;
-  --selected-row: rgba(42, 120, 214, 0.08);
-  --mock-bg: rgba(235, 104, 52, 0.12);
-  --mock-text: #a8431a;
-  --shadow: 0 1px 2px rgba(11, 11, 11, 0.04);
+/* 현황 대시보드 화면 스타일.
 
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--page);
-  -webkit-font-smoothing: antialiased;
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-  --page: #0d0d0d;
-  --surface: #1a1a19;
-  --surface-2: #242422;
-  --text: #ffffff;
-  --text-2: #c3c2b7;
-  --muted: #898781;
-  --grid: #2c2c2a;
-  --axis: #383835;
-  --border: rgba(255, 255, 255, 0.1);
-  --series-1: #3987e5;
-  --series-2: #d95926;
-  --accent-strong: #86b6ef;
-  --accent-soft: rgba(57, 135, 229, 0.2);
-  --selected-row: rgba(57, 135, 229, 0.14);
-  --mock-bg: rgba(217, 89, 38, 0.2);
-  --mock-text: #f0a07e;
-  --shadow: none;
-}
-
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  background: var(--page);
-}
-
-button,
-input,
-select {
-  font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
-}
-
-:focus-visible {
-  outline: 2px solid var(--series-1);
-  outline-offset: 2px;
-}
+   디자인 토큰(라이트/다크 두 벌)과 전역 리셋은 styles/tokens-status.css 로
+   옮겼다. 신청자·담당자 화면과 --surface --text --muted --border 네 이름이
+   겹치는데 값이 전부 달라서, 한 앱으로 합치면서 :root 에 둘 수 없게 됐다.
+   아래 선택자들은 그대로다 — 토큰 선언 위치만 body[data-view='status'] 로
+   내렸고 var() 호출부는 한 곳도 건드리지 않았다. */
 
 /* ---------- layout ---------- */
 
@@ -147,6 +78,24 @@ button {
 .badge-mock {
   background: var(--mock-bg);
   color: var(--mock-text);
+}
+
+/* 실데이터를 보고 있을 때. 목업 배지와 나란히 놓고 보면 색만으로 구분된다. */
+.badge-live {
+  background: var(--live-bg);
+  color: var(--live-text);
+}
+
+.topbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.ghost-button[aria-pressed='true'] {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+  background: var(--accent-soft);
 }
 
 .ghost-button {
@@ -713,6 +662,25 @@ button {
   margin-top: 20px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.footnote-notes {
+  margin-top: 6px;
+}
+
+/* 배점을 받지 못했을 때 담당자용 구역에 대신 들어가는 안내. */
+.withheld {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 13px;
 }
 
 @media (max-width: 640px) {

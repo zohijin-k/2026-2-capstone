@@ -2,7 +2,8 @@
 
 신청자가 **종이·자필서명 없이** 신청을 끝내고, 담당자가 **파일을 한 번도 내려받지 않고**
 심사를 끝내는 것을 보여주는 데모다. 사업 2종(두배적금 · 취업지원패키지)을 같은
-파이프라인으로 처리한다.
+파이프라인으로 처리한다. 여기에 **현황 대시보드**가 세 번째 탭으로 붙어, 접수·심사
+상황을 시군별로 본다.
 
 - 요구사항: `.trellis/tasks/09-16-demo-site/prd.md`
 - 설계: `.trellis/tasks/09-16-demo-site/design.md`
@@ -10,8 +11,10 @@
 - **시연 대본**: [`docs/demo-script.md`](docs/demo-script.md)
 - **담당자 화면 목업 데이터**: [`docs/officer-mock-data.md`](docs/officer-mock-data.md)
 
-> ⚠️ **PC 전용**이다. 서식 원형을 지키기 위해 폭 940px 고정 레이아웃을 쓴다(R8.6).
-> 좁은 화면에서는 셀을 재배치하지 않고 가로 스크롤만 생긴다.
+> ⚠️ **PC 전용**이다. 서식 원형을 지키기 위해 신청자 화면은 폭 940px 고정 레이아웃을
+> 쓴다(R8.6). 좁은 화면에서는 셀을 재배치하지 않고 가로 스크롤만 생긴다. 담당자
+> 화면은 `min-width: 1280px`, 현황 대시보드만 반응형이다 — 세 계약이 서로 달라서
+> 상단 탭 바는 폭을 갖지 않고 `body[data-view]` 로 문서 최소 폭만 바꾼다.
 
 > ⚠️ **더미 데이터만 쓴다.** 이름·주민등록번호·주소·계좌번호는 전부 가짜이고,
 > 실물 서류는 저장소에 두지 않는다(R7.1). 업로드 원본과 SQLite 파일은 커밋되지
@@ -23,14 +26,20 @@
 
 ```
 demo/
-├── backend/            FastAPI — 신청·업로드·심사·담당자 API
+├── backend/            FastAPI — 신청·업로드·심사·담당자·현황 API
 │   ├── main.py         엔트리 (uvicorn 대상)
 │   ├── reset.py        시연 초기화 (파괴적)
 │   ├── engine_adapter.py   engine/ 와의 유일한 접점
 │   ├── api/ ocr/ rules/    라우터 · 판독 3계층 · 업무 규칙
 │   ├── forms/          작성 서식 PDF 내보내기 (원본 위에 값 얹기)
-│   └── tests/          P2~P7 게이트 검증 스크립트 (pytest 없이 실행)
-├── frontend/           React + Vite (신청자 화면 · 담당자 화면)
+│   └── tests/          P2~P8 게이트 검증 스크립트 (pytest 없이 실행)
+├── frontend/           React + Vite 단일 앱 (신청자 · 담당자 · 현황 3탭)
+│   └── src/
+│       ├── App.tsx             3탭 셸
+│       ├── styles/             화면별 디자인 토큰 (body[data-view] 스코프)
+│       └── pages/
+│           ├── applicant/ officer/   신청자 · 담당자 화면
+│           └── dashboard/            현황 대시보드 (echarts, 지연 로드)
 ├── fixtures/
 │   ├── make_samples.py 시연용 더미 서류 생성기
 │   ├── cut_templates.py     원본 시행지침 → 서식 템플릿 잘라내기 (2-up 주의)
@@ -53,47 +62,43 @@ demo/
 
 ## 2. 준비 (최초 1회)
 
-검증에 쓴 환경: **Python 3.14.0 · Node 22.19.0** (Windows 11).
+검증에 쓴 환경: **Python 3.13 · Node 22** (Windows 11).
 Python은 3.12 이상, Node는 20 이상이면 된다.
 
-```bash
-# 저장소 루트에서
-pip install -r demo/backend/requirements.txt
-
-cd demo/frontend
-npm install
+```powershell
+# 저장소 루트에서 — pip + npm 설치 + 시연용 더미 서류 25개 생성
+npm run setup
 ```
 
-시연용 더미 서류를 만든다. `demo/fixtures/samples/`에 25개 PDF가 생긴다.
-
-```bash
-# 저장소 루트에서
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.make_samples
-```
-
-> Windows 콘솔은 기본 인코딩이 cp949라 한글 출력이 깨진다. 파이썬 스크립트를
-> 돌릴 때는 `PYTHONIOENCODING=utf-8 PYTHONUTF8=1`을 앞에 붙인다.
+> Windows 콘솔은 기본 인코딩이 cp949라 한글 출력이 깨진다. 파이썬 스크립트는
+> `python -X utf8` 로 부른다 — 아래 명령들이 전부 그렇게 되어 있고, PowerShell·cmd·
+> npm script 어디서나 같게 동작한다. (`PYTHONUTF8=1 python ...` 형태는 PowerShell
+> 에서 문법 오류다.)
 
 ---
 
 ## 3. 기동
 
-터미널 2개가 필요하다. **백엔드는 반드시 저장소 루트에서** 띄운다 — 그래야
-`engine/` 을 import 할 수 있다.
+터미널 2개가 필요하다. **둘 다 저장소 루트에서** 띄운다 — 백엔드가 `engine/` 을
+import 하려면 루트가 작업 디렉터리여야 한다.
 
-```bash
-# 터미널 1 — 백엔드 (저장소 루트에서)
-uvicorn demo.backend.main:app --reload --port 8000
+```powershell
+# 터미널 1 — 백엔드 :8000
+npm run dev:api
 ```
 
-```bash
-# 터미널 2 — 프론트엔드
-cd demo/frontend
-npm run dev
+```powershell
+# 터미널 2 — 프론트엔드 :5173
+npm run dev:web
 ```
 
-브라우저에서 <http://localhost:5173> 을 연다. 상단 탭으로 **신청자 / 담당자** 화면을
-오간다. Vite가 `/api` 요청을 8000 포트로 프록시하므로 별도 설정은 없다.
+브라우저에서 <http://localhost:5173> 을 연다. 상단 탭으로 **신청자 / 담당자 / 현황**
+화면을 오간다. Vite가 `/api` 요청을 8000 포트로 프록시하므로 별도 설정은 없다.
+
+**현황 탭**은 접수된 신청 건에서 집계한다. 접수 건이 없거나 백엔드를 못 부르면
+목업 12,821건으로 전환하고 상단 배지에 그 사실을 밝힌다. `?data=mock` / `?data=live`
+로 강제할 수 있다. 배점·커트라인은 `담당자 시점` 버튼을 눌렀을 때만 서버가 내려준다
+— 신청자 시점에서는 응답에 그 필드가 **아예 없다**.
 
 접수된 신청 건이 하나도 없으면 담당자 화면은 **목업 데이터**로 채워진다(상단에 노란
 배너가 뜬다). `?mock=1`로 강제로 켜고 `?mock=0`으로 끈다 —
@@ -115,15 +120,15 @@ API 문서는 <http://localhost:8000/docs> (FastAPI 자동 생성).
 **시연 직전에 반드시 한 번 돌린다.** 이전 시연에서 만든 신청 건이 담당자 목록에
 남아 있으면 화면이 달라진다.
 
-```bash
+```powershell
 # 무엇을 지울지 보기만 한다
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.reset --dry-run
+npm run reset -- --dry-run
 
 # 확인을 묻고 지운다
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.reset
+npm run reset
 
 # 확인 없이 지운다 (시연 직전)
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.reset --yes
+npm run reset -- --yes
 ```
 
 지우는 것은 `demo/demo.db`와 `demo/storage/` **둘뿐**이다. 소스·시연 샘플·문서는
@@ -141,14 +146,19 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.reset --yes
 pytest 없이 그대로 실행된다. 전부 임시 폴더에서 돌기 때문에 `demo/demo.db`·
 `demo/storage/`(시연용 데이터)를 건드리지 않는다.
 
-```bash
-# 저장소 루트에서
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p2_scenarios  # 업로드 즉시 판정
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p3_scenarios  # 통합심사·채점
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p4_scenarios  # 담당자 화면·다운로드 0회
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p5_scenarios  # 취업지원패키지 분기
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p6_scenarios  # 리셋 후 시연 10종 재현
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p7_scenarios  # 작성 서식 PDF 내보내기
+```powershell
+# 저장소 루트에서 — 엔진 회귀 + 7종 + 프론트 빌드를 한 번에
+npm test
+
+# 하나씩 돌리려면
+npm run test:p2   # 업로드 즉시 판정
+npm run test:p3   # 통합심사·채점
+npm run test:p4   # 담당자 화면·다운로드 0회
+npm run test:p5   # 취업지원패키지 분기
+npm run test:p6   # 리셋 후 시연 10종 재현
+npm run test:p7   # 작성 서식 PDF 내보내기
+npm run test:p8   # 현황 대시보드 집계·권한·구간 매핑
+npm run test:engine   # 엔진 단독 판정 분기 8종 (tools/engine_smoke.py)
 ```
 
 `run_p6_scenarios`는 **리셋 → S1~S10 연속 실행 → 기대값 대조**를 두 번 반복해,
@@ -159,15 +169,18 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p7_scenario
 시연 직전 최종 점검용이며, 끝나면 다시 리셋된 상태로 정리된다.
 
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p6_scenarios --live
+python -X utf8 -m demo.backend.tests.run_p6_scenarios --live
 ```
 
-프론트엔드 점검:
+프론트엔드 점검 (저장소 루트에서):
 
-```bash
-cd demo/frontend
-npx tsc -b && npx oxlint && npx vite build
+```powershell
+npm run lint && npm run build
 ```
+
+> `tsc`·`oxlint`·`vite build` 는 **CSS 충돌을 전혀 잡지 못한다.** 세 화면이 한 앱에
+> 있고 CSS가 전역 네임스페이스라, 스타일을 건드렸으면 세 탭을 눈으로 한 번씩
+> 열어 봐야 한다 — 특히 담당자 접수목록 표와 신청자 서식1 화면이 먼저 무너진다.
 
 ---
 
@@ -192,8 +205,8 @@ GET /api/applications/{id}/forms/서식5.pdf  # 서명란에 전자서명 합성
 아래 두 줄을 다시 돌린다 (저장소 루트에 시행지침 PDF가 있어야 한다).
 
 ```bash
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.cut_templates
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.build_form_coords
+python -X utf8 -m demo.fixtures.cut_templates
+python -X utf8 -m demo.fixtures.build_form_coords
 ```
 
 > ⚠️ 원본 PDF는 **2-up**이다. A4 가로 1장에 논리 2쪽이 들어 있어(물리 12쪽 = 논리

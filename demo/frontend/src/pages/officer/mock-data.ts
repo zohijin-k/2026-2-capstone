@@ -32,10 +32,11 @@ import type {
   ScoreItemRow,
 } from '../../api.ts'
 
-/** 목업 신청 건의 id 시작점. 실제 DB id(1부터)와 절대 겹치지 않게 띄워 둔다. */
-export const MOCK_ID_BASE = 900_000
+// id 판별은 이 모듈을 불러오지 않고도 돼야 해서 lib/mock-gate.ts 로 옮겼다.
+// 여기서는 그대로 다시 내보내 기존 import 경로를 유지한다.
+export { MOCK_ID_BASE, isMockId } from '../../lib/mock-gate.ts'
 
-export const isMockId = (applicationId: number) => applicationId >= MOCK_ID_BASE
+import { MOCK_ID_BASE } from '../../lib/mock-gate.ts'
 
 // ---------------------------------------------------------------- 서버 상수 사본
 

@@ -175,6 +175,13 @@ class ScoreSheet:
     tiebreak: list[float] = field(default_factory=list)
     #: 화면에 그대로 띄우는 주의 문구. `(데모 추정치)` 라벨이 여기에 들어간다.
     notes: list[str] = field(default_factory=list)
+    #: 건강보험 가입구분 (직장 | 지역 | 혼합).
+    #:
+    #: 채점에 이미 쓰고 있던 값인데 여기로 내보내지 않아서, 지금까지는 소득 항목의
+    #: `basis` 문장 안에만 남아 있었다. 현황 대시보드의 가입유형 분포가 이 값을
+    #: 필요로 한다 — 문장을 정규식으로 되파는 것보다 채점 결과에 실어 보내는 편이
+    #: 맞다(문구가 한 글자 바뀌면 조용히 틀리는 방식은 쓰지 않는다).
+    insurance_type: str = "직장"
 
     @property
     def incomplete(self) -> bool:
@@ -190,6 +197,7 @@ class ScoreSheet:
             "incomplete": self.incomplete,
             "tiebreak": self.tiebreak,
             "notes": self.notes,
+            "insurance_type": self.insurance_type,
         }
 
 
@@ -416,6 +424,7 @@ def score_application(
         income_percent=percent,
         income_over_limit=over_limit,
         notes=notes,
+        insurance_type=facts.insurance_type,
     )
     sheet.tiebreak = tiebreak_key(sheet, facts, announcement_date)
     return sheet

@@ -7,10 +7,10 @@ import {
   GENDERS,
   INSURANCE_TYPES,
   WORK_TYPES,
-  type Application,
   type Dataset,
   type RegionName,
   type RejectStage,
+  type ScoredApplication,
 } from './types'
 
 // ---------------------------------------------------------------------------
@@ -70,12 +70,12 @@ const WORK_BAND_WEIGHTS_BY_AGE_BAND = [
 
 export function generateDataset(seed = 20260303): Dataset {
   const rng = createRandom(seed)
-  const applications: Application[] = []
+  const applications: ScoredApplication[] = []
   const firstSelectionAt = {} as Record<RegionName, number>
   let sequence = 0
 
   for (const region of REGIONS) {
-    const submitted: Application[] = []
+    const submitted: ScoredApplication[] = []
     for (let i = 0; i < region.applicants; i++) {
       submitted.push(createApplication(rng, region.name, ++sequence))
     }
@@ -101,10 +101,20 @@ export function generateDataset(seed = 20260303): Dataset {
       secondVerificationAt,
       announcementAt: ANNOUNCEMENT_AT,
     },
+    source: 'mock',
+    // 목업은 배점을 늘 들고 있다. 실데이터 경로에서는 서버가 권한을 보고 이 배열을
+    // 통째로 빼고 내려준다 — 계약은 같고, 있고 없고만 다르다.
+    scores: applications.map((app) => ({
+      id: app.id,
+      incomeBand: app.incomeBand,
+      residenceBand: app.residenceBand,
+      workBand: app.workBand,
+      score: app.score,
+    })),
   }
 }
 
-function createApplication(rng: Random, region: RegionName, sequence: number): Application {
+function createApplication(rng: Random, region: RegionName, sequence: number): ScoredApplication {
   const ageBand = rng.weightedIndex(AGE_BAND_WEIGHTS)
   const age =
     ageBand === 0
@@ -178,7 +188,7 @@ function sampleSubmitTime(rng: Random): number {
 }
 
 /** 접수 순서대로 시군 처리 용량에 맞춰 서류 확인·자격 심사 완료 시각을 배정 */
-function scheduleReviews(rng: Random, applications: Application[], businessDays: number): void {
+function scheduleReviews(rng: Random, applications: ScoredApplication[], businessDays: number): void {
   const queue = [...applications].sort((a, b) => (a.submittedAt ?? 0) - (b.submittedAt ?? 0))
   queue.forEach((app, index) => {
     const dayIndex = Math.min(
@@ -199,7 +209,7 @@ function scheduleReviews(rng: Random, applications: Application[], businessDays:
 }
 
 /** 심사표 순위로 1차(120%)·최종(100%) 선정. 2차 중복 조회 대상은 최종 선정에서 빠짐 */
-function selectApplications(applications: Application[], quota: number): void {
+function selectApplications(applications: ScoredApplication[], quota: number): void {
   const ranked = applications
     .filter((app) => app.rejectStage === null || app.rejectStage === 'duplicate')
     .sort(compareApplicants)
