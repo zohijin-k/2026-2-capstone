@@ -531,6 +531,31 @@ export interface QuotaRow {
   rate_percent: number
 }
 
+/**
+ * 목록의 서류 칸 하나 (`doc:<slot_key>` 컬럼이 읽는 값).
+ *
+ * **왜 컬럼별 객체가 아니라 배열인가**: `기타` 칸에는 여러 장이 들어갈 수 있다 —
+ * 근로계약서 사본, 2번째 사업장 근로확인서류, 어느 슬롯에도 안 붙은 병합 페이지가
+ * 한 칸에 같이 온다. 컬럼 키로 나눈 dict였으면 그 자리에서 값이 하나로 눌린다.
+ */
+export interface OfficerRowDoc {
+  /** 어느 서류 컬럼에 들어가는가. 고정 슬롯 키 또는 `__other__`. */
+  column: string
+  /** 실제 슬롯 키. 미배정 병합 페이지는 `__unassigned__`. */
+  slot_key: string
+  /** 체크리스트가 정한 이 신청자의 서류명. 툴팁·aria-label이 쓰는 전체 이름. */
+  label: string
+  /** 칸 안에 찍는 짧은 이름. 고정 4칸은 빈 문자열 — 헤더가 이름을 쥔다. */
+  short_label: string
+  /** null이면 아직 안 낸 서류다. */
+  status: DocStatus | null
+  /** '적합' / '확인필요' / '부적합' / '미제출'. */
+  status_label: string
+  /** 상세에서 열 서류. 미제출이면 null이고 그 칸은 눌리지 않는다. */
+  document_id: number | null
+  required: boolean
+}
+
 export interface OfficerRow {
   application_id: number
   application_no: string
@@ -550,6 +575,21 @@ export interface OfficerRow {
   decision_label: string
   officer_role: string | null
   rank: number | null
+  /**
+   * 신청한 지원 항목 요약 ("면접비 2회 · 자격증 응시료 1회").
+   *
+   * 선착순 사업은 점수가 없고, 담당자가 목록에서 먼저 보는 것이 "이 사람이 무엇을
+   * 신청했는가"다. 점수제 사업에서는 비어 온다.
+   */
+  items_label?: string | null
+  /**
+   * 이 신청자가 낸 서류의 칸별 상태. 서류 컬럼(`doc:*`)이 읽는다.
+   *
+   * **옵셔널인 이유**: 담당자 화면은 백엔드 응답이 어긋나면 목업으로 넘어가는 구조라,
+   * 이 필드가 없는 구버전 응답에서 화면이 터지는 것보다 빈 칸으로 그리는 편이 낫다.
+   * 서류 컬럼을 안 쓰는 사업(취업패키지)에서도 빈 배열로 온다.
+   */
+  documents?: OfficerRowDoc[]
 }
 
 export interface OfficerListQuery {
@@ -583,7 +623,13 @@ export interface OfficerList {
     sorts: { value: string; label: string }[]
     applied: Record<string, string | null>
   }
+  /**
+   * 목록 컬럼. 표의 헤더와 셀이 **둘 다** 이 배열을 따른다. 사업에 따라 컬럼이
+   * 달라진다 — 점수제는 `total_score`, 선착순은 `items`가 온다.
+   */
   columns: { key: string; label: string }[]
+  /** 순위 칸 표기. 선착순 사업은 "순번"이다. 없으면 "순위". */
+  rank_label?: string
   quota: QuotaRow[]
   /** 선착순 사업을 고른 경우의 접수 진행률. 점수제 사업에서는 null. */
   first_come: {

@@ -39,7 +39,7 @@ export default function App() {
     <>
       <nav className="shell" aria-label="화면 전환">
         <span className="shell__title">
-          전북청년 두배적금·취업지원패키지 신청서류 자동 검토 시스템 <em>(데모)</em>
+          전북청년 두배적금·취업지원패키지 신청서류 자동 검토 시스템
         </span>
         <span className="shell__tabs">
           {MODES.map((m) => (

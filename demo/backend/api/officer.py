@@ -34,7 +34,14 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import extract_region, extract_town, parse_ymd
-from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS, ProgramConfig, get_program
+from ..rules.doc_types import DocType
+from ..rules.programs import (
+    DOUBLE_SAVINGS,
+    JOB_PACKAGE,
+    PROGRAMS,
+    ProgramConfig,
+    get_program,
+)
 from ..rules.required_docs import upload_slots
 from ..rules.roles import (
     DECISION_APPROVE,
@@ -51,6 +58,7 @@ from ..rules.self_check import item_numbers
 from .common import (
     checklist_for,
     list_documents,
+    list_documents_bulk,
     load_application,
     subsidy_estimate,
 )
@@ -80,6 +88,73 @@ LIST_COLUMNS = [
     {"key": "submitted_at", "label": "접수일시"},
     {"key": "decision", "label": "처리상태"},
 ]
+
+#: 서류 컬럼 키의 접두사. 기존 컬럼 키(`name`·`region`…)와 같은 이름공간을 쓰므로
+#: 접두사로 갈라 두어야 화면의 셀 분기가 섞이지 않는다.
+DOC_COLUMN_PREFIX = "doc:"
+
+#: 고정 컬럼에 안 잡히는 서류가 모이는 칸.
+#:
+#: 이 칸이 없으면 체크리스트에 슬롯이 하나 늘 때 그 서류가 목록에서 **조용히
+#: 사라진다**. 조건부로만 붙는 서류(행정기관 기간제의 근로계약서, 복수 사업장의
+#: 2번째 근로확인서류, 자필 서식5)와 어느 슬롯에도 못 붙은 병합 페이지가 여기 온다.
+OTHER_DOC_COLUMN = "__other__"
+
+#: 두배적금 목록의 서류 컬럼. `rules/required_docs._double_savings_checklist`가
+#: 만드는 슬롯 키 순서를 그대로 따른다.
+#:
+#: 앞 4종은 전원 공통이라 헤더가 서류명을 쥐고 칸에는 상태만 들어간다. 마지막
+#: `work_proof`만 근로유형에 따라 서류가 갈리므로(5종 중 택1) 칸에 서류명이 같이 뜬다.
+DOC_COLUMNS: list[tuple[str, str]] = [
+    ("resident_abstract", "초본"),
+    ("nhis_payment", "건보료"),
+    ("nhis_qualification", "자격확인"),
+    ("nhis_acquisition_loss", "자격득실"),
+    ("work_proof", "근로확인서류"),
+    (OTHER_DOC_COLUMN, "기타"),
+]
+
+DOC_COLUMN_KEYS = {slot for slot, _ in DOC_COLUMNS}
+
+#: 헤더가 서류명을 쥐는 칸. 이 칸들은 상태 점만 찍는다.
+FIXED_DOC_COLUMNS = {"resident_abstract", "nhis_payment", "nhis_qualification", "nhis_acquisition_loss"}
+
+
+def _doc_column(slot_key: str) -> str:
+    """서류 슬롯이 들어갈 컬럼.
+
+    복수 사업장 근무자는 슬롯이 `work_proof_1`·`work_proof_2`로 갈린다
+    (`_double_savings_checklist`). 그 경우에도 근로확인서류 칸에 나란히 들어가야
+    한다 — 사업장이 둘이라는 사실 자체가 그 칸에서 읽혀야 할 정보다.
+    """
+    if slot_key in DOC_COLUMN_KEYS:
+        return slot_key
+    if slot_key.startswith("work_proof"):
+        return "work_proof"
+    return OTHER_DOC_COLUMN
+
+#: 서류 칸에 들어갈 짧은 이름.
+#:
+#: 체크리스트 라벨("근로확인서류(4대보험 가입내역 확인서)")에서 괄호 안을 되파지
+#: 않는다 — 문구가 한 글자 바뀌면 조용히 틀린다. 짧은 이름은 목록 화면의 사정이지
+#: 서류 규칙이 아니므로 `LIST_COLUMNS` 표기와 같은 자리에 둔다.
+DOC_SHORT_BY_TYPE: dict[str, str] = {
+    DocType.INSURANCE_4: "4대보험 가입내역",
+    DocType.DAILY_WORK_RECORD: "일용근로내역서",
+    DocType.BIZ_REG_PROOF: "사업자등록증명",
+    DocType.FARM_BIZ_CERT: "농업경영체 증명서",
+    DocType.FISHERY_BIZ_CERT: "어업경영체 증명서",
+    DocType.LABOR_CONTRACT: "근로계약서 사본",
+    DocType.ADMIN_INFO_CONSENT: "서식5 (자필)",
+}
+
+#: 서류 칸의 상태 표기. `None`은 아직 안 낸 서류다.
+DOC_STATE_LABELS = {
+    "PASS": "적합",
+    "FAIL": "부적합",
+    "NEEDS_REVIEW": "확인필요",
+    None: "미제출",
+}
 
 DEFAULT_PAGE_SIZE = 20
 
@@ -136,24 +211,69 @@ def _load_entries() -> list[Entry]:
     return [Entry(a, reviews.get(a.id or 0)) for a in apps]
 
 
-def _missing_count(app: Application) -> int:
-    """미비서류 수 = 안 올린 필수 서류 + 올렸지만 적합이 아닌 서류.
+def _doc_cells(
+    app: Application, documents: list[Document]
+) -> tuple[list[dict[str, Any]], int]:
+    """서류 칸들과 미비서류 수. **한 번의 훑기에서 둘 다 나온다.**
 
-    담당자가 목록에서 "이 건은 몇 군데를 봐야 하나"를 한 눈에 재는 값이다.
+    미비서류 수 = 안 올린 필수 서류 + 올렸지만 적합이 아닌 서류 + 미배정 페이지.
+    담당자가 목록에서 "이 건은 몇 군데를 봐야 하나"를 한 눈에 재는 값이고, 서류 칸은
+    그 "몇 군데"가 **어디인지**다. 둘을 따로 계산하면 언젠가 반드시 어긋난다 —
+    미비 3건인데 빨간 칸이 2개인 표는 담당자가 더 이상 믿지 않는다.
+
+    반환 `(cells, missing)`.
     """
-    documents = list_documents(app.id or 0)
     by_slot = {d.slot_key: d for d in documents}
+    cells: list[dict[str, Any]] = []
     missing = 0
+
     for req in upload_slots(checklist_for(app)):
         doc = by_slot.get(req.slot_key)
+        status = doc.stage1_status if doc else None
         if doc is None:
             if req.required:
                 missing += 1
-        elif doc.stage1_status != "PASS":
+        elif status != "PASS":
             missing += 1
-    # 어느 슬롯에도 배정되지 않은 병합 페이지도 확인 대상이다.
-    missing += sum(1 for d in documents if d.slot_key == UNASSIGNED_SLOT)
-    return missing
+        cells.append(
+            {
+                "column": _doc_column(req.slot_key),
+                "slot_key": req.slot_key,
+                "label": req.label,
+                # 고정 컬럼은 헤더가 서류명을 쥔다. 칸마다 이름을 또 찍으면
+                # 컬럼이 6개 늘어난 표가 읽을 수 없게 된다.
+                "short_label": (
+                    ""
+                    if req.slot_key in FIXED_DOC_COLUMNS
+                    else DOC_SHORT_BY_TYPE.get(req.doc_type, req.label)
+                ),
+                "status": status,
+                "status_label": DOC_STATE_LABELS.get(status, "미제출"),
+                "document_id": doc.id if doc else None,
+                "required": req.required,
+            }
+        )
+
+    # 어느 슬롯에도 배정되지 않은 병합 페이지도 확인 대상이다. 슬롯이 없으니
+    # 고정 컬럼에 자리가 없고, 그래서 `기타` 칸이 필요하다.
+    for d in documents:
+        if d.slot_key != UNASSIGNED_SLOT:
+            continue
+        missing += 1
+        cells.append(
+            {
+                "column": OTHER_DOC_COLUMN,
+                "slot_key": UNASSIGNED_SLOT,
+                "label": "미배정 페이지",
+                "short_label": "미배정",
+                "status": d.stage1_status,
+                "status_label": DOC_STATE_LABELS.get(d.stage1_status, "미제출"),
+                "document_id": d.id,
+                "required": False,
+            }
+        )
+
+    return cells, missing
 
 
 # ---------------------------------------------------------------- 역할 범위
@@ -270,8 +390,41 @@ def _first_come_summary(
 # ---------------------------------------------------------------- 목록
 
 
-def _row(entry: Entry, rank: int | None) -> dict[str, Any]:
+def _columns(program: str | None) -> list[dict[str, str]]:
+    """목록 컬럼. 사업에 따라 서류 컬럼이 붙는다.
+
+    취업패키지(선착순)에는 붙이지 않는다 — 항목 회차마다 서류가 늘어(면접비 3회면
+    면접확인서 3장) 컬럼으로 고정할 수 없다. 그 목록에서 담당자가 먼저 보는 것은
+    "무엇을 신청했나"이고, 그 자리는 `신청 항목` 컬럼이 쥐고 있다.
+
+    서류 컬럼은 `미비서류` 바로 뒤에 온다. 개수를 보고 "어디가 걸렸나"로 눈이
+    이어지는 순서다.
+    """
+    if program == JOB_PACKAGE:
+        return list(LIST_COLUMNS)
+
+    doc_columns = [
+        {"key": f"{DOC_COLUMN_PREFIX}{slot}", "label": label}
+        for slot, label in DOC_COLUMNS
+    ]
+    columns: list[dict[str, str]] = []
+    for column in LIST_COLUMNS:
+        columns.append(column)
+        if column["key"] == "missing_count":
+            columns.extend(doc_columns)
+    return columns
+
+
+def _row(
+    entry: Entry, rank: int | None, documents: list[Document]
+) -> dict[str, Any]:
     app = entry.app
+    # 서류 컬럼은 두배적금 체크리스트를 기준으로 짜여 있다. 사업 필터가 `전체`일 때
+    # 같은 표에 섞이는 취업패키지 행의 슬롯을 여기에 쏟으면 전부 `기타`로 떨어져
+    # 컬럼이 무의미해진다. 그 행은 빈 배열로 두고 화면이 "해당 없음"으로 그린다.
+    doc_cells, missing = _doc_cells(app, documents)
+    if app.program_code != DOUBLE_SAVINGS:
+        doc_cells = []
     return {
         "application_id": app.id,
         "application_no": app.application_no,
@@ -286,7 +439,7 @@ def _row(entry: Entry, rank: int | None) -> dict[str, Any]:
         "max_total": (
             (entry.review.score_json or {}).get("max_total") if entry.review else None
         ),
-        "missing_count": _missing_count(app),
+        "missing_count": missing,
         "submitted_at": (
             app.submitted_at.isoformat(timespec="seconds") if app.submitted_at else None
         ),
@@ -298,6 +451,8 @@ def _row(entry: Entry, rank: int | None) -> dict[str, Any]:
         "officer_role": entry.review.officer_role if entry.review else None,
         #: 시군 내 고득점순 순위. 커트라인 판단의 근거다.
         "rank": rank,
+        #: 서류 칸. 두배적금이 아니면 빈 배열이다.
+        "documents": doc_cells,
     }
 
 
@@ -402,6 +557,10 @@ def list_applications(
     start = (page - 1) * page_size
     window = rows[start : start + page_size]
 
+    # 서류 상태는 **이 페이지의 행만** 필요하다. 행마다 조회하면 한 페이지에
+    # 쿼리가 행 수만큼 나간다 — `IN` 하나로 읽고 신청 건별로 나눠 준다.
+    docs_by_app = list_documents_bulk([e.app.id or 0 for e in window])
+
     return {
         "role": _role_dict(role_config),
         "scope": {
@@ -438,14 +597,17 @@ def list_applications(
                 "sort": sort_key,
             },
         },
-        "columns": LIST_COLUMNS,
+        "columns": _columns(program),
         "quota": quota,
         "first_come": _first_come_summary(entries, program),
         "total": total,
         "page": page,
         "page_size": page_size,
         "page_count": max(1, math.ceil(total / page_size)),
-        "rows": [_row(e, ranks.get(e.app.id or 0)) for e in window],
+        "rows": [
+            _row(e, ranks.get(e.app.id or 0), docs_by_app.get(e.app.id or 0, []))
+            for e in window
+        ],
     }
 
 

@@ -26,6 +26,7 @@ import type {
   OfficerListQuery,
   OfficerRole,
   OfficerRow,
+  OfficerRowDoc,
   QuotaRow,
   ReviewDetailData,
   ScoreItemRow,
@@ -217,20 +218,24 @@ const JOB_EMPLOYERS = [
   '(주)부안해상풍력',
 ]
 
-/** 자격증명과 실제 응시료. 응시료가 한도(5만원)를 넘는 것도 섞는다. */
-const CERTIFICATES: [string, number][] = [
-  ['정보처리기사 필기', 19_400],
-  ['정보처리기사 실기', 22_600],
-  ['컴퓨터활용능력 1급 실기', 25_000],
-  ['한국사능력검정시험 심화', 22_000],
-  ['지게차운전기능사 실기', 29_000],
-  ['전기기사 실기', 22_600],
-  ['산업안전기사 실기', 34_000],
-  ['사회복지사 2급 과정평가', 48_000],
-  ['TOEIC 정기시험', 52_500],
-  ['조리기능사 실기', 26_900],
-  ['전산회계 1급', 30_000],
-  ['미용사(일반) 실기', 64_000],
+/** 자격증명 · 실제 응시료 · 시험 시행기관. 응시료가 한도(5만원)를 넘는 것도 섞는다. */
+const CERTIFICATES: [string, number, string][] = [
+  ['정보처리기사 필기', 19_400, '한국산업인력공단'],
+  ['정보처리기사 실기', 22_600, '한국산업인력공단'],
+  ['컴퓨터활용능력 1급 실기', 25_000, '대한상공회의소'],
+  ['한국사능력검정시험 심화', 22_000, '국사편찬위원회'],
+  ['지게차운전기능사 실기', 29_000, '한국산업인력공단'],
+  ['전기기사 실기', 22_600, '한국산업인력공단'],
+  ['산업안전기사 실기', 34_000, '한국산업인력공단'],
+  ['사회복지사 2급 과정평가', 48_000, '한국사회복지사협회'],
+  ['TOEIC 정기시험', 52_500, 'YBM 한국TOEIC위원회'],
+  ['조리기능사 실기', 26_900, '한국산업인력공단'],
+  ['전산회계 1급', 30_000, '한국세무사회'],
+  ['전산세무 2급', 30_000, '한국세무사회'],
+  ['미용사(일반) 실기', 64_000, '한국산업인력공단'],
+  ['토익스피킹(TOEIC Speaking)', 84_000, 'YBM 한국TOEIC위원회'],
+  ['OPIc 영어', 84_000, '(주)크레듀'],
+  ['투자자산운용사', 50_000, '금융투자협회'],
 ]
 
 /** 정장 대여 가맹점과 대여비. 한도(5만원)를 넘는 금액이 절반쯤 섞인다. */
@@ -319,13 +324,63 @@ const AI_STATUS_LABELS: Record<DocStatus, string> = {
 
 const PENDING = 'pending'
 
-/** 목록 컬럼. `api/officer.LIST_COLUMNS`와 같은 순서·라벨. */
+/**
+ * 두배적금 업로드 슬롯의 순서·표기. `api/officer.DOC_COLUMNS`와 같은 순서다.
+ *
+ * 목록의 서류 컬럼이 이 배열에서 나온다. 서버 응답과 컬럼 개수·순서·라벨이
+ * 어긋나면 목업 화면과 실데이터 화면이 다른 표가 되고, 그러면 목업으로 시연한
+ * 것이 실제로 되는지 아무도 확신할 수 없다.
+ */
+const SAVINGS_DOC_COLUMNS: [string, string][] = [
+  ['resident_abstract', '초본'],
+  ['nhis_payment', '건보료'],
+  ['nhis_qualification', '자격확인'],
+  ['nhis_acquisition_loss', '자격득실'],
+  ['work_proof', '근로확인서류'],
+  ['__other__', '기타'],
+]
+
+/** 실제로 올려야 하는 슬롯. `기타`는 컬럼이지 슬롯이 아니다. */
+const SAVINGS_SLOT_ORDER = SAVINGS_DOC_COLUMNS.slice(0, 5).map(([slot]) => slot)
+
+/** 헤더가 서류명을 쥐는 칸. 서버의 `FIXED_DOC_COLUMNS`와 같다. */
+const FIXED_DOC_COLUMNS = new Set(SAVINGS_SLOT_ORDER.slice(0, 4))
+
+/** 서류 칸의 상태 표기. 서버의 `DOC_STATE_LABELS`와 같다. */
+const DOC_STATE_LABELS: Record<string, string> = {
+  PASS: '적합',
+  FAIL: '부적합',
+  NEEDS_REVIEW: '확인필요',
+}
+
+/** 목록 컬럼 (점수제). `api/officer.LIST_COLUMNS`와 같은 순서·라벨. */
 const LIST_COLUMNS = [
   { key: 'application_no', label: '신청번호' },
   { key: 'name', label: '성명' },
   { key: 'region', label: '시군' },
   { key: 'ai_status', label: 'AI판정' },
   { key: 'total_score', label: '점수' },
+  { key: 'missing_count', label: '미비서류' },
+  // 서류 컬럼은 미비 개수 바로 뒤에 온다 — 개수를 보고 "어디가 걸렸나"로 눈이
+  // 이어지는 순서다. 목록은 `SAVINGS_DOC_COLUMNS`에서 조립한다.
+  ...SAVINGS_DOC_COLUMNS.map(([slot, label]) => ({ key: `doc:${slot}`, label })),
+  { key: 'submitted_at', label: '접수일시' },
+  { key: 'decision', label: '처리상태' },
+]
+
+/**
+ * 목록 컬럼 (선착순).
+ *
+ * 점수 칸을 **신청 항목**으로 바꾼다. 취업패키지에는 심사표가 없어 점수 칸이
+ * 전건 비어 있고, 담당자가 목록에서 먼저 보는 것은 "이 사람이 무엇을 신청했고
+ * 그 항목 서류가 몇 장 걸렸는가"이기 때문이다.
+ */
+const FIRST_COME_COLUMNS = [
+  { key: 'application_no', label: '신청번호' },
+  { key: 'name', label: '성명' },
+  { key: 'region', label: '시군' },
+  { key: 'items', label: '신청 항목' },
+  { key: 'ai_status', label: 'AI판정' },
   { key: 'missing_count', label: '미비서류' },
   { key: 'submitted_at', label: '접수일시' },
   { key: 'decision', label: '처리상태' },
@@ -531,6 +586,13 @@ interface JobSelection {
   count: number
   /** 회차별 영수증 금액. 정액 항목(면접비)은 전부 null. */
   receipts: (number | null)[]
+  /**
+   * 금액은 읽었지만 그대로 지급하면 안 되는 회차.
+   *
+   * 실제 사례: "전산세무 2급 시험료는 3만원인데 결제영수증이 6만원이라 지원금이
+   * 총 89,500원. 이거 확인필요함." 금액이 계산은 되지만 담당자가 한 번 봐야 한다.
+   */
+  receiptFlagged: boolean[]
 }
 
 /** 목록 행 + 상세 화면이 같이 읽는 목업 1건. */
@@ -544,6 +606,8 @@ interface MockEntry {
   householdSize: number
   monthlyPremium: number
   insuranceType: string
+  /** 근로확인서류 1종을 정하는 축. 취업패키지 건에서는 쓰지 않는다. */
+  workCategory: WorkCategory | null
   reasons: Reason[]
   /** 상세 화면 좌측 탭에 뜨는 서류들. */
   docs: MockDoc[]
@@ -712,6 +776,206 @@ function rollDecision(
   return { decision: null, officerRole: null, memo: null }
 }
 
+// ---------------------------------------------------------------- 두배적금 서류 5종
+//
+// 공고문 제출서류 중 **업로드 대상**은 5종이다 — ⑧ 초본, ⑦ 소득재산 증빙 3종,
+// ⑥ 근로확인서류 1종. ①~⑤는 화면 작성으로 갈음한다(`rules/required_docs.py`).
+// 이 중 ⑥만 근로유형에 따라 5종 중 하나로 갈린다 — 목록의 `근로확인서류` 칸에
+// 사람마다 다른 서류명이 뜨는 이유다.
+
+/** `rules/required_docs.WorkCategory`. 문자열까지 서버와 같아야 한다. */
+type WorkCategory =
+  | '직장가입자'
+  | '지역가입자·피부양자'
+  | '사업소득 사업자'
+  | '농업·임업'
+  | '어업'
+
+/**
+ * 근로유형 분포. 근로청년 사업이라 직장가입자가 압도적으로 두껍고,
+ * 농·어업 경영주는 드물게 섞인다. 목록에서 `근로확인서류` 칸이 대부분 같은
+ * 서류명이되 가끔 다른 것이 섞여야 그 칸이 무엇을 위한 것인지 보인다.
+ */
+const WORK_CATEGORY_WEIGHTS: [WorkCategory, number][] = [
+  ['직장가입자', 0.65],
+  ['지역가입자·피부양자', 0.15],
+  ['사업소득 사업자', 0.12],
+  ['농업·임업', 0.06],
+  ['어업', 0.02],
+]
+
+const BIZ_NAMES = ['한옥마을공방', 'OO스튜디오', 'OO커피로스터스', 'OO디자인', 'OO상회']
+const FARM_TYPES = ['논벼', '시설채소', '한우', '과수(사과)', '밭작물']
+const FISHERY_TYPES = ['연안어업', '양식어업', '내수면어업']
+
+/** 근로확인서류를 만드는 데 필요한 사실값. */
+interface WorkProofContext {
+  name: string
+  birth: string
+  region: string
+  employedAt: string
+  issued: string
+  employer: string
+  bizName: string
+  bizNo: string
+  farmNo: string
+}
+
+/**
+ * 근로유형 → 그 사람이 내야 하는 근로확인서류 1종.
+ *
+ * `label`은 `rules/required_docs._work_proof`의 문구, `short`는
+ * `api/officer.DOC_SHORT_BY_TYPE`의 표기와 같은 값이다. 목업과 서버가 다른 이름을
+ * 보여주면 담당자가 두 화면을 같은 화면으로 읽지 못한다.
+ */
+const WORK_PROOF: Record<
+  WorkCategory,
+  {
+    label: string
+    short: string
+    docType: string
+    dateField: string
+    fields: (ctx: WorkProofContext) => Record<string, string>
+  }
+> = {
+  직장가입자: {
+    label: '근로확인서류(4대보험 가입내역 확인서)',
+    short: '4대보험 가입내역',
+    docType: '4대보험가입내역확인서',
+    dateField: '발급일',
+    fields: (c) => ({
+      성명: c.name,
+      생년월일: c.birth,
+      사업장명: c.employer,
+      자격취득일: c.employedAt,
+      가입내역: '국민연금 · 건강보험 · 고용보험 · 산재보험',
+      발급일: c.issued,
+    }),
+  },
+  '지역가입자·피부양자': {
+    label: '근로확인서류(고용·산재보험 일용근로내역서)',
+    short: '일용근로내역서',
+    docType: '일용근로내역서',
+    dateField: '발급일',
+    fields: (c) => ({
+      성명: c.name,
+      생년월일: c.birth,
+      사업장명: c.employer,
+      최초근로일: c.employedAt,
+      '최근 3개월 근로일수': '54일',
+      발급일: c.issued,
+    }),
+  },
+  '사업소득 사업자': {
+    label: '근로확인서류(사업자등록증명)',
+    short: '사업자등록증명',
+    docType: '사업자등록증명',
+    dateField: '발급일',
+    fields: (c) => ({
+      성명: c.name,
+      생년월일: c.birth,
+      상호: c.bizName,
+      사업자등록번호: c.bizNo,
+      개업일: c.employedAt,
+      발급일: c.issued,
+    }),
+  },
+  '농업·임업': {
+    label: '근로확인서류(농업경영체 증명서)',
+    short: '농업경영체 증명서',
+    docType: '농업경영체증명서',
+    dateField: '발급일',
+    fields: (c) => ({
+      성명: c.name,
+      생년월일: c.birth,
+      경영체등록번호: c.farmNo,
+      경영형태: '단독경영주',
+      영농형태: c.bizName,
+      등록일: c.employedAt,
+      발급일: c.issued,
+    }),
+  },
+  어업: {
+    label: '근로확인서류(어업경영체 증명서)',
+    short: '어업경영체 증명서',
+    docType: '어업경영체증명서',
+    dateField: '발급일',
+    fields: (c) => ({
+      성명: c.name,
+      생년월일: c.birth,
+      경영체등록번호: c.farmNo,
+      경영형태: '단독경영주',
+      어업형태: c.bizName,
+      등록일: c.employedAt,
+      발급일: c.issued,
+    }),
+  },
+}
+
+/**
+ * 판정 사유가 가리키는 서류 → 슬롯.
+ *
+ * 예전에는 서류가 한 장이라 사유를 아무 데나 얹어도 됐다. 이제 목록에 **어느
+ * 서류가 걸렸는가**가 칸으로 보이므로, 사유가 엉뚱한 서류에 붙으면 담당자가
+ * 클릭해 들어간 원본에 그 문제가 없다.
+ */
+const DOC_TYPE_TO_SLOT: Record<string, string> = {
+  주민등록초본: 'resident_abstract',
+  주민등록등본: 'resident_abstract',
+  건강보험료납부확인서: 'nhis_payment',
+  건강보험자격확인서: 'nhis_qualification',
+  건강보험자격득실확인서: 'nhis_acquisition_loss',
+}
+
+/**
+ * 목록의 서류 칸. 백엔드 `api/officer._doc_cells`와 **같은 규칙**을 따른다.
+ *
+ * `document_id`는 `toOfficerDocument`가 쓰는 것과 같은 식(신청건 × 100 + 순번)으로
+ * 낸다. 목록에서 누른 칸과 상세의 탭이 같은 서류를 가리켜야 하기 때문이다.
+ */
+function savingsDocCells(applicationId: number, docs: MockDoc[]): OfficerRowDoc[] {
+  const byIndex = new Map(docs.map((d, index) => [d.slotKey, { doc: d, index }]))
+  return SAVINGS_SLOT_ORDER.map((slot) => {
+    const found = byIndex.get(slot)
+    const proofLabel =
+      slot === 'work_proof' && found
+        ? (Object.values(WORK_PROOF).find((p) => p.docType === found.doc.docType)?.short ??
+          found.doc.label)
+        : ''
+    return {
+      column: slot,
+      slot_key: slot,
+      // 안 낸 서류에는 판독된 라벨이 없다. 체크리스트가 정한 이름을 쓴다.
+      label: found?.doc.label ?? SLOT_FALLBACK_LABELS[slot],
+      short_label: FIXED_DOC_COLUMNS.has(slot) ? '' : proofLabel || '근로확인서류',
+      status: found?.doc.status ?? null,
+      status_label: found ? DOC_STATE_LABELS[found.doc.status] : '미제출',
+      document_id: found ? applicationId * 100 + found.index : null,
+      required: true,
+    }
+  })
+}
+
+/** 안 낸 서류 칸에 띄울 이름. 체크리스트 표기를 그대로 쓴다. */
+const SLOT_FALLBACK_LABELS: Record<string, string> = {
+  resident_abstract: '주민등록초본',
+  nhis_payment: '2025년 건강보험료 납부확인서',
+  nhis_qualification: '건강보험 자격확인서',
+  nhis_acquisition_loss: '건강보험 자격득실확인서',
+  work_proof: '근로확인서류',
+}
+
+/** 가중치 표에서 하나 뽑기. */
+function weighted<T>(random: () => number, table: [T, number][]): T {
+  const dice = random()
+  let acc = 0
+  for (const [value, share] of table) {
+    acc += share
+    if (dice <= acc) return value
+  }
+  return table[table.length - 1][0]
+}
+
 function makeSavingsEntry(
   random: () => number,
   id: number,
@@ -741,31 +1005,12 @@ function makeSavingsEntry(
 
   const scored = score(incomePercent, residenceYears, workYears, age)
 
-  // --- AI 판정. 소득 초과는 곧바로 부적합, 나머지는 확률로 섞는다.
-  const dice = random()
-  let aiStatus: DocStatus = 'PASS'
-  if (overIncome) aiStatus = 'FAIL'
-  else if (dice < 0.09) aiStatus = 'NEEDS_REVIEW'
-  else if (dice < 0.13) aiStatus = 'FAIL'
+  // 근로유형이 근로확인서류 1종을 정한다. 건강보험 가입구분은 **여기서 따라
+  // 나온다** — 건보료 확인서에 "지역가입자"라고 찍혀 있는데 4대보험 가입내역
+  // 확인서를 낸 건은 말이 안 된다.
+  const workCategory = weighted(random, WORK_CATEGORY_WEIGHTS)
+  const insuranceType = workCategory === '직장가입자' ? '직장' : '지역'
 
-  const reasons: Reason[] =
-    aiStatus === 'FAIL'
-      ? [overIncome ? FAIL_REASONS[0] : pick(random, FAIL_REASONS.slice(1))]
-      : aiStatus === 'NEEDS_REVIEW'
-        ? [pick(random, REVIEW_REASONS)]
-        : []
-
-  const missing =
-    aiStatus === 'PASS'
-      ? random() < 0.12
-        ? 1
-        : 0
-      : aiStatus === 'NEEDS_REVIEW'
-        ? between(random, 1, 2)
-        : between(random, 1, 3)
-
-  const insuranceType = random() < 0.8 ? '직장' : '지역'
-  const { decision, officerRole, memo } = rollDecision(random, aiStatus)
   const submitted = submittedAt(random)
   const residenceDays = Math.round(
     (ANNOUNCEMENT_DATE.getTime() - new Date(transferIn).getTime()) / 86_400_000,
@@ -774,31 +1019,177 @@ function makeSavingsEntry(
     (ANNOUNCEMENT_DATE.getTime() - new Date(employedAt).getTime()) / 86_400_000,
   )
 
-  const doc: MockDoc = {
-    slotKey: 'nhis_payment',
-    label: '건강보험료 납부확인서',
-    docType: '건강보험료납부확인서',
-    expectedDocType: '건강보험료납부확인서',
-    dateField: '발급일',
-    status: aiStatus,
-    receiptAmount: null,
-    fields: {
-      성명: name,
-      생년월일: birth,
-      주소: address,
-      전입일: transferIn,
-      가구원수: `${householdSize}인`,
-      가입구분: `${insuranceType}가입자`,
-      건강보험료: `${monthlyPremium.toLocaleString('ko-KR')}원`,
-      취업일: employedAt,
-    },
-    findings: reasons.map((r) => ({
-      code: r.code,
-      message: r.message,
-      how_to_fix: '원본을 다시 발급받아 올리도록 안내하세요.',
-      severity: aiStatus === 'FAIL' ? ('FAIL' as DocStatus) : ('NEEDS_REVIEW' as DocStatus),
-    })),
+  // --- 서류 5종. 발급일은 공고일(2026-03-03) 이후, 접수일 이전이어야 인정된다.
+  const submittedDate = submitted.slice(0, 10)
+  const issued = daysBefore(submittedDate, between(random, 0, 8))
+  const employer = pick(random, JOB_EMPLOYERS)
+  const proof = WORK_PROOF[workCategory]
+  const proofCtx: WorkProofContext = {
+    name,
+    birth,
+    region,
+    employedAt,
+    issued,
+    employer,
+    bizName:
+      workCategory === '농업·임업'
+        ? pick(random, FARM_TYPES)
+        : workCategory === '어업'
+          ? pick(random, FISHERY_TYPES)
+          : `${region} ${pick(random, BIZ_NAMES)}`,
+    bizNo: `${between(random, 100, 999)}-${between(random, 10, 99)}-${between(random, 10_000, 99_999)}`,
+    farmNo: `${between(random, 1000, 9999)}-${between(random, 1000, 9999)}-${between(random, 10, 99)}`,
   }
+
+  // 판독값은 전부 **위에서 뽑은 사실값에서 나온다**. 점수 근거 문장이 같은
+  // 날짜들에서 역산되므로, 서류가 다른 값을 보이면 심사표와 원본이 어긋난다.
+  const docs: MockDoc[] = [
+    {
+      slotKey: 'resident_abstract',
+      label: '주민등록초본',
+      docType: '주민등록초본',
+      expectedDocType: '주민등록초본',
+      dateField: '발급일',
+      status: 'PASS',
+      receiptAmount: null,
+      findings: [],
+      fields: {
+        성명: name,
+        생년월일: birth,
+        주소: address,
+        전입일: transferIn,
+        '최근 5년 주소변동': `${between(random, 1, 4)}회 (포함)`,
+        병역사항: age >= 20 ? '만기전역' : '해당없음',
+        발급일: issued,
+      },
+    },
+    {
+      slotKey: 'nhis_payment',
+      label: '2025년 건강보험료 납부확인서',
+      docType: '건강보험료납부확인서',
+      expectedDocType: '건강보험료납부확인서',
+      dateField: '발급일',
+      status: 'PASS',
+      receiptAmount: null,
+      findings: [],
+      fields: {
+        성명: name,
+        생년월일: birth,
+        가입구분: `${insuranceType}가입자`,
+        가구원수: `${householdSize}인`,
+        건강보험료: `${monthlyPremium.toLocaleString('ko-KR')}원`,
+        납부기간: "'25. 10월 ~ 12월 (3개월)",
+        발급일: issued,
+      },
+    },
+    {
+      slotKey: 'nhis_qualification',
+      label: '건강보험 자격확인서',
+      docType: '건강보험자격확인서',
+      expectedDocType: '건강보험자격확인서',
+      dateField: '발급일',
+      status: 'PASS',
+      receiptAmount: null,
+      findings: [],
+      fields: {
+        성명: name,
+        생년월일: birth,
+        가입구분: `${insuranceType}가입자`,
+        가구원수: `${householdSize}인`,
+        가구원: `본인 외 ${householdSize - 1}인`,
+        발급일: issued,
+      },
+    },
+    {
+      slotKey: 'nhis_acquisition_loss',
+      label: '건강보험 자격득실확인서',
+      docType: '건강보험자격득실확인서',
+      expectedDocType: '건강보험자격득실확인서',
+      dateField: '발급일',
+      status: 'PASS',
+      receiptAmount: null,
+      findings: [],
+      fields: {
+        성명: name,
+        생년월일: birth,
+        사업장명: employer,
+        취득일: employedAt,
+        상실일: '(재직 중)',
+        '최근 5년 변동내역': `${between(random, 1, 3)}건 (포함)`,
+        발급일: issued,
+      },
+    },
+    {
+      slotKey: 'work_proof',
+      label: proof.label,
+      docType: proof.docType,
+      expectedDocType: proof.docType,
+      dateField: proof.dateField,
+      status: 'PASS',
+      receiptAmount: null,
+      findings: [],
+      fields: proof.fields(proofCtx),
+    },
+  ]
+
+  // --- 문제를 **어느 서류에** 얹을지 고른다.
+  //
+  // 소득 140% 초과는 서류가 멀쩡해도 자격이 안 되는 경우라, 건보료 확인서에
+  // 붙는다. 나머지는 사유의 `doc_type`이 가리키는 서류에 붙인다 — 담당자가
+  // 목록에서 빨간 칸을 눌러 들어갔는데 그 원본에 문제가 없으면 안 된다.
+  const reasons: Reason[] = []
+  let reasonSeverity: DocStatus = 'PASS'
+  const dice = random()
+  if (overIncome) {
+    reasons.push(FAIL_REASONS[0])
+    reasonSeverity = 'FAIL'
+  } else if (dice < 0.09) {
+    reasons.push(pick(random, REVIEW_REASONS))
+    reasonSeverity = 'NEEDS_REVIEW'
+  } else if (dice < 0.13) {
+    reasons.push(pick(random, FAIL_REASONS.slice(1)))
+    reasonSeverity = 'FAIL'
+  }
+
+  for (const reason of reasons) {
+    const slot = DOC_TYPE_TO_SLOT[reason.doc_type ?? ''] ?? 'nhis_payment'
+    const target = docs.find((d) => d.slotKey === slot) ?? docs[1]
+    if (!target) continue
+    target.findings.push({
+      code: reason.code,
+      message: reason.message,
+      how_to_fix: '원본을 다시 발급받아 올리도록 안내하세요.',
+      severity: reasonSeverity === 'PASS' ? 'NEEDS_REVIEW' : reasonSeverity,
+    })
+    // 2단계 사유(소득 초과·도외 주소)는 **서류의 흠이 아니라 자격의 문제**다.
+    // 근거로 남기되 서류 판정은 건드리지 않는다 — 백엔드의 `missing_count`도
+    // 1단계(`stage1_status`)만 세므로, 여기서 서류를 부적합으로 눕히면 목업의
+    // 미비 개수가 실데이터보다 부풀어 오른다.
+    if (reason.stage === 'stage1') target.status = reasonSeverity
+  }
+
+  // --- 안 낸 서류. 전건이 완비면 `미제출` 칸이 한 번도 안 보여서, 그 컬럼이
+  //     무엇을 위한 것인지 시연에서 드러나지 않는다.
+  if (random() < 0.12) {
+    const dropped = between(random, 0, docs.length - 1)
+    docs.splice(dropped, 1)
+  }
+
+  // --- 판정과 미비 개수는 **서류에서 역산한다**. 따로 굴리면 목록의 숫자와
+  //     서류 칸이 따로 논다 (취업패키지 쪽이 이미 이 방식이다).
+  // 최종 판정은 1단계 서류 판정과 2단계 자격 사유 중 **더 나쁜 쪽**이다.
+  const verdicts: DocStatus[] = [...docs.map((d) => d.status), reasonSeverity]
+  const aiStatus: DocStatus = verdicts.includes('FAIL')
+    ? 'FAIL'
+    : verdicts.includes('NEEDS_REVIEW')
+      ? 'NEEDS_REVIEW'
+      : 'PASS'
+  const missing =
+    SAVINGS_SLOT_ORDER.length -
+    docs.length +
+    docs.filter((d) => d.status !== 'PASS').length
+
+  const { decision, officerRole, memo } = rollDecision(random, aiStatus)
 
   return {
     row: {
@@ -820,6 +1211,8 @@ function makeSavingsEntry(
       decision_label: decisionLabel(officerRole, decision),
       officer_role: officerRole,
       rank: null,
+      // 목록의 서류 칸. 서류가 정해진 뒤라야 채울 수 있어 여기서 만든다.
+      documents: savingsDocCells(id, docs),
     },
     scored,
     birth,
@@ -829,8 +1222,9 @@ function makeSavingsEntry(
     householdSize,
     monthlyPremium,
     insuranceType,
+    workCategory,
     reasons,
-    docs: [doc],
+    docs,
     selections: [],
     // 두배적금은 보완 자체가 없다 (공고문: 미비 시 추가·보충서류를 요청하지 않음).
     supplementDeadline: null,
@@ -872,14 +1266,16 @@ interface Issue {
   patch?: Record<string, string>
   /** 지급액 계산에서 이 회차를 미확정으로 돌린다. */
   voidsAmount?: boolean
+  /** 판독된 결제금액을 이 값으로 바꾼다. 지급 계산도 이 값을 쓴다. */
+  amount?: number
 }
 
 /** 도외 주소 — 초본을 떼 보니 전북이 아닌 경우. */
-const OUT_OF_REGION_ADDRESSES = [
-  '대전광역시 서구 둔산동 1234',
-  '충청남도 천안시 서북구 불당동 45',
-  '서울특별시 관악구 신림동 77',
-  '경기도 수원시 팔달구 인계동 210',
+const OUT_OF_REGION_ADDRESSES: [string, string][] = [
+  ['대전광역시 서구 둔산동 1234', '대전광역시 서구청장'],
+  ['충청남도 천안시 서북구 불당동 45', '천안시 서북구청장'],
+  ['서울특별시 관악구 신림동 77', '서울특별시 관악구청장'],
+  ['경기도 수원시 팔달구 인계동 210', '수원시 팔달구청장'],
 ]
 
 /** 아르바이트로 보이는 면접처. 지원 대상인지 담당자가 판단해야 한다. */
@@ -937,14 +1333,14 @@ function pickSelections(random: () => number): JobSelection[] {
       else if (key === 'photo') receipts.push(pick(random, PHOTO_STUDIOS)[1])
       else receipts.push(pick(random, CERTIFICATES)[1])
     }
-    return { key, count, receipts }
+    return { key, count, receipts, receiptFlagged: receipts.map(() => false) }
   })
 }
 
 /** 신청서(온라인 작성본)의 문제. 서류를 떼기 전에 신청서부터 틀리는 경우다. */
 function formIssue(random: () => number, name: string): Issue | null {
   const dice = random()
-  if (dice < 0.05) {
+  if (dice < 0.03) {
     return {
       code: 'ITEM_NOT_SELECTED',
       severity: 'FAIL',
@@ -954,7 +1350,7 @@ function formIssue(random: () => number, name: string): Issue | null {
       patch: { 신청분야: '(미체크)' },
     }
   }
-  if (dice < 0.09) {
+  if (dice < 0.055) {
     return {
       code: 'CONSENT_UNCHECKED',
       severity: 'FAIL',
@@ -964,7 +1360,7 @@ function formIssue(random: () => number, name: string): Issue | null {
       patch: { '개인정보 동의': '(미체크)' },
     }
   }
-  if (dice < 0.13) {
+  if (dice < 0.075) {
     const other = `${name[0]}*${pick(random, GIVEN_NAMES).slice(-1)}`
     return {
       code: 'ACCOUNT_HOLDER_MISMATCH',
@@ -985,7 +1381,7 @@ function abstractIssue(
   region: string,
 ): Issue | null {
   const dice = random()
-  if (dice < 0.04) {
+  if (dice < 0.025) {
     return {
       code: 'DOC_NOT_SUBMITTED',
       severity: 'FAIL',
@@ -995,7 +1391,7 @@ function abstractIssue(
       patch: { 발급일: '(미제출)', 주소: '(미제출)', 발급기관: '(미제출)' },
     }
   }
-  if (dice < 0.09) {
+  if (dice < 0.05) {
     return {
       code: 'WRONG_DOC_TYPE',
       severity: 'FAIL',
@@ -1004,7 +1400,7 @@ function abstractIssue(
       reason: '주민등록등본이 제출되었습니다. (초본 필요)',
     }
   }
-  if (dice < 0.13) {
+  if (dice < 0.075) {
     const stale = `2025-${String(between(random, 9, 12)).padStart(2, '0')}-${String(
       between(random, 1, 28),
     ).padStart(2, '0')}`
@@ -1017,18 +1413,18 @@ function abstractIssue(
       patch: { 발급일: stale },
     }
   }
-  if (dice < 0.16) {
-    const outside = pick(random, OUT_OF_REGION_ADDRESSES)
+  if (dice < 0.095) {
+    const [outside, issuer] = pick(random, OUT_OF_REGION_ADDRESSES)
     return {
       code: 'OUT_OF_REGION',
       severity: 'FAIL',
       message: `주민등록 주소지가 도외입니다. (${outside})`,
       howToFix: '전북특별자치도 내 거주 청년만 신청할 수 있습니다.',
       reason: `주민등록 주소지가 전북특별자치도 밖입니다. (${outside})`,
-      patch: { 주소: outside, 발급기관: outside.split(' ')[0] + '장' },
+      patch: { 주소: outside, 발급기관: issuer },
     }
   }
-  if (dice < 0.19) {
+  if (dice < 0.115) {
     return {
       code: 'RRN_UNREADABLE',
       severity: 'NEEDS_REVIEW',
@@ -1087,7 +1483,7 @@ function examIssue(
       patch: { 성명: '(표기 없음)', 비고: '등급만 표기된 성적표' },
     }
   }
-  if (dice < 0.14 && examDate > applyPeriodEnd) {
+  if (examDate > applyPeriodEnd) {
     return {
       code: 'EXAM_AFTER_APPLY_PERIOD',
       severity: 'NEEDS_REVIEW',
@@ -1110,7 +1506,7 @@ function receiptIssue(
 ): Issue | null {
   const dice = random()
 
-  if (dice < 0.1) {
+  if (dice < 0.055) {
     const stale = pick(random, STALE_PAYMENT_DATES)
     return {
       code: 'ISSUED_BEFORE_CUTOFF',
@@ -1123,7 +1519,7 @@ function receiptIssue(
     }
   }
 
-  if (key === 'certificate' && dice < 0.14) {
+  if (key === 'certificate' && dice < 0.08) {
     return {
       code: 'NOT_A_RECEIPT',
       severity: 'FAIL',
@@ -1135,7 +1531,7 @@ function receiptIssue(
     }
   }
 
-  if (dice < 0.18) {
+  if (dice < 0.11) {
     const payee = `${pick(random, SURNAMES)}*${pick(random, GIVEN_NAMES).slice(-1)}`
     return {
       code: 'TRANSFER_PAYEE_UNVERIFIED',
@@ -1148,7 +1544,7 @@ function receiptIssue(
   }
 
   // 영수증 금액이 실제 응시료·대여료와 다른 경우. 정가를 아는 항목에서만 잡는다.
-  if (dice < 0.22 && receipt !== null && listPrice > 0) {
+  if (dice < 0.14 && receipt !== null && listPrice > 0) {
     const inflated = listPrice * 2
     return {
       code: 'AMOUNT_MISMATCH',
@@ -1159,11 +1555,12 @@ function receiptIssue(
       howToFix: '결제 내역을 확인해 본인 응시분만 정산해야 합니다.',
       reason: `영수증 금액이 정가의 2배입니다. (${inflated.toLocaleString('ko-KR')}원 / 정가 ${listPrice.toLocaleString('ko-KR')}원)`,
       patch: { 결제금액: `${inflated.toLocaleString('ko-KR')}원` },
+      amount: inflated,
     }
   }
 
   // 결제일이 사건일보다 뒤. 시험을 치고 나서 결제된 것으로 읽히면 확인이 필요하다.
-  if (dice < 0.26 && paidAt > eventDate) {
+  if (dice < 0.17 && paidAt > eventDate) {
     const label = key === 'certificate' ? '응시일' : '면접일'
     return {
       code: 'PAID_AFTER_EVENT',
@@ -1175,7 +1572,7 @@ function receiptIssue(
   }
 
   // 정장은 '대여'만 지원한다. 결제일과 면접일이 멀면 구입으로 읽힌다.
-  if (key === 'suit' && dice < 0.34) {
+  if (key === 'suit' && dice < 0.45) {
     const paidEarly = daysBefore(eventDate, between(random, 40, 70))
     return {
       code: 'RENTAL_VS_PURCHASE',
@@ -1187,7 +1584,7 @@ function receiptIssue(
     }
   }
 
-  if (dice < 0.38) {
+  if (dice < 0.20) {
     return {
       code: 'RECEIPT_AMOUNT_UNREADABLE',
       severity: 'NEEDS_REVIEW',
@@ -1220,6 +1617,7 @@ function applyIssue(doc: MockDoc, issue: Issue | null, reasons: Reason[]): void 
     doc_type: doc.docType,
   })
   if (issue.voidsAmount) doc.receiptAmount = null
+  else if (issue.amount !== undefined) doc.receiptAmount = issue.amount
 }
 
 /**
@@ -1243,21 +1641,27 @@ function makeItemDocs(
   const reasons: Reason[] = []
 
   // 항목 1회차의 '사건'이 일어난 날 (면접을 본 날 / 시험을 친 날 / 사진을 찍은 날).
-  // 접수일에서 몇 주 앞이 기본이다. 신청기간 이후 응시 사례를 위해 뒤쪽도 조금 둔다.
+  // 접수일에서 몇 주 앞이 기본이다.
+  //
+  // 4%는 **신청기간이 끝난 뒤**로 보낸다. "상반기 모집기간이 4월 한 달인데 시험을
+  // 5/16에 봤다" — 실제 심사에서 나온 사례다. 신청 시점에 아직 발생하지 않은
+  // 비용이라 담당자 판단이 필요하다.
   const eventDate =
-    random() < 0.06
-      ? daysAfterDate(submittedDate, between(random, 10, 45))
+    random() < 0.04
+      ? daysAfterDate(applyPeriodEnd, between(random, 3, 40))
       : daysBefore(submittedDate, between(random, 5, 95))
   const paidAt = daysAfterDate(eventDate, random() < 0.25 ? between(random, 1, 30) : 0)
 
   const employer = pick(random, JOB_EMPLOYERS)
-  const cert = key === 'certificate' ? pick(random, CERTIFICATES) : ['', 0] as [string, number]
+  const cert: [string, number, string] =
+    key === 'certificate' ? pick(random, CERTIFICATES) : ['', 0, '']
+  // 영수증의 '가맹점'은 돈을 받은 곳이다 — 자격증이면 시험 시행기관이지 자격증명이 아니다.
   const shop =
     key === 'suit'
       ? pick(random, SUIT_SHOPS)[0]
       : key === 'photo'
         ? pick(random, PHOTO_STUDIOS)[0]
-        : cert[0]
+        : cert[2]
 
   for (const spec of item.docs) {
     const isReceipt = spec.suffix === 'receipt'
@@ -1267,7 +1671,7 @@ function makeItemDocs(
     if (spec.suffix === 'exam') {
       fields['자격증명'] = cert[0]
       fields['응시일'] = eventDate
-      fields['발급기관'] = '한국산업인력공단'
+      fields['발급기관'] = cert[2]
       issue = examIssue(random, eventDate, applyPeriodEnd)
     } else if (spec.suffix === 'confirmation') {
       fields['면접기업'] = employer
@@ -1280,6 +1684,7 @@ function makeItemDocs(
       fields['규격'] = '3.5 × 4.5 cm (증명사진)'
     } else {
       fields['가맹점'] = shop
+      if (key === 'certificate') fields['품목'] = cert[0]
       fields['결제일'] = paidAt
       fields['결제금액'] = receipt === null ? '(판독 실패)' : `${receipt.toLocaleString('ko-KR')}원`
       fields['결제수단'] = pick(random, ['신용카드', '체크카드', '계좌이체'])
@@ -1367,7 +1772,7 @@ function makeJobEntry(
   applyIssue(formDoc, formIssue(random, name), reasons)
   docs.push(formDoc)
 
-  // --- 공통서류 ② 주민등록초본. ③ 통장 사본은 계좌 입력으로 갈음한다.
+  // --- 공통서류 ② 주민등록초본. ③ 통장 사본은 신청서의 계좌 칸에서 첨부한다.
   const abstractIssued = daysBefore(submittedDate, between(random, 1, 40))
   const abstractDoc: MockDoc = {
     slotKey: 'resident_abstract',
@@ -1414,8 +1819,13 @@ function makeJobEntry(
       docs.push(...made.docs)
       reasons.push(...made.reasons)
       // 판독 실패·인정 불가한 영수증은 지급액 계산에서도 미확정으로 다뤄야 한다.
+      // 금액은 읽혔지만 확인이 필요한 회차(정가 불일치·예금주 불명)는 금액을 살려
+      // 두되 표시만 남긴다 — 담당자가 얼마인지는 봐야 판단할 수 있다.
       const receiptDoc = made.docs.find((d) => d.slotKey.endsWith('_receipt'))
-      if (receiptDoc) selection.receipts[index - 1] = receiptDoc.receiptAmount
+      if (receiptDoc) {
+        selection.receipts[index - 1] = receiptDoc.receiptAmount
+        selection.receiptFlagged[index - 1] = receiptDoc.status === 'NEEDS_REVIEW'
+      }
     }
   }
 
@@ -1450,6 +1860,12 @@ function makeJobEntry(
       decision_label: decisionLabel(officerRole, decision),
       officer_role: officerRole,
       rank: null,
+      items_label: selections
+        .map(
+          (s) =>
+            `${JOB_ITEMS[s.key].label}${JOB_ITEMS[s.key].maxCount > 1 ? ` ${s.count}회` : ''}`,
+        )
+        .join(' · '),
     },
     scored: null,
     birth,
@@ -1459,6 +1875,8 @@ function makeJobEntry(
     householdSize: 0,
     monthlyPremium: 0,
     insuranceType: '',
+    // 취업패키지는 체크리스트가 근로유형이 아니라 **고른 지원 항목**으로 갈린다.
+    workCategory: null,
     reasons,
     docs,
     selections,
@@ -1669,7 +2087,14 @@ export function mockOfficerList(query: OfficerListQuery): OfficerList {
   }
 
   // --- 정원 배지는 필터와 무관하게 역할의 관할 전체를 기준으로 낸다.
-  const quota = quotaRows(role, role.requires_region ? [pickedRegion] : REGIONS)
+  //
+  // 다만 시군별 정원은 **두배적금에만** 있는 개념이다(시행지침 배정 인원). 선착순
+  // 사업을 고른 상태에서 두배적금 정원 배지를 띄우면 담당자가 지금 보는 목록의
+  // 진행률로 읽는다. 그 자리는 선착순 접수 진행률 배지가 대신한다.
+  const quota =
+    query.program === JOB_PACKAGE
+      ? []
+      : quotaRows(role, role.requires_region ? [pickedRegion] : REGIONS)
 
   let rows = scoped
   if (query.program) rows = rows.filter((e) => e.row.program_code === query.program)
@@ -1714,10 +2139,14 @@ export function mockOfficerList(query: OfficerListQuery): OfficerList {
         { value: PENDING, label: '미처리' },
         ...role.actions.map((a) => ({ value: a.key, label: a.result_label })),
       ],
-      sorts: [
-        { value: 'score', label: '점수순 (두배적금)' },
-        { value: 'submitted', label: '접수순 (취업패키지)' },
-      ],
+      // 선착순 사업에 점수순 정렬을 띄우면 누를 수는 있는데 아무 뜻이 없다.
+      sorts:
+        query.program === JOB_PACKAGE
+          ? [{ value: 'submitted', label: '접수순 (선착순)' }]
+          : [
+              { value: 'score', label: '점수순 (두배적금)' },
+              { value: 'submitted', label: '접수순' },
+            ],
       applied: {
         program: query.program ?? null,
         status: query.status ?? null,
@@ -1727,7 +2156,8 @@ export function mockOfficerList(query: OfficerListQuery): OfficerList {
         sort: sortKey,
       },
     },
-    columns: LIST_COLUMNS,
+    columns: query.program === JOB_PACKAGE ? FIRST_COME_COLUMNS : LIST_COLUMNS,
+    rank_label: query.program === JOB_PACKAGE ? '순번' : '순위',
     quota,
     first_come: firstComeSummary(query.program),
     total,
@@ -1815,6 +2245,13 @@ const dataUrl = (svg: string) =>
 /** 서류 종류별 발행처 한 줄. 원본 상단에 찍힌다. */
 const ISSUER_LINE: Record<string, string> = {
   건강보험료납부확인서: '국민건강보험공단',
+  건강보험자격확인서: '국민건강보험공단',
+  건강보험자격득실확인서: '국민건강보험공단',
+  '4대보험가입내역확인서': '국민건강보험공단',
+  일용근로내역서: '근로복지공단',
+  사업자등록증명: '국세청 홈택스',
+  농업경영체증명서: '농림축산식품부 농산물품질관리원',
+  어업경영체증명서: '해양수산부 수산물품질관리원',
   주민등록초본: '행정안전부 정부24',
   주민등록등본: '행정안전부 정부24',
   신청서: '전북청년허브센터 온라인 작성본',
@@ -1858,8 +2295,10 @@ function toOfficerDocument(entry: MockEntry, doc: MockDoc, index: number): Offic
     page_index: null,
     extracted: doc.fields,
     bboxes: Object.fromEntries(Object.keys(doc.fields).map((k, i) => [k, bboxAt(i)])),
-    ocr_confidence: doc.status === 'PASS' ? 0.97 : 0.68,
-    ocr_tier: doc.status === 'PASS' ? 'pdftext' : 'fallback',
+    // 신청서는 화면에서 작성한 값이라 판독할 것이 없다. 신뢰도를 붙이면
+    // 담당자가 OCR 결과로 읽는다.
+    ocr_confidence: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 0.97 : 0.68,
+    ocr_tier: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
     declared_issue_date: dateShown.startsWith('(') ? null : dateShown || null,
     uploaded_at: entry.row.submitted_at ?? '',
   }
@@ -1875,17 +2314,36 @@ const SCORE_LABELS: Record<string, string> = {
 const SCORE_SOURCE_FIELD: Record<string, string> = {
   income: '건강보험료',
   residence: '전입일',
-  work: '취업일',
+  // 근로기간의 근거는 자격득실확인서의 **취득일**이다. 서류마다 같은 사실을
+  // 부르는 이름이 다르므로, 필드명은 그 서류의 표기를 따라야 하이라이트가 맞는다.
+  work: '취득일',
   age: '생년월일',
+}
+
+/**
+ * 심사 항목 → 그 점수의 근거가 되는 서류.
+ *
+ * 항목을 클릭하면 좌측 뷰어가 이 서류의 해당 좌표로 간다 (R4.3). 소득은 건보료
+ * 확인서에, 거주기간·연령은 초본에, 근로기간은 자격득실확인서의 취득일에 근거가
+ * 있다 — 항목마다 봐야 할 종이가 다르다.
+ */
+const SCORE_SOURCE_SLOT: Record<string, string> = {
+  income: 'nhis_payment',
+  residence: 'resident_abstract',
+  work: 'nhis_acquisition_loss',
+  age: 'resident_abstract',
 }
 
 function scoreItems(entry: MockEntry): ScoreItemRow[] {
   if (!entry.scored) return []
-  // 두배적금은 서류가 한 장이라 근거 원본도 그 한 장이다.
-  const source = entry.docs[0]
-  const doc = entry.row.application_id * 100
   return entry.scored.items.map((item) => {
     const field = SCORE_SOURCE_FIELD[item.key]
+    // 근거 서류를 안 낸 건이면(미제출) 첫 서류로 떨어진다 — 하이라이트는 못
+    // 하지만 심사표 자체는 그려야 한다.
+    const index = entry.docs.findIndex((d) => d.slotKey === SCORE_SOURCE_SLOT[item.key])
+    const sourceIndex = index < 0 ? 0 : index
+    const source = entry.docs[sourceIndex]
+    const doc = entry.row.application_id * 100 + sourceIndex
     const basis: Record<string, string> = {
       income: `가구원수 ${entry.householdSize}인 · 월 고지금액 ${entry.monthlyPremium.toLocaleString(
         'ko-KR',
@@ -1901,12 +2359,12 @@ function scoreItems(entry: MockEntry): ScoreItemRow[] {
       max_score: item.max,
       band: item.band,
       basis: basis[item.key],
-      source_doc: '건강보험료납부확인서',
+      source_doc: source.docType,
       source_document_id: doc,
       source_origin: '목업 판독값',
       bbox: bboxOf(source.fields, field),
       incomplete: false,
-      source_slot_key: 'nhis_payment',
+      source_slot_key: source.slotKey,
       source_file_url: null,
       source_file_format: 'png',
     }
@@ -1931,6 +2389,7 @@ function subsidyEstimate(entry: MockEntry): ReviewDetailData['subsidy'] {
     const item = JOB_ITEMS[selection.key]
     for (let index = 1; index <= selection.count; index += 1) {
       const receipt = selection.receipts[index - 1] ?? null
+      const flagged = selection.receiptFlagged[index - 1] ?? false
       let granted = 0
       let calculation: string
       let pending = false
@@ -1949,6 +2408,13 @@ function subsidyEstimate(entry: MockEntry): ReviewDetailData['subsidy'] {
         calculation = `영수증 ${won(receipt)} ≤ 한도 ${won(item.unitCap)} → ${won(granted)} 지급`
       }
 
+      // 금액은 읽혔지만 담당자가 봐야 하는 회차. 계산은 남기고 미확정으로 돌린다.
+      // 이미 미확정인 줄(영수증 자체가 인정 안 됨)에는 덧붙이지 않는다.
+      if (flagged && !pending) {
+        pending = true
+        calculation += ' · 영수증 확인 필요'
+      }
+
       lines.push({
         item_type: selection.key,
         label: `${item.label}${item.maxCount > 1 ? ` ${index}회차` : ''}`,
@@ -1964,7 +2430,9 @@ function subsidyEstimate(entry: MockEntry): ReviewDetailData['subsidy'] {
   }
 
   if (lines.some((l) => l.pending)) {
-    warnings.push('영수증이 인정되지 않은 회차가 있어 합계가 확정 금액이 아닙니다.')
+    warnings.push(
+      '영수증이 인정되지 않았거나 확인이 필요한 회차가 있어 합계가 확정 금액이 아닙니다.',
+    )
   }
 
   return {
@@ -2115,13 +2583,21 @@ export function mockReviewDetail(applicationId: number, roleKey: string): Review
     ai: {
       final_status: entry.row.ai_status,
       final_status_label: entry.row.ai_status_label,
-      stage1_status: entry.row.ai_status === 'FAIL' && !overIncome ? 'FAIL' : 'PASS',
-      stage2_status: overIncome ? 'FAIL' : entry.row.ai_status,
+      // 1단계는 서류 적합성, 2단계는 자격 판정이다. 취업패키지의 2단계 자격요건은
+      // 거주지와 나이뿐이라, 도외 주소일 때만 2단계가 무너진다.
+      stage1_status: isSavings
+        ? entry.row.ai_status === 'FAIL' && !overIncome
+          ? 'FAIL'
+          : 'PASS'
+        : entry.row.ai_status,
+      stage2_status: isSavings ? (overIncome ? 'FAIL' : entry.row.ai_status) : outOfRegion ? 'FAIL' : 'PASS',
       recommended_action:
         entry.row.ai_status === 'PASS'
           ? '자동 승인'
           : entry.row.ai_status === 'FAIL'
-            ? '반려 검토'
+            ? isSavings
+              ? '반려 검토'
+              : '7일 내 서류 보완 안내'
             : '담당자 확인 필요',
       reasons: entry.reasons,
     },

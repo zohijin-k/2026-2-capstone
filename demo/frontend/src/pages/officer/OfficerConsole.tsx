@@ -29,7 +29,11 @@ export default function OfficerConsole() {
   const [roles, setRoles] = useState<OfficerRole[]>([])
   const [query, setQuery] = useState<OfficerListQuery>(DEFAULT_QUERY)
   const [list, setList] = useState<OfficerList | null>(null)
-  const [openId, setOpenId] = useState<number | null>(null)
+  /**
+   * 열려 있는 심사 건. `slot`은 목록의 서류 칸을 눌러 들어왔을 때 띄울 서류다 —
+   * 행을 눌러 들어오면 null이고 상세가 첫 서류를 연다.
+   */
+  const [open, setOpen] = useState<{ id: number; slot: string | null } | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -61,7 +65,7 @@ export default function OfficerConsole() {
 
   /** 역할을 바꾸면 관할 선택은 백엔드가 다시 정해준다 — 여기서는 비워 보낸다. */
   const switchRole = (role: string) => {
-    setOpenId(null)
+    setOpen(null)
     setQuery({ ...DEFAULT_QUERY, role })
     setSelected([])
   }
@@ -129,11 +133,15 @@ export default function OfficerConsole() {
 
       {error && <p className="officer__error">{error}</p>}
 
-      {openId !== null ? (
+      {open !== null ? (
         <ReviewDetail
-          applicationId={openId}
+          // 같은 건의 다른 서류로 다시 들어올 때 초기 탭 선택이 확실히 다시 돌게
+          // 하는 값싼 보험이다.
+          key={`${open.id}:${open.slot ?? ''}`}
+          applicationId={open.id}
           role={query.role}
-          onBack={() => setOpenId(null)}
+          initialSlotKey={open.slot}
+          onBack={() => setOpen(null)}
           onDecided={reload}
         />
       ) : list ? (
@@ -141,7 +149,7 @@ export default function OfficerConsole() {
           list={list}
           query={query}
           onQuery={patch}
-          onOpen={setOpenId}
+          onOpen={(id, slot) => setOpen({ id, slot: slot ?? null })}
           selected={selected}
           onSelect={setSelected}
           onBulk={bulk}

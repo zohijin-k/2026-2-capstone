@@ -31,6 +31,13 @@ interface Props {
   onBack: () => void
   /** 판단이 기록되면 목록을 다시 읽어야 한다. */
   onDecided: () => void
+  /**
+   * 열자마자 띄울 서류의 슬롯 키. 목록의 서류 칸을 눌러 들어온 경우에 온다.
+   *
+   * 없거나 그 슬롯의 서류가 없으면 지금까지처럼 첫 서류를 연다 — 행을 눌러
+   * 들어온 경로와 같다.
+   */
+  initialSlotKey?: string | null
 }
 
 /**
@@ -69,7 +76,27 @@ interface Focus {
   scoreKey: string | null
 }
 
-export default function ReviewDetail({ applicationId, role, onBack, onDecided }: Props) {
+/**
+ * 열자마자 띄울 서류.
+ *
+ * 목록에서 "초본" 칸을 눌러 들어왔으면 초본이 떠야 한다. 그 슬롯이 없으면
+ * (안 낸 서류를 어떻게든 눌렀거나 목록과 상세가 어긋난 경우) 첫 서류로 떨어진다.
+ */
+function pickInitialDoc(
+  detail: ReviewDetailData,
+  slotKey: string | null | undefined,
+): number | null {
+  const wanted = slotKey ? detail.documents.find((d) => d.slot_key === slotKey) : undefined
+  return (wanted ?? detail.documents[0])?.document_id ?? null
+}
+
+export default function ReviewDetail({
+  applicationId,
+  role,
+  onBack,
+  onDecided,
+  initialSlotKey,
+}: Props) {
   const [detail, setDetail] = useState<ReviewDetailData | null>(null)
   const [error, setError] = useState('')
   const [activeDocId, setActiveDocId] = useState<number | null>(null)
@@ -84,12 +111,15 @@ export default function ReviewDetail({ applicationId, role, onBack, onDecided }:
       .then((d) => {
         setDetail(d)
         setMemo(d.decision.memo ?? '')
-        setActiveDocId((prev) => prev ?? d.documents[0]?.document_id ?? null)
+        setActiveDocId((prev) => prev ?? pickInitialDoc(d, initialSlotKey))
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
-  useEffect(load, [applicationId, role])
+  // `initialSlotKey`는 이 컴포넌트가 사는 동안 바뀌지 않는다 — 콘솔이 이 값을
+  // key에 넣어 다시 마운트시킨다. 그래도 deps에 넣어 두는 편이 낫다: key를 빼는
+  // 리팩터가 있어도 초기 탭이 조용히 굳어 버리지 않는다.
+  useEffect(load, [applicationId, role, initialSlotKey])
 
   const activeDoc: OfficerDocument | null = useMemo(() => {
     if (!detail) return null

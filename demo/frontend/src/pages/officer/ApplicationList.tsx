@@ -9,14 +9,165 @@
  * 영역이고, 이 배지까지가 데모 담당자 화면의 경계선이다 (C4).
  */
 
-import type { OfficerList, OfficerListQuery, DecisionKey } from '../../api.ts'
-import { badgeClass, shortTime } from './format.ts'
+import type {
+  OfficerList,
+  OfficerListQuery,
+  DecisionKey,
+  OfficerRow,
+  OfficerRowDoc,
+} from '../../api.ts'
+import { badgeClass, dotClass, shortTime } from './format.ts'
+
+/** 서류 컬럼 키의 접두사. 서버의 `DOC_COLUMN_PREFIX`와 같은 값이다. */
+const DOC_PREFIX = 'doc:'
+
+/**
+ * 서류 칸 하나 (`doc:<slot_key>` 컬럼).
+ *
+ * 담당자가 목록에서 재는 것은 "미비 3건"이 아니라 **어느 서류가 걸렸는가**다.
+ * 그래서 칸을 눌러 바로 그 원본으로 가는 것이 이 컬럼의 전부다 — 누르면 상세가
+ * 그 서류 탭을 연 채로 열린다. 여기서 파일을 내려받는 길은 만들지 않는다 (R4.1).
+ *
+ * 고정 4칸(초본·건보료·자격확인·자격득실)은 헤더가 서류명을 쥐므로 점만 찍는다.
+ * `근로확인서류`와 `기타`만 서류명을 같이 찍는다 — 사람마다 다른 칸이라 이름이
+ * 없으면 무슨 서류인지 알 수 없다.
+ */
+function DocCell({
+  row,
+  columnKey,
+  onOpenDoc,
+}: {
+  row: OfficerRow
+  columnKey: string
+  onOpenDoc: (applicationId: number, slotKey: string) => void
+}) {
+  // 서류 컬럼은 두배적금 체크리스트를 기준으로 짜여 있다. 사업 필터가 `전체`일 때
+  // 섞여 들어오는 다른 사업 행은 서버가 빈 배열을 준다 — 빈 칸으로 두면 "안 냈다"로
+  // 읽히므로 해당 없음을 명시한다.
+  if (!row.documents || row.documents.length === 0) {
+    return (
+      <td className="grid__doc grid__doc--na" title={`${row.program_name}에는 없는 서류입니다`}>
+        —
+      </td>
+    )
+  }
+
+  const slot = columnKey.slice(DOC_PREFIX.length)
+  const cells = row.documents.filter((d) => d.column === slot)
+  if (cells.length === 0) return <td className="grid__doc" />
+
+  return (
+    <td className="grid__doc" onClick={(e) => e.stopPropagation()}>
+      {cells.map((cell) => (
+        <DocMark key={cell.slot_key} row={row} cell={cell} onOpenDoc={onOpenDoc} />
+      ))}
+    </td>
+  )
+}
+
+function DocMark({
+  row,
+  cell,
+  onOpenDoc,
+}: {
+  row: OfficerRow
+  cell: OfficerRowDoc
+  onOpenDoc: (applicationId: number, slotKey: string) => void
+}) {
+  const title = `${cell.label} — ${cell.status_label}`
+
+  // 아직 안 낸 서류는 열 원본이 없다. 버튼으로 두면 키보드 이동에 눌리지 않는
+  // 정거장이 행마다 여러 개 생긴다 — 표 하나에 그런 칸이 6개다.
+  if (cell.document_id === null) {
+    return (
+      <span className="docmark docmark--none" title={title}>
+        <span className="tabdot tabdot--none" />
+        {cell.short_label && <span className="docmark__name">{cell.short_label}</span>}
+      </span>
+    )
+  }
+
+  return (
+    <button
+      type="button"
+      className="docmark docmark--open"
+      title={`${title} (누르면 원본을 엽니다)`}
+      aria-label={title}
+      onClick={() => onOpenDoc(row.application_id, cell.slot_key)}
+    >
+      <span className={dotClass(cell.status)} />
+      {cell.short_label && <span className="docmark__name">{cell.short_label}</span>}
+    </button>
+  )
+}
+
+/**
+ * 컬럼 한 칸.
+ *
+ * 헤더와 셀이 **같은 배열**(`list.columns`)을 따라야 한다. 예전에는 헤더만
+ * 서버가 주는 컬럼을 쓰고 셀은 여기 하드코딩돼 있었는데, 그러면 사업마다 컬럼이
+ * 달라질 때 헤더와 값이 어긋난다. 취업패키지는 점수 칸 대신 신청 항목이 온다.
+ */
+function Cell({
+  row,
+  column,
+  onOpenDoc,
+}: {
+  row: OfficerRow
+  column: { key: string }
+  onOpenDoc: (applicationId: number, slotKey: string) => void
+}) {
+  // 서류 컬럼은 `switch` 앞에서 가른다. `default`에 두면 "모르는 컬럼은 `-`"라는
+  // 기존 안전망과 뒤섞여, 컬럼 키 오타가 조용히 빈 칸이 된다.
+  if (column.key.startsWith(DOC_PREFIX)) {
+    return <DocCell row={row} columnKey={column.key} onOpenDoc={onOpenDoc} />
+  }
+
+  switch (column.key) {
+    case 'application_no':
+      return <td className="grid__no">{row.application_no}</td>
+    case 'name':
+      return <td>{row.name}</td>
+    case 'region':
+      return (
+        <td>
+          {row.region} {row.town}
+        </td>
+      )
+    case 'items':
+      return <td className="grid__items">{row.items_label || '-'}</td>
+    case 'ai_status':
+      return (
+        <td>
+          <span className={badgeClass(row.ai_status)}>{row.ai_status_label}</span>
+        </td>
+      )
+    case 'total_score':
+      return <td className="grid__score">{row.total_score === null ? '-' : `${row.total_score}`}</td>
+    case 'missing_count':
+      return (
+        <td className={row.missing_count > 0 ? 'grid__missing' : undefined}>
+          {row.missing_count}
+        </td>
+      )
+    case 'submitted_at':
+      return <td>{shortTime(row.submitted_at)}</td>
+    case 'decision':
+      return <td>{row.decision_label}</td>
+    default:
+      return <td>-</td>
+  }
+}
 
 interface Props {
   list: OfficerList
   query: OfficerListQuery
   onQuery: (patch: Partial<OfficerListQuery>) => void
-  onOpen: (applicationId: number) => void
+  /**
+   * 상세 열기. `slotKey`가 있으면 상세가 그 서류 탭을 연 채로 시작한다 —
+   * 목록의 서류 칸을 눌러 들어오는 경로다.
+   */
+  onOpen: (applicationId: number, slotKey?: string) => void
   selected: number[]
   onSelect: (ids: number[]) => void
   onBulk: (decision: DecisionKey) => void
@@ -60,24 +211,28 @@ export default function ApplicationList({
         </div>
       )}
 
-      <div className="quota">
-        {list.quota.map((q) => (
-          <div key={q.region} className="quota__item">
-            <span className="quota__region">{q.region}</span>
-            <span className="quota__count">
-              {q.selected} / {q.quota}
-            </span>
-            <span className="quota__bar">
-              <i style={{ width: `${Math.min(100, (q.selected / q.quota) * 100)}%` }} />
-            </span>
-            <span className="quota__meta">
-              접수 {q.applied}건
-              {q.role_cutoff !== null && <> · 커트라인 {q.role_cutoff}점</>}
-              {list.role.quota_ratio === 1.2 && <> · 120% {q.limit_120}명</>}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* 시군별 정원은 점수제 사업에만 있는 개념이다. 선착순 사업에서는 서버가
+          빈 배열을 주므로 배지 줄 자체를 그리지 않는다. */}
+      {list.quota.length > 0 && (
+        <div className="quota">
+          {list.quota.map((q) => (
+            <div key={q.region} className="quota__item">
+              <span className="quota__region">{q.region}</span>
+              <span className="quota__count">
+                {q.selected} / {q.quota}
+              </span>
+              <span className="quota__bar">
+                <i style={{ width: `${Math.min(100, (q.selected / q.quota) * 100)}%` }} />
+              </span>
+              <span className="quota__meta">
+                접수 {q.applied}건
+                {q.role_cutoff !== null && <> · 커트라인 {q.role_cutoff}점</>}
+                {list.role.quota_ratio === 1.2 && <> · 120% {q.limit_120}명</>}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="filters">
         <label>
@@ -213,7 +368,8 @@ export default function ApplicationList({
         </p>
       )}
 
-      <table className="grid">
+      <div className="grid-scroll">
+        <table className="grid">
         <thead>
           <tr>
             {list.role.can_bulk && (
@@ -226,7 +382,7 @@ export default function ApplicationList({
                 />
               </th>
             )}
-            <th>순위</th>
+            <th>{list.rank_label ?? '순위'}</th>
             {list.columns.map((c) => (
               <th key={c.key}>{c.label}</th>
             ))}
@@ -252,22 +408,9 @@ export default function ApplicationList({
                 </td>
               )}
               <td className="grid__rank">{row.rank ?? '-'}</td>
-              <td className="grid__no">{row.application_no}</td>
-              <td>{row.name}</td>
-              <td>
-                {row.region} {row.town}
-              </td>
-              <td>
-                <span className={badgeClass(row.ai_status)}>{row.ai_status_label}</span>
-              </td>
-              <td className="grid__score">
-                {row.total_score === null ? '-' : `${row.total_score}`}
-              </td>
-              <td className={row.missing_count > 0 ? 'grid__missing' : undefined}>
-                {row.missing_count}
-              </td>
-              <td>{shortTime(row.submitted_at)}</td>
-              <td>{row.decision_label}</td>
+              {list.columns.map((c) => (
+                <Cell key={c.key} row={row} column={c} onOpenDoc={onOpen} />
+              ))}
             </tr>
           ))}
           {list.rows.length === 0 && (
@@ -278,7 +421,8 @@ export default function ApplicationList({
             </tr>
           )}
         </tbody>
-      </table>
+        </table>
+      </div>
 
       {list.page_count > 1 && (
         <div className="pager">

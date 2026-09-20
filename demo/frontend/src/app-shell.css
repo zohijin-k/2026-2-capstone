@@ -14,12 +14,6 @@
   font-weight: 700;
 }
 
-.shell__title em {
-  font-style: normal;
-  font-weight: 400;
-  opacity: 0.8;
-}
-
 .shell__tabs {
   margin-left: auto;
   display: inline-flex;

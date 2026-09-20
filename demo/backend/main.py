@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="전북청년 두배적금·취업지원패키지 신청서류 자동 검토 시스템 (데모)",
+    title="전북청년 두배적금·취업지원패키지 신청서류 자동 검토 시스템",
     version="0.1.0",
     lifespan=lifespan,
 )

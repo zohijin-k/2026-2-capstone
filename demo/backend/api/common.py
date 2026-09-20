@@ -99,6 +99,26 @@ def list_documents(application_id: int) -> list[Document]:
         )
 
 
+def list_documents_bulk(application_ids: list[int]) -> dict[int, list[Document]]:
+    """여러 신청 건의 서류를 한 번에.
+
+    담당자 목록은 행마다 서류 상태를 보여준다. 행마다 `list_documents`를 부르면
+    한 페이지(20행)에 쿼리가 20번 나간다. 목록은 행 수가 정해진 자리이므로
+    `IN` 하나로 읽고 신청 건별로 묶는다.
+    """
+    ids = [i for i in application_ids if i]
+    if not ids:
+        return {}
+    with get_session() as s:
+        rows = list(
+            s.exec(select(Document).where(Document.application_id.in_(ids))).all()  # type: ignore[attr-defined]
+        )
+    grouped: dict[int, list[Document]] = {i: [] for i in ids}
+    for d in rows:
+        grouped.setdefault(d.application_id, []).append(d)
+    return grouped
+
+
 def list_consents(application_id: int) -> list[Consent]:
     with get_session() as s:
         return list(

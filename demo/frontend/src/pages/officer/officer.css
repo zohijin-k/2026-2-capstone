@@ -347,9 +347,80 @@
   font-family: Consolas, monospace;
 }
 
+/* 선착순 사업의 신청 항목 칸. 항목이 셋까지 붙어 길어질 수 있다. */
+.grid__items {
+  white-space: nowrap;
+  color: #24406b;
+}
+
 .grid__missing {
   color: #c00;
   font-weight: 700;
+}
+
+/* ---- 서류 칸 (doc:* 컬럼) ----
+   컬럼이 6개 늘어난 표라 한 칸의 가로 폭이 곧 표의 읽을 수 있음이다. 고정 4칸은
+   점 하나(폭 26px), 이름이 붙는 칸만 넓어진다. */
+
+.grid__doc {
+  padding: 4px 6px;
+  text-align: center;
+}
+
+/* 이 사업에 없는 서류 칸. 빈 칸으로 두면 "안 냈다"로 읽힌다. */
+.grid__doc--na {
+  color: #bbb;
+}
+
+.docmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font: inherit;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+/* 여러 장이 한 칸에 오는 경우(기타·복수 사업장)만 줄바꿈 여백이 생긴다. */
+.docmark + .docmark {
+  margin-left: 6px;
+}
+
+.docmark--open {
+  cursor: pointer;
+  color: #24406b;
+}
+
+.docmark--open:hover,
+.docmark--open:focus-visible {
+  background: #dce8fb;
+}
+
+/* 아직 안 낸 서류. 속을 비워 "자리는 있는데 아무것도 없다"로 읽히게 한다.
+   행 전체가 포인터 커서라 여기서 되돌리지 않으면 누를 수 있어 보인다. */
+.docmark--none {
+  color: #aaa;
+  cursor: default;
+}
+
+.tabdot--none {
+  background: none;
+  border: 1px solid #bbb;
+  box-sizing: border-box;
+}
+
+/* 서류 컬럼 6개가 붙으면 표가 창보다 넓어질 수 있다. 표만 가로로 흐르게 하고
+   위의 필터·정원 배지는 제자리에 둔다. */
+.grid-scroll {
+  overflow-x: auto;
+}
+
+.docmark__name {
+  font-size: 12px;
 }
 
 .grid__empty {

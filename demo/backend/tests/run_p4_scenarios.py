@@ -229,9 +229,22 @@ def test_list_and_filters(client, ids) -> None:
             "ai_status",
             "total_score",
             "missing_count",
+            # 서류 컬럼은 미비 개수 바로 뒤에 온다. 개수를 보고 "어디가 걸렸나"로
+            # 눈이 이어지는 순서다.
+            "doc:resident_abstract",
+            "doc:nhis_payment",
+            "doc:nhis_qualification",
+            "doc:nhis_acquisition_loss",
+            "doc:work_proof",
+            "doc:__other__",
             "submitted_at",
             "decision",
         ],
+    )
+    check(
+        "서류 컬럼 표기",
+        [c["label"] for c in everything["columns"] if c["key"].startswith("doc:")],
+        ["초본", "건보료", "자격확인", "자격득실", "근로확인서류", "기타"],
     )
     first = everything["rows"][0]
     check("기본 정렬은 점수순 — 1등이 99점", first["total_score"], 99)
@@ -240,6 +253,52 @@ def test_list_and_filters(client, ids) -> None:
     check("AI판정 표기", first["ai_status_label"], "적합")
     check("미비서류 0건", first["missing_count"], 0)
     check("처리상태 초기값", first["decision_label"], "미처리")
+
+    print("\n  -- 서류 칸: 미비 개수와 같은 계산에서 나오는가")
+    # 목록의 `미비서류` 숫자와 서류 칸이 따로 계산되면 "미비 3건인데 빨간 칸은 2개"가
+    # 된다. 그 표는 담당자가 더 이상 믿지 않는다 — 전 행에서 두 값이 맞는지 본다.
+    for row in everything["rows"]:
+        bad = sum(1 for c in row["documents"] if c["status"] != "PASS")
+        check(
+            f"{row['name']}: 미비 개수 = 적합 아닌 칸 수",
+            (row["missing_count"], bad),
+            (bad, bad),
+        )
+    check(
+        "서류 칸은 컬럼마다 하나씩 (기타 제외)",
+        sorted({c["column"] for c in everything["rows"][0]["documents"]}),
+        sorted(
+            [
+                "nhis_acquisition_loss",
+                "nhis_payment",
+                "nhis_qualification",
+                "resident_abstract",
+                "work_proof",
+            ]
+        ),
+    )
+    work_cells = [
+        c for c in everything["rows"][0]["documents"] if c["column"] == "work_proof"
+    ]
+    check("근로확인서류 칸에 서류명이 있다", bool(work_cells[0]["short_label"]), True)
+    check(
+        "고정 칸은 서류명을 안 찍는다 (헤더가 쥔다)",
+        [
+            c["short_label"]
+            for c in everything["rows"][0]["documents"]
+            if c["column"] == "resident_abstract"
+        ],
+        [""],
+    )
+    check(
+        "제출된 서류 칸은 상세에서 열 id를 갖는다",
+        all(
+            c["document_id"] is not None
+            for c in everything["rows"][0]["documents"]
+            if c["status"] is not None
+        ),
+        True,
+    )
 
     by_no = {r["application_no"]: r for r in everything["rows"]}
     review_row = next(r for r in everything["rows"] if r["ai_status"] == "NEEDS_REVIEW")
