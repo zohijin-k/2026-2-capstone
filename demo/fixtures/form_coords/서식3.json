@@ -1,0 +1,17 @@
+{
+  "form_no": "서식3",
+  "template": null,
+  "source": {
+    "file": "2026년 전북청년 함께 두배적금 사업 시행지침.pdf",
+    "layout": "2-up (물리 1쪽 = 논리 2쪽)",
+    "pages": [
+      {
+        "physical_page": 13,
+        "half": "오른쪽",
+        "logical_page": "- 26 -"
+      }
+    ]
+  },
+  "note": "데모의 PDF 내보내기 대상은 서식1·서식5 2종이다(설계 6-B.3). 이 서식은 구조만 남겨 두었고 좌표는 비어 있다. 채우려면 cut_templates.TEMPLATES_SPEC 에 위 원본 위치를 추가한 뒤 build_form_coords.py 에 앵커 규격을 적으면 된다.",
+  "fields": {}
+}

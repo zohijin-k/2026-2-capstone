@@ -42,3 +42,10 @@ desktop.ini
 
 # --- 클로드 학습용 pdf
 *.pdf
+# ---- 데모 사이트 런타임 산출물 (업로드 원본 / SQLite) ----
+demo/storage/
+demo/**/*.db
+demo/fixtures/samples/
+# 서식 PDF 내보내기 템플릿(P7)은 원본 시행지침에서 서식 쪽만 잘라낸 것이라
+# 커밋 대상이다. 위의 포괄 규칙(*.pdf)에서 되살린다.
+!demo/fixtures/templates/*.pdf

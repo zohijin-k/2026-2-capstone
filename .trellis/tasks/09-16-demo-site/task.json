@@ -1,0 +1,30 @@
+{
+  "id": "demo-site",
+  "name": "demo-site",
+  "title": "데모 사이트 (신청자 신청 + 담당자 심사)",
+  "description": "전북청년 두배적금 및 취업지원패키지 신청서류 자동 검토 및 자격 심사 시스템의 데모 사이트. 부모 태스크 — 요구사항(prd.md)·기술설계(design.md)·전체 실행계획(implement.md)을 보유하고, 실제 구현은 child 태스크 3개가 나눠 수행한다.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "rlawlqls",
+  "assignee": "rlawlqls",
+  "createdAt": "2026-09-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-16-demo-applicant",
+    "09-16-demo-officer",
+    "09-16-demo-jobpkg"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
