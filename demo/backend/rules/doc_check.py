@@ -44,6 +44,7 @@ HOW_TO_FIX: dict[str, str] = {
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
+    "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
     "LOW_IMAGE_QUALITY": "글자가 또렷하게 보이도록 스캔본이나 밝은 곳에서 찍은 사진으로 다시 올려 주세요. pdf 파일을 권장합니다.",
     "LOW_OCR_CONFIDENCE": "자동 판독이 되지 않은 항목이 있어 담당자가 직접 확인합니다. 더 선명한 파일이 있다면 교체해 주세요.",
@@ -58,6 +59,8 @@ HOW_TO_FIX: dict[str, str] = {
 #: 화면캡처는 오탐 시 신청자가 억울해지므로 자동 반려하지 않는다.
 REVIEW_ONLY_CODES = {
     "LOW_OCR_CONFIDENCE",
+    # 입력 발급일 불일치이나 판독이 불확실 — 오독일 수 있어 자동 반려하지 않는다.
+    "DECLARED_DATE_UNCERTAIN",
     CODE_SCREEN_CAPTURE,
     CODE_UNKNOWN_DOCUMENT_TYPE,
 }

@@ -28,6 +28,7 @@ class ReasonCode(str, Enum):
     LOW_OCR_CONFIDENCE = "LOW_OCR_CONFIDENCE"            # OCR 신뢰도 낮음 -> 검토 필요
     DOCUMENT_ISSUED_TOO_EARLY = "DOCUMENT_ISSUED_TOO_EARLY"  # 발급일이 인정 기준일(컷오프) 이전
     DECLARED_DATE_MISMATCH = "DECLARED_DATE_MISMATCH"    # 사용자가 직접 입력한 발급일 != 서류상 발급일
+    DECLARED_DATE_UNCERTAIN = "DECLARED_DATE_UNCERTAIN"  # 위와 같으나 판독 신뢰도가 낮음 -> 오독일 수 있어 검토 필요
     UNREADABLE_FILE = "UNREADABLE_FILE"                  # 파일 자체가 손상/암호화 등
 
     # --- 2단계: 자격 요건 ---

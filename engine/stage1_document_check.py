@@ -51,9 +51,15 @@ def check_single_document(doc: Document, spec) -> list[Finding]:
 
     if spec.check_declared_date and doc.declared_issue_date is not None and doc.issue_date is not None:
         if doc.declared_issue_date != doc.issue_date:
+            # 2차 검증: 신청자가 직접 입력한 발급일 vs 서류에서 읽은 발급일.
+            # 판독이 확실할 때만 '불일치'로 단정한다. 판독 신뢰도가 낮으면 OCR이 잘못 읽었을
+            # 수 있으므로, 올바르게 입력한 신청자에게 틀린 안내를 하지 않도록 담당자 확인으로 보낸다.
+            code = (ReasonCode.DECLARED_DATE_MISMATCH
+                    if doc.ocr_confidence >= config.OCR_CONFIDENCE_THRESHOLD
+                    else ReasonCode.DECLARED_DATE_UNCERTAIN)
             findings.append(Finding(
-                ReasonCode.DECLARED_DATE_MISMATCH,
-                render(ReasonCode.DECLARED_DATE_MISMATCH, doc_type=spec.doc_type,
+                code,
+                render(code, doc_type=spec.doc_type,
                        declared=doc.declared_issue_date.isoformat(), actual=doc.issue_date.isoformat()),
                 doc_type=spec.doc_type))
 
@@ -99,7 +105,7 @@ def run_stage1(applicant: Applicant, documents: list[Document]) -> StageResult:
         doc_findings = check_single_document(doc, spec)
         for f in doc_findings:
             findings.append(f)
-            if f.code == ReasonCode.LOW_OCR_CONFIDENCE:
+            if f.code in (ReasonCode.LOW_OCR_CONFIDENCE, ReasonCode.DECLARED_DATE_UNCERTAIN):
                 needs_review = True
             else:
                 hard_fail = True
