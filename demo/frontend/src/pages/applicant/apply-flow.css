@@ -3,19 +3,20 @@
 .flow {
   width: 940px;
   margin: 0 auto;
-  padding: 20px 0 80px;
+  padding: 28px 0 96px;
 }
 
 /*
  * 서식1~5는 R8.6(PC 전용 고정 레이아웃)을 그대로 지킨다 — PDF 표 좌표를
  * 그대로 쓰므로 폭이 바뀌면 구조가 깨진다. 서류 업로드 화면은 서식 재현이
  * 아닌 신청 도구 화면이라 이 예외에서 제외한다(`upload` 단계에서만 붙는
- * `.flow--fluid`).
+ * `.flow--fluid`). 넓은 화면에서는 다른 단계와 같은 940px 폭이 되게 맞춘다.
  */
 .flow--fluid {
   width: 100%;
-  max-width: 940px;
-  padding: 20px 16px 80px;
+  max-width: calc(940px + 32px);
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 .flow__head {
@@ -23,59 +24,160 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #1f3864;
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 .flow--fluid .flow__head {
   flex-wrap: wrap;
 }
 
-.flow--fluid .flow__stages {
-  flex-wrap: wrap;
+/* 사업 선택 화면은 단계 표시가 없어 제목 아래에 선을 직접 긋는다 */
+.flow__head--solo {
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--brand);
 }
 
 .flow__head h1 {
-  font-size: 19px;
+  font-size: 22px;
+  letter-spacing: -0.02em;
   margin: 0;
 }
 
 .flow__sub {
   margin: 4px 0 0;
-  font-size: 12.5px;
+  font-size: 13px;
   color: var(--muted);
 }
 
+/* 신청번호 — 문의할 때 불러줄 번호라 따로 또렷하게 */
+.flow__meta {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+.flow__meta > div {
+  display: grid;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-subtle);
+  line-height: 1.35;
+}
+
+.flow__meta dt {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.flow__meta dd {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 신청 단계 표시: 번호 원을 선으로 잇는다 ---- */
+
 .flow__stages {
   display: flex;
-  gap: 6px;
   list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 12.5px;
+  margin: 0 0 28px;
+  padding: 14px 0 16px;
+  border-top: 1px solid var(--border);
+  border-bottom: 2px solid var(--brand);
+}
+
+.flow__stages li {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* 앞 단계와 잇는 선 */
+.flow__stages li + li::before {
+  content: '';
+  position: absolute;
+  top: 13px;
+  right: calc(50% + 18px);
+  left: calc(-50% + 18px);
+  height: 2px;
+  background: var(--border);
+}
+
+.flow__stages li.is-past::before,
+.flow__stages li.is-current::before {
+  background: var(--brand);
 }
 
 .flow__stages button {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0 2px;
+  border: none;
+  background: none;
   font: inherit;
-  font-size: 12.5px;
-  border: 1px solid #ccc;
-  background: transparent;
-  padding: 3px 10px;
-  color: #888;
+  color: #8a9099;
   cursor: pointer;
 }
 
-.flow__stages button:hover {
-  border-color: #1f3864;
-  background: #eaf0fb;
-  color: #1f3864;
+.flow__stage-no {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #c9ced6;
+  border-radius: 50%;
+  background: var(--surface);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: border-color var(--ease), background var(--ease), color var(--ease);
 }
 
-.flow__stages li.is-current button {
-  border-color: #1f3864;
-  background: #1f3864;
+.flow__stage-label {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.flow__stages button:hover .flow__stage-no {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.flow__stages button:hover .flow__stage-label {
+  color: var(--brand);
+}
+
+.flow__stages button:focus-visible {
+  outline: none;
+}
+
+.flow__stages button:focus-visible .flow__stage-no {
+  box-shadow: 0 0 0 3px var(--brand-tint);
+  border-color: var(--brand);
+}
+
+.flow__stages li.is-past .flow__stage-no {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.flow__stages li.is-past .flow__stage-label {
+  color: #4a5160;
+}
+
+.flow__stages li.is-current .flow__stage-no {
+  border-color: var(--brand);
+  background: var(--brand);
   color: #fff;
+  box-shadow: 0 0 0 4px var(--brand-tint);
+}
+
+.flow__stages li.is-current .flow__stage-label {
+  color: var(--brand);
   font-weight: 700;
 }
 
@@ -90,15 +192,24 @@
 .step {
   font: inherit;
   font-size: 13px;
-  border: 1px solid #bbb;
-  background: #fafafa;
-  padding: 5px 12px;
+  border: 1px solid #c3cad5;
+  border-radius: 999px;
+  background: var(--surface);
+  color: #4a5160;
+  padding: 5px 14px;
   cursor: pointer;
+  transition: border-color var(--ease), color var(--ease), background var(--ease);
+}
+
+.step:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .step.is-current {
-  border-color: #1f3864;
-  background: #eaf0fb;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
   font-weight: 700;
 }
 
@@ -119,9 +230,18 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  margin-top: 20px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
 }
 
+/* 이전 버튼은 왼쪽, 다음으로 가는 버튼은 오른쪽 */
+.flow__actions > .btn:not(.btn--primary):first-child {
+  margin-right: auto;
+}
+
+/* 버튼 공통. 담당자 화면은 officer.css의 .btn을 따로 쓴다 — 아래 기본값은 그쪽에도
+   적용되던 값이라 그대로 두고, 신청 화면 버튼은 .flow 안에서 다시 정한다. */
 .btn {
   font: inherit;
   font-size: 14px;
@@ -155,9 +275,68 @@
   cursor: not-allowed;
 }
 
+/* 신청 화면 버튼 */
+.flow .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 42px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 0 20px;
+  border: 1px solid #c3cad5;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: #2b3442;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--ease), border-color var(--ease), color var(--ease);
+}
+
+.flow .btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: #f7f9fd;
+}
+
+.flow .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-tint);
+  border-color: var(--brand);
+}
+
+.flow .btn--primary {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+.flow .btn--primary:hover:not(:disabled) {
+  background: #16294d;
+  border-color: #16294d;
+  color: #fff;
+}
+
+.flow .btn:disabled {
+  cursor: not-allowed;
+  border-color: var(--border);
+  background: #eef0f4;
+  color: #848c98;
+}
+
+.flow .btn--small {
+  min-height: 32px;
+  font-size: 12.5px;
+  padding: 0 12px;
+}
+
 .flow-block {
-  border: 1px solid #ccc;
-  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
   margin-top: 18px;
 }
 
@@ -167,23 +346,31 @@
 
 /* 자가진단에서 걸린 경우 — 사유와 대안을 같이 준다 */
 .flow-block--stop {
-  border-color: #c00;
-  background: #fff5f5;
+  border-color: color-mix(in srgb, var(--fail) 35%, transparent);
+  background: var(--fail-tint);
+}
+
+/* 본인인증 없이 서류 단계로 건너뛴 경우 */
+.flow-block--warn {
+  border-color: color-mix(in srgb, #b45309 35%, transparent);
+  background: #fffbeb;
+  margin: 0 0 16px;
 }
 
 .flow-block--ok {
-  border-color: #177245;
-  background: #f2fbf5;
+  border-color: color-mix(in srgb, var(--success) 35%, transparent);
+  background: var(--success-tint);
 }
 
 .flow-alt {
   background: #fff;
-  border-left: 3px solid #1f3864;
-  padding: 6px 10px;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 6px 6px 0;
+  padding: 8px 12px;
 }
 
 .flow-error {
-  color: #c00;
+  color: var(--fail);
   text-align: center;
   padding: 40px;
 }

@@ -11,6 +11,9 @@
   4. 쪽마다 발급일이 다르게 읽히면 '부적합'이 아니라 '확인필요'로 간다 (오독 보호)
   5. OCR을 끄거나 서류를 못 알아보면 기존 계층으로 그대로 넘어간다 (회귀 없음)
   6. 텍스트 PDF 초본의 실제 제목 표기 "주민등록표 ( 초 본 )"를 Tier2가 분류한다
+  7. 발급일 직접 입력 2차 검증: 판독이 확실할 때만 '불일치'로 반려하고,
+     판독이 불확실하면 올바르게 입력한 신청자를 반려하지 않고 담당자 확인으로 보낸다
+  8. 신청자 화면 응답에는 신청자가 확인할 값(발급일·성명 등)만 실린다
 
 실제 OCR 엔진 대신, 실측 레이아웃을 본뜬 가짜 OCR 결과를 돌려주는 엔진을 끼운다.
 개인정보·실물 서류는 쓰지 않는다. 임시 파일은 끝나면 지운다.
@@ -194,6 +197,56 @@ def test_title_with_parentheses(tmp: Path) -> None:
     check("등본 구분", ocr.detected_doc_type, DocType.RESIDENT_CERTIFICATE)
 
 
+def test_declared_date_second_check(tmp: Path) -> None:
+    print("\n[7] 발급일 직접 입력 2차 검증")
+    slot = abstract_slot()
+
+    install_fake_ocr(fake_abstract_words())
+    ocr = read_document(str(make_image_pdf(tmp / "초본_정상.pdf")), DocType.RESIDENT_ABSTRACT)
+    check("입력 = 판독 → 판정", check_document(slot, ocr, date(2026, 11, 10)).status, "PASS")
+
+    install_fake_ocr(fake_abstract_words())
+    ocr = read_document(str(make_image_pdf(tmp / "초본_입력오류.pdf")), DocType.RESIDENT_ABSTRACT)
+    r = check_document(slot, ocr, date(2026, 11, 9))
+    check("판독 확실 + 입력 틀림 → 판정", r.status, "FAIL")
+    check_true("사유: DECLARED_DATE_MISMATCH", "DECLARED_DATE_MISMATCH" in r.codes)
+
+    # 3쪽 중 2쪽의 발급일을 OCR이 잘못 읽음 → 다수결도 틀린 값, 쪽 간 불일치로 신뢰도 낮음
+    words = fake_abstract_words()
+    for page in (1, 2):
+        for w in words[page]:
+            if "년" in w.text and "월" in w.text:
+                w.text = "2026년 11월 1일"
+    install_fake_ocr(words)
+    ocr = read_document(str(make_image_pdf(tmp / "초본_다수오독.pdf")), DocType.RESIDENT_ABSTRACT)
+    check("다수결 발급일 (오독)", ocr.issue_date, date(2026, 11, 1))
+    check_true("신뢰도 < 0.85", ocr.confidence < 0.85)
+    r = check_document(slot, ocr, date(2026, 11, 10))
+    check("판독 불확실 + 입력 맞음 → 판정", r.status, "NEEDS_REVIEW")
+    check_true("사유: DECLARED_DATE_UNCERTAIN", "DECLARED_DATE_UNCERTAIN" in r.codes)
+    check_true("'불일치' 단정 안 함", "DECLARED_DATE_MISMATCH" not in r.codes)
+
+
+def test_applicant_payload() -> None:
+    print("\n[8] 신청자 응답 — 담당자용 판독값 미포함")
+    from datetime import datetime
+
+    from ..api.common import APPLICANT_VISIBLE_FIELDS, document_dict
+    from ..models import Document
+
+    row = Document(
+        application_id=1, slot_key="resident_abstract", file_path="초본.pdf", file_format="pdf",
+        uploaded_at=datetime(2026, 11, 10, 9, 0),
+        ocr_json={"tier": "localocr", "confidence": 0.95, "fields": {
+            "발급일": "2026-11-10", "성명": "김전북", "생년월일": "1999-01-01", "전입일": "2023-08-30",
+            "현주소시도": "전북", "주소이력건수": "9", "판독검증": "9/9 통과", "건강보험료": "200000",
+        }},
+    )
+    shown = document_dict(row)["extracted"]
+    check("신청자에게 보이는 판독값", sorted(shown), ["발급일", "성명"])
+    check_true("허용 목록 밖의 값 없음", set(shown) <= set(APPLICANT_VISIBLE_FIELDS))
+
+
 def main() -> int:
     apply_runtime_overrides()
     saved = os.environ.get(ENGINE_ENV)
@@ -204,6 +257,8 @@ def main() -> int:
         test_misread_goes_to_review(tmp)
         test_fallthrough(tmp)
         test_title_with_parentheses(tmp)
+        test_declared_date_second_check(tmp)
+        test_applicant_payload()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         if saved is None:

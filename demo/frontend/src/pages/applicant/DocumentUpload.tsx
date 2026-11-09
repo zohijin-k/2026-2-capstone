@@ -5,7 +5,8 @@
  * 그래서 이 화면의 전부는 "올리는 순간 알려준다"에 걸려 있다.
  *
  *   근로유형 선택 → 본인에게 필요한 서류만 남는다 (R3.2)
- *   슬롯마다  [발급처 바로가기] [파일 선택] [발급일 직접 입력]
+ *   슬롯마다  [발급처 바로가기] [발급일 직접 입력] → [파일 업로드]
+ *            발급일 입력을 받는 서류는 날짜를 다 적어야 파일을 고를 수 있다 (2차 검증의 기준값)
  *   업로드 즉시 적합 / 부적합 / 확인필요 + 사유 + 해결 방법 + 재업로드 (R2.1·R2.2)
  */
 
@@ -21,9 +22,10 @@ import {
   type DocStatus,
   type UploadedDocument,
 } from '../../api.ts'
+import FilePreview from '../../components/FilePreview.tsx'
 import Modal from '../../components/Modal.tsx'
 import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
-import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
+import { EMPTY_YMD, isCompleteYMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
 
 const STATUS_LABEL: Record<DocStatus, string> = {
@@ -34,8 +36,24 @@ const STATUS_LABEL: Record<DocStatus, string> = {
 
 const WORKPLACE_COUNTS = ['1개', '2개', '3개'] as const
 
-function StatusBadge({ status }: { status: DocStatus }) {
-  return <span className={`dstatus dstatus--${status.toLowerCase()}`}>{STATUS_LABEL[status]}</span>
+/** 판독 계층·신뢰도·소요시간은 신청자에게 의미가 없다. 시연에서 보여줄 때만 `?debug=1`. */
+const SHOW_TECH = new URLSearchParams(window.location.search).has('debug')
+
+/**
+ * 판정 도장. 서류 접수 때 찍는 도장처럼 결과를 한 번에 보여준다.
+ * 슬롯 머리 오른쪽에 하나만 둔다 — 상태를 여러 곳에서 반복하지 않는다.
+ */
+function StatusStamp({ status }: { status: DocStatus }) {
+  return (
+    <span className={`dstamp dstamp--${status.toLowerCase()}`} role="status">
+      {STATUS_LABEL[status]}
+    </span>
+  )
+}
+
+/** 파일 형식 표시 (PDF·JPG·PNG). */
+function fileKind(name: string): string {
+  return (name.split('.').pop() ?? '').toUpperCase().slice(0, 4) || 'FILE'
 }
 
 function DocumentResult({
@@ -45,23 +63,61 @@ function DocumentResult({
   doc: UploadedDocument
   onRetry: () => void
 }) {
+  const [viewing, setViewing] = useState(false)
   const status = doc.status ?? 'NEEDS_REVIEW'
   const extracted = Object.entries(doc.extracted)
   return (
     <div className={`dresult dresult--${status.toLowerCase()}`}>
-      <div className="dresult__head">
-        <StatusBadge status={status} />
-        <span className="dresult__file">{doc.file_name}</span>
-        {doc.detected_doc_type && (
-          <span className="dresult__detected">판독: {doc.detected_doc_type}</span>
-        )}
-        <span className="dresult__meta">
-          {doc.ocr_tier} · 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} · {doc.elapsed_ms ?? 0}ms
-        </span>
-        <button type="button" className="btn btn--small" onClick={onRetry}>
-          다시 올리기
+      <div className="dresult__file">
+        <button
+          type="button"
+          className="dresult__kind"
+          onClick={() => setViewing(true)}
+          aria-label={`${doc.file_name} 크게 보기`}
+        >
+          {fileKind(doc.file_name)}
         </button>
+        <div className="dresult__body">
+          <button type="button" className="dresult__name" onClick={() => setViewing(true)}>
+            {doc.file_name}
+          </button>
+          {extracted.length > 0 && (
+            <dl className="dextract">
+              {extracted.map(([k, v]) => (
+                <div key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+          {/* 적합이면 서류 종류는 이미 맞은 것이라 다시 말하지 않는다 */}
+          {status !== 'PASS' && doc.detected_doc_type && (
+            <span className="dresult__detected">읽은 서류 종류: {doc.detected_doc_type}</span>
+          )}
+          {SHOW_TECH && (
+            <span className="dresult__meta">
+              {doc.ocr_tier} / 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} / {doc.elapsed_ms ?? 0}ms
+            </span>
+          )}
+        </div>
+        <div className="dresult__actions">
+          <button type="button" className="btn btn--small" onClick={() => setViewing(true)}>
+            미리보기
+          </button>
+          <button type="button" className="btn btn--small dresult__retry" onClick={onRetry}>
+            다시 올리기
+          </button>
+        </div>
       </div>
+      {viewing && (
+        <FilePreview
+          url={doc.file_url}
+          name={doc.file_name}
+          kind={(doc.file_format || doc.file_name).toLowerCase().endsWith('pdf') ? 'pdf' : 'image'}
+          onClose={() => setViewing(false)}
+        />
+      )}
 
       {doc.findings.map((f) => (
         <div key={f.code} className="dfinding">
@@ -74,19 +130,6 @@ function DocumentResult({
           )}
         </div>
       ))}
-
-      {status === 'PASS' && <p className="dfinding__ok">확인이 끝났습니다.</p>}
-
-      {extracted.length > 0 && (
-        <dl className="dextract">
-          {extracted.map(([k, v]) => (
-            <div key={k}>
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
     </div>
   )
 }
@@ -170,57 +213,73 @@ function SlotCard({
   const [infoOpen, setInfoOpen] = useState(false)
   const doc = item.documents[0]
   const status = doc?.status ?? null
+  // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
+  const dateReady = !item.check_declared_date || isCompleteYMD(declared)
 
   return (
-    <li className={`dslot${status ? ` dslot--${status.toLowerCase()}` : ''}`} id={`slot-${item.slot_key}`}>
+    <li
+      className={`dslot dslot--${status ? status.toLowerCase() : 'empty'}`}
+      id={`slot-${item.slot_key}`}
+    >
       <div className="dslot__head">
-        <span className="dslot__label">{item.label}</span>
-        {item.required && <span className="dslot__req">필수</span>}
-        {hasInfo(item) && (
-          <button
-            type="button"
-            className="dslot__info"
-            onClick={() => setInfoOpen(true)}
-            aria-label={`${item.label} 요건 안내`}
-          >
-            ⓘ
-          </button>
+        <div className="dslot__title">
+          <span className="dslot__label">{item.label}</span>
+          {item.required && <span className="dslot__req">필수</span>}
+          {hasInfo(item) && (
+            <button
+              type="button"
+              className="dslot__info"
+              onClick={() => setInfoOpen(true)}
+              aria-label={`${item.label} 요건 안내`}
+            >
+              ⓘ
+            </button>
+          )}
+        </div>
+        {status ? (
+          <StatusStamp status={status} />
+        ) : (
+          item.issuer_url && (
+            <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
+              {item.issuer}에서 발급받기 ↗
+            </a>
+          )
         )}
-        {item.issuer_url && (
-          <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
-            {item.issuer} 바로가기 ↗
-          </a>
-        )}
-        {status === 'PASS' && <span className="dslot__check">✓ 확인 완료</span>}
       </div>
 
-      <div className="dslot__row">
-        <input
-          ref={input}
-          className="dslot__file"
-          type="file"
-          accept={item.accept.map((f) => `.${f}`).join(',')}
-          onChange={(e) => {
-            const file = e.target.files?.[0]
-            if (file) onPick(file)
-            e.target.value = ''
-          }}
-        />
-        {item.check_declared_date && (
-          <label className="dslot__declared">
-            발급일 직접 입력
-            <DateTriple value={declared} onChange={onDeclaredChange} ariaPrefix={item.label} />
-          </label>
-        )}
-        <button
-          type="button"
-          className="btn btn--small"
-          disabled={busy}
-          onClick={() => input.current?.click()}
-        >
-          {busy ? '판독 중…' : '파일 선택'}
-        </button>
-      </div>
+      {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
+      {!doc && (
+        <div className="dslot__action">
+          <input
+            ref={input}
+            className="dslot__file"
+            type="file"
+            accept={item.accept.map((f) => `.${f}`).join(',')}
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) onPick(file)
+              e.target.value = ''
+            }}
+          />
+          {item.check_declared_date && (
+            <label className="dslot__declared">
+              <span className="dslot__declared-label">서류에 적힌 발급일</span>
+              <DateTriple value={declared} onChange={onDeclaredChange} ariaPrefix={item.label} />
+            </label>
+          )}
+          <button
+            type="button"
+            className="btn btn--primary dslot__upload"
+            disabled={busy || !dateReady}
+            onClick={() => input.current?.click()}
+          >
+            {busy ? '읽는 중…' : '파일 업로드'}
+          </button>
+          {!dateReady && !busy && (
+            <p className="dslot__gate">발급일을 입력하면 파일을 올릴 수 있습니다.</p>
+          )}
+        </div>
+      )}
 
       {doc && <DocumentResult doc={doc} onRetry={() => onRetry(doc)} />}
       {infoOpen && <SlotInfoModal item={item} onClose={() => setInfoOpen(false)} />}

@@ -1,12 +1,15 @@
-/* 제출 전 최종 확인. 폭(940px)과 색은 서식 화면과 맞춘다. */
+/* 제출 전 최종 확인. 서식 재현 화면이 아니라 확인 도구 화면이다 — 표 선은 가늘게. */
 
 .fcheck {
   width: 940px;
   margin: 0 auto;
+  display: grid;
+  gap: 16px;
 }
 
 .fcheck__loading,
 .fcheck__empty {
+  margin: 0;
   padding: 24px;
   text-align: center;
   color: var(--muted);
@@ -14,15 +17,15 @@
 
 .fcheck h3 {
   font-size: 15px;
-  margin: 0 0 8px;
+  margin: 0 0 12px;
 }
 
 /* 선착순 사업의 접수 순번 안내. */
 .fcheck__queue {
-  border: 2px solid #b06000;
+  border: 1px solid color-mix(in srgb, #b06000 40%, transparent);
+  border-radius: var(--radius-md);
   background: #fffaf2;
-  padding: 14px 16px;
-  margin-bottom: 14px;
+  padding: 16px 18px;
 }
 
 .fcheck__queue h3 {
@@ -38,20 +41,19 @@
 }
 
 .fcheck__box {
-  border: 1px solid #ccc;
-  padding: 12px 16px;
-  margin-bottom: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px 20px 20px;
+  background: var(--surface);
 }
 
 /* ---- 입력값 요약 ---- */
 
 .fcheck__summary {
   display: grid;
-  grid-template-columns: repeat(2, 130px 1fr);
-  gap: 0;
+  grid-template-columns: repeat(2, 132px 1fr);
   margin: 0;
-  border-top: 1px solid var(--form-border);
-  border-left: 1px solid var(--form-border);
+  border-top: 1px solid var(--border);
   font-size: 13px;
 }
 
@@ -59,23 +61,26 @@
   display: contents;
 }
 
+.fcheck__summary dt,
+.fcheck__summary dd {
+  margin: 0;
+  padding: 9px 12px;
+  border-bottom: 1px solid #eceef1;
+}
+
 .fcheck__summary dt {
-  background: var(--form-label-bg);
-  border-right: 1px solid var(--form-border);
-  border-bottom: 1px solid var(--form-border);
-  padding: 5px 8px;
-  font-weight: 700;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 .fcheck__summary dd {
-  margin: 0;
-  border-right: 1px solid var(--form-border);
-  border-bottom: 1px solid var(--form-border);
-  padding: 5px 8px;
+  font-weight: 600;
 }
 
+/* 비어 있는 칸은 경고가 아니라 '아직'으로 보인다 — 아래 남은 항목 목록이 안내를 맡는다 */
 .fcheck__summary dd.is-empty {
-  color: #c00;
+  color: #a0a6b0;
+  font-weight: 400;
 }
 
 /* ---- 서류 판독 결과 ---- */
@@ -83,26 +88,109 @@
 .fcheck__docs {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 
 .fcheck__docs th,
 .fcheck__docs td {
-  border: 1px solid #ccc;
-  padding: 5px 8px;
+  border-bottom: 1px solid #eceef1;
+  padding: 9px 12px;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
 }
 
-.fcheck__docs th {
-  background: var(--form-label-bg);
+.fcheck__docs thead th {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fcheck__docs .dstatus {
+  border-radius: 999px;
+  padding: 2px 10px;
 }
 
 .fcheck__reason {
-  color: #c00;
+  color: var(--fail);
+}
+
+.fcheck__none {
+  color: #a0a6b0;
+}
+
+/* ---- 제출 전에 채워야 할 항목 ---- */
+
+.fcheck__todo {
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--warning-tint);
+  padding: 18px 20px;
+}
+
+.fcheck__todo h3 span {
+  margin-left: 4px;
+  color: #8a5a00;
+}
+
+.fcheck__todo ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.fcheck__todo li {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.fcheck__todo-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fcheck__todo-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+}
+
+.fcheck__todo-items span {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  color: #4a5160;
+  background: var(--surface-subtle);
+}
+
+.fcheck__warn {
+  padding: 12px 16px;
+  border-left: 3px solid var(--brand);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--brand-tint);
+  font-size: 13px;
+}
+
+.fcheck__warn p {
+  margin: 0;
 }
 
 .fcheck__error {
-  color: #c00;
+  margin: 0;
+  color: var(--fail);
   font-size: 13px;
+}
+
+.fcheck .flow__actions {
+  margin-top: 4px;
 }

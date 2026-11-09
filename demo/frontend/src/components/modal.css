@@ -89,3 +89,29 @@
     max-width: none;
   }
 }
+
+/* 파일 크게 보기 — 화면을 거의 채우고, 본문은 회색 바탕 위에 쪽을 올린다 */
+.modal--viewer {
+  max-width: min(1000px, 94vw);
+  height: 92vh;
+  max-height: none;
+  overflow: hidden;
+}
+
+.modal--viewer .modal__head {
+  padding: 14px 16px 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal--viewer .modal__head h3 {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.modal--viewer .modal__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}

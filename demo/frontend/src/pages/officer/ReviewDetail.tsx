@@ -177,6 +177,23 @@ export default function ReviewDetail({
         </button>
         <span className="review__no">{detail.application_no}</span>
         <strong className="review__name">{detail.name}</strong>
+        {detail.identity && (
+          <span
+            className={
+              detail.identity.verified ? 'review__id review__id--ok' : 'review__id review__id--none'
+            }
+          >
+            {detail.identity.verified
+              ? `본인인증 완료${detail.identity.method === 'demo' ? '(데모)' : ''}${
+                  detail.identity.pledge_signed
+                    ? detail.identity.pledge_kind === 'uploaded'
+                      ? ' · 서약 서명(파일)'
+                      : ' · 서약 서명'
+                    : ''
+                }`
+              : '본인인증 없음'}
+          </span>
+        )}
         <span className="review__where">
           {detail.region} {detail.town}
         </span>

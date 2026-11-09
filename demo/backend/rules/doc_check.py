@@ -15,6 +15,7 @@ from datetime import date
 from ..engine_adapter import engine_check_single_document, engine_config, engine_models
 from ..ocr.base import OcrResult
 from .doc_types import DocType, confusable_with
+from .identity import Identity, compare
 from .required_docs import DocRequirement
 from .scoring import ESTIMATE_LABEL
 
@@ -37,6 +38,10 @@ CODE_SCREEN_CAPTURE = "SCREEN_CAPTURE_SUSPECTED"
 CODE_MISSING_ADDRESS_HISTORY = "MISSING_ADDRESS_HISTORY"
 CODE_UNKNOWN_DOCUMENT_TYPE = "UNKNOWN_DOCUMENT_TYPE"
 CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
+#: 서류의 성명·생년월일이 본인인증 정보와 다름 (판독 확실 → 부적합)
+CODE_IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
+#: 위와 같으나 판독이 불확실 → 오독일 수 있어 담당자 확인
+CODE_IDENTITY_UNCERTAIN = "IDENTITY_UNCERTAIN"
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -44,6 +49,7 @@ HOW_TO_FIX: dict[str, str] = {
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
+    "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
     "LOW_IMAGE_QUALITY": "글자가 또렷하게 보이도록 스캔본이나 밝은 곳에서 찍은 사진으로 다시 올려 주세요. pdf 파일을 권장합니다.",
     "LOW_OCR_CONFIDENCE": "자동 판독이 되지 않은 항목이 있어 담당자가 직접 확인합니다. 더 선명한 파일이 있다면 교체해 주세요.",
@@ -51,6 +57,8 @@ HOW_TO_FIX: dict[str, str] = {
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
     CODE_MISSING_ADDRESS_HISTORY: "정부24에서 초본을 발급할 때 '과거의 주소 변동사항(최근 5년)' 포함을 체크해 다시 발급받아 주세요.",
     CODE_MISSING_REQUIRED_FIELD: "{field}이(가) 표기된 서류로 다시 발급받아 올려 주세요. 발급 기관에 {field} 표기를 요청하시면 됩니다.",
+    CODE_IDENTITY_MISMATCH: "본인 명의로 발급받은 서류만 인정됩니다. 가족이나 다른 사람 명의의 서류가 아닌지 확인하고 다시 올려 주세요.",
+    CODE_IDENTITY_UNCERTAIN: "본인 서류가 맞다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     CODE_UNKNOWN_DOCUMENT_TYPE: "자동으로 서류 종류를 판별하지 못했습니다. 담당자가 직접 확인하므로 그대로 두셔도 되고, 더 선명한 파일이 있다면 교체해 주세요.",
 }
 
@@ -58,6 +66,10 @@ HOW_TO_FIX: dict[str, str] = {
 #: 화면캡처는 오탐 시 신청자가 억울해지므로 자동 반려하지 않는다.
 REVIEW_ONLY_CODES = {
     "LOW_OCR_CONFIDENCE",
+    # 입력 발급일 불일치이나 판독이 불확실 — 오독일 수 있어 자동 반려하지 않는다.
+    "DECLARED_DATE_UNCERTAIN",
+    # 본인 정보 불일치이나 판독이 불확실 — 남의 서류로 단정하지 않는다.
+    CODE_IDENTITY_UNCERTAIN,
     CODE_SCREEN_CAPTURE,
     CODE_UNKNOWN_DOCUMENT_TYPE,
 }
@@ -150,8 +162,12 @@ def check_document(
     ocr: OcrResult,
     declared_issue_date: date | None = None,
     file_format: str = "pdf",
+    identity: Identity | None = None,
 ) -> CheckResult:
-    """업로드된 서류 한 건을 적합/부적합/확인필요로 판정한다."""
+    """업로드된 서류 한 건을 적합/부적합/확인필요로 판정한다.
+
+    `identity`(본인인증 결과)가 있으면 서류의 성명·생년월일이 본인 것인지 대조한다.
+    """
     findings: list[CheckFinding] = []
 
     # 1) 오분류 — 공고문이 직접 지목한 미비 사유(초본 자리에 등본)를 가장 먼저 본다.
@@ -214,6 +230,38 @@ def check_document(
                         f"{name}이(가) 표기된 서류만 인정됩니다.",
                         req,
                         field=name,
+                    )
+                )
+
+    # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
+    # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
+    # 신청자 안내에는 서류에 적힌 남의 이름을 되읊지 않는다.
+    # 시연용 고정 샘플(Tier1 fixture)은 전부 가상 인물 명의라 대조하지 않는다 — 실제로
+    # 읽은 서류(로컬 판독·텍스트 PDF)만 대상이다. 본인 초본 + 나머지는 샘플로 시연할 수 있게.
+    if (
+        identity is not None
+        and ocr.tier != "fixture"
+        and not ocr.is_encrypted
+        and req.accepts(ocr.detected_doc_type)
+    ):
+        _, mismatched = compare(identity, ocr.fields)
+        if mismatched:
+            what = "·".join(mismatched)
+            if ocr.confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+                findings.append(
+                    _finding(
+                        CODE_IDENTITY_MISMATCH,
+                        f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다릅니다.",
+                        req,
+                    )
+                )
+            else:
+                findings.append(
+                    _finding(
+                        CODE_IDENTITY_UNCERTAIN,
+                        f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다르게 판독되었습니다. "
+                        "담당자가 원본에서 직접 확인합니다.",
+                        req,
                     )
                 )
 

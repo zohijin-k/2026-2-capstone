@@ -40,11 +40,18 @@ const COLS = [6.34, 4.43, 6.55, 11.08, 3.22, 1.01, 12.69, 4.23, 8.16, 8.86, 1.21
 interface Props {
   value: Form1Value
   onChange: (next: Form1Value) => void
+  /** 성명·생년월일을 본인인증 값으로 잠근다 */
+  identityLocked?: boolean
   /** 위저드에서 특정 구획만 보여줄 때 사용. 생략하면 전체가 한 장으로 펼쳐진다. */
   only?: 'top' | 'basic' | 'tail'
 }
 
-export default function Form1Application({ value: v, onChange, only }: Props) {
+export default function Form1Application({
+  value: v,
+  onChange,
+  only,
+  identityLocked = false,
+}: Props) {
   const set =
     <K extends keyof Form1Value>(key: K) =>
     (next: Form1Value[K]) =>
@@ -156,11 +163,11 @@ export default function Form1Application({ value: v, onChange, only }: Props) {
               </LabelCell>
               <LabelCell span={2}>신청자 이름</LabelCell>
               <Cell span={3}>
-                <Text ariaLabel="신청자 이름" value={v.name} onChange={set('name')} />
+                <Text ariaLabel="신청자 이름" value={v.name} onChange={set('name')} readOnly={identityLocked} />
               </Cell>
               <LabelCell span={2}>생년월일</LabelCell>
               <Cell span={2}>
-                <DateTriple ariaPrefix="생년월일" value={v.birth} onChange={set('birth')} />
+                <DateTriple ariaPrefix="생년월일" value={v.birth} onChange={set('birth')} readOnly={identityLocked} />
               </Cell>
               <LabelCell span={4}>성 별</LabelCell>
               <Cell>
