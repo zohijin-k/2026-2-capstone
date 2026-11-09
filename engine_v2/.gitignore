@@ -1,0 +1,8 @@
+# 개인정보: 본인 서류·좌표 덤프는 절대 커밋하지 않는다
+data/private/
+*.pdf
+*.words.json
+
+__pycache__/
+*.pyc
+.venv/

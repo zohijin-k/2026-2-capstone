@@ -1,0 +1,9 @@
+# 설치: python -m pip install -r requirements.txt
+pymupdf
+pydantic>=2
+
+# OCR 후보 (비교용)
+ocrmac; sys_platform == "darwin"   # Apple Vision, 맥 전용 기준선
+# easyocr                          # 필요할 때 주석 해제
+# paddlepaddle                     # Python 3.14에서 설치 안 될 수 있음
+# paddleocr

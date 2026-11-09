@@ -1,6 +1,7 @@
-"""OCR 3계층 폴백 체인.
+"""OCR 폴백 체인.
 
-Tier1(fixture) → Tier2(PDF 텍스트) → Tier3(상용 API) 순으로 시도하고, 전부 미스면
+Tier1(fixture) → Tier1.5(로컬 OCR, engine_v2) → Tier2(PDF 텍스트) → Tier3(상용 API)
+순으로 시도하고, 전부 미스면
 신뢰도 0짜리 결과를 돌려준다. 신뢰도 0은 엔진에서 NEEDS_REVIEW가 되어 담당자 큐로
 가므로, 어떤 파일이 올라와도 화면이 멈추지 않는다.
 
@@ -12,11 +13,14 @@ import time
 from ..rules.doc_types import DocType
 from .base import BBox, OcrAdapter, OcrResult
 from .fixture import FixtureOcr, fixture_keys
+from .localocr import LocalOcr
 from .pdftext import PdfTextOcr, split_pdf_pages
 from .upstage import UpstageOcr
 
 #: 시도 순서. 앞 계층이 None을 돌려주면 다음으로 넘어간다.
-CHAIN: list[OcrAdapter] = [FixtureOcr(), PdfTextOcr(), UpstageOcr()]
+#: LocalOcr는 텍스트 레이어가 **없는** 파일(브라우저 인쇄 PDF·사진)만 맡고, 텍스트 PDF는
+#: None을 돌려 Tier2에 넘긴다. OCR 엔진이 없는 서버에서도 None → 기존 동작 그대로.
+CHAIN: list[OcrAdapter] = [FixtureOcr(), LocalOcr(), PdfTextOcr(), UpstageOcr()]
 
 
 def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:

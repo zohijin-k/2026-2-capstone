@@ -1,6 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
-sqlmodel>=0.0.22
+# 0.0.45부터 시간대 없는 datetime 저장을 거부해 신청서 저장이 실패한다 (2026-11-10 확인).
+sqlmodel>=0.0.22,<0.0.45
 python-multipart>=0.0.12
 PyMuPDF>=1.24
 Pillow>=11.0
