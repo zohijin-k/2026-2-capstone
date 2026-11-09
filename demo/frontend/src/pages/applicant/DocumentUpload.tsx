@@ -24,6 +24,7 @@ import {
 } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
 import Modal from '../../components/Modal.tsx'
+import PdfPages from '../../components/PdfPages.tsx'
 import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, isCompleteYMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
@@ -56,6 +57,49 @@ function fileKind(name: string): string {
   return (name.split('.').pop() ?? '').toUpperCase().slice(0, 4) || 'FILE'
 }
 
+function isPdf(doc: UploadedDocument): boolean {
+  return (doc.file_format || doc.file_name).toLowerCase().endsWith('pdf')
+}
+
+function DocumentThumbnail({ doc, onClick }: { doc: UploadedDocument; onClick: () => void }) {
+  const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const pdf = isPdf(doc)
+  const extension = fileKind(doc.file_name)
+  const kind = extension === 'JPEG' ? 'JPG' : extension
+
+  return (
+    <button
+      type="button"
+      className="dresult__kind"
+      onClick={onClick}
+      aria-label={`${doc.file_name} 크게 보기`}
+    >
+      {!failed && (pdf ? (
+        <PdfPages
+          url={doc.file_url}
+          width={56}
+          maxHeight={76}
+          maxPages={1}
+          className={ready ? 'dresult__pages dresult__pages--ready' : 'dresult__pages'}
+          onReady={() => setReady(true)}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <img
+          className="dresult__image"
+          src={doc.file_url}
+          alt=""
+          onLoad={() => setReady(true)}
+          onError={() => setFailed(true)}
+        />
+      ))}
+      {(!ready || failed) && <span className="dresult__fallback">{kind}</span>}
+      {ready && !failed && <span className="dresult__badge">{kind}</span>}
+    </button>
+  )
+}
+
 function DocumentResult({
   doc,
   onRetry,
@@ -69,14 +113,7 @@ function DocumentResult({
   return (
     <div className={`dresult dresult--${status.toLowerCase()}`}>
       <div className="dresult__file">
-        <button
-          type="button"
-          className="dresult__kind"
-          onClick={() => setViewing(true)}
-          aria-label={`${doc.file_name} 크게 보기`}
-        >
-          {fileKind(doc.file_name)}
-        </button>
+        <DocumentThumbnail key={doc.file_url} doc={doc} onClick={() => setViewing(true)} />
         <div className="dresult__body">
           <button type="button" className="dresult__name" onClick={() => setViewing(true)}>
             {doc.file_name}

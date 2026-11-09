@@ -22,6 +22,8 @@ interface Props {
   maxPages?: number
   /** 총 쪽 수를 알게 되면 알려준다 */
   onPageCount?: (count: number) => void
+  onReady?: () => void
+  onError?: () => void
   className?: string
 }
 
@@ -31,14 +33,21 @@ export default function PdfPages({
   maxHeight,
   maxPages,
   onPageCount,
+  onReady,
+  onError,
   className,
 }: Props) {
-  const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null)
-  const [error, setError] = useState('')
+  const [loaded, setLoaded] = useState<{
+    url: string
+    pdf: pdfjs.PDFDocumentProxy | null
+    error: string
+  } | null>(null)
   const countRef = useRef(onPageCount)
+  const errorRef = useRef(onError)
   useEffect(() => {
     countRef.current = onPageCount
-  }, [onPageCount])
+    errorRef.current = onError
+  }, [onPageCount, onError])
 
   useEffect(() => {
     let cancelled = false
@@ -46,19 +55,23 @@ export default function PdfPages({
     task.promise
       .then((doc) => {
         if (cancelled) return
-        setPdf(doc)
+        setLoaded({ url, pdf: doc, error: '' })
         countRef.current?.(doc.numPages)
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e))
+        if (!cancelled) {
+          setLoaded({ url, pdf: null, error: e instanceof Error ? e.message : String(e) })
+          errorRef.current?.()
+        }
       })
     return () => {
       cancelled = true
-      setPdf(null)
       void task.destroy()
     }
   }, [url])
 
+  const pdf = loaded?.url === url ? loaded.pdf : null
+  const error = loaded?.url === url ? loaded.error : ''
   if (error) return <p className="pdfpages__error">PDF를 열 수 없습니다.</p>
   if (!pdf) return <p className="pdfpages__loading">불러오는 중…</p>
 
@@ -66,7 +79,15 @@ export default function PdfPages({
   return (
     <div className={className ? `pdfpages ${className}` : 'pdfpages'}>
       {Array.from({ length: count }, (_, i) => (
-        <PdfPage key={i} pdf={pdf} pageNo={i + 1} width={width} maxHeight={maxHeight} />
+        <PdfPage
+          key={i}
+          pdf={pdf}
+          pageNo={i + 1}
+          width={width}
+          maxHeight={maxHeight}
+          onReady={onReady}
+          onError={onError}
+        />
       ))}
     </div>
   )
@@ -77,14 +98,25 @@ function PdfPage({
   pageNo,
   width,
   maxHeight,
+  onReady,
+  onError,
 }: {
   pdf: pdfjs.PDFDocumentProxy
   pageNo: number
   width: number
   maxHeight?: number
+  onReady?: () => void
+  onError?: () => void
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
+  const readyRef = useRef(onReady)
+  const errorRef = useRef(onError)
   const [size, setSize] = useState({ width, height: Math.round(width * 1.414) })
+
+  useEffect(() => {
+    readyRef.current = onReady
+    errorRef.current = onError
+  }, [onReady, onError])
 
   useEffect(() => {
     let cancelled = false
@@ -104,8 +136,9 @@ function PdfPage({
         height: Math.round(viewport.height / dpr),
       })
       task = page.render({ canvas, viewport })
-      task.promise.catch(() => undefined)
+      task.promise.then(() => readyRef.current?.()).catch(() => errorRef.current?.())
     })
+    .catch(() => errorRef.current?.())
     return () => {
       cancelled = true
       task?.cancel()
