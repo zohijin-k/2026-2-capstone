@@ -374,11 +374,6 @@
   color: var(--muted);
 }
 
-.btn--small {
-  font-size: 12.5px;
-  padding: 5px 12px;
-}
-
 /* ---- 올린 뒤: 파일과 읽은 값 ---- */
 
 .dresult {
@@ -419,7 +414,16 @@
   font-weight: 800;
   display: grid;
   place-items: end center;
-  padding-bottom: 6px;
+  padding: 0 0 6px;
+  font-family: inherit;
+  cursor: zoom-in;
+  transition: border-color var(--ease), color var(--ease), background var(--ease);
+}
+
+.dresult__kind:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+  background: var(--brand-tint);
 }
 
 .dresult__body {
@@ -429,11 +433,26 @@
 }
 
 .dresult__name {
+  justify-self: start;
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   font-size: 13.5px;
   font-weight: 700;
+  color: var(--text);
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: zoom-in;
+}
+
+.dresult__name:hover {
+  color: var(--brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .dresult__detected,
@@ -442,7 +461,9 @@
   color: var(--muted);
 }
 
-.dresult__retry {
+.dresult__actions {
+  display: flex;
+  gap: 6px;
   margin-left: auto;
   flex: none;
 }

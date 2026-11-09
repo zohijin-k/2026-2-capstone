@@ -22,6 +22,7 @@ import {
   type DocStatus,
   type UploadedDocument,
 } from '../../api.ts'
+import FilePreview from '../../components/FilePreview.tsx'
 import Modal from '../../components/Modal.tsx'
 import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, isCompleteYMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
@@ -62,16 +63,24 @@ function DocumentResult({
   doc: UploadedDocument
   onRetry: () => void
 }) {
+  const [viewing, setViewing] = useState(false)
   const status = doc.status ?? 'NEEDS_REVIEW'
   const extracted = Object.entries(doc.extracted)
   return (
     <div className={`dresult dresult--${status.toLowerCase()}`}>
       <div className="dresult__file">
-        <span className="dresult__kind" aria-hidden="true">
+        <button
+          type="button"
+          className="dresult__kind"
+          onClick={() => setViewing(true)}
+          aria-label={`${doc.file_name} 크게 보기`}
+        >
           {fileKind(doc.file_name)}
-        </span>
+        </button>
         <div className="dresult__body">
-          <span className="dresult__name">{doc.file_name}</span>
+          <button type="button" className="dresult__name" onClick={() => setViewing(true)}>
+            {doc.file_name}
+          </button>
           {extracted.length > 0 && (
             <dl className="dextract">
               {extracted.map(([k, v]) => (
@@ -92,10 +101,23 @@ function DocumentResult({
             </span>
           )}
         </div>
-        <button type="button" className="btn btn--small dresult__retry" onClick={onRetry}>
-          다시 올리기
-        </button>
+        <div className="dresult__actions">
+          <button type="button" className="btn btn--small" onClick={() => setViewing(true)}>
+            미리보기
+          </button>
+          <button type="button" className="btn btn--small dresult__retry" onClick={onRetry}>
+            다시 올리기
+          </button>
+        </div>
       </div>
+      {viewing && (
+        <FilePreview
+          url={doc.file_url}
+          name={doc.file_name}
+          kind={(doc.file_format || doc.file_name).toLowerCase().endsWith('pdf') ? 'pdf' : 'image'}
+          onClose={() => setViewing(false)}
+        />
+      )}
 
       {doc.findings.map((f) => (
         <div key={f.code} className="dfinding">

@@ -12,24 +12,33 @@ export default function Modal({
   onClose,
   children,
   footer,
+  variant = 'default',
 }: {
   title: string
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  /** viewer: 파일 크게 보기용 넓은 팝업 */
+  variant?: 'default' | 'viewer'
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // 팝업이 떠 있는 동안 뒤 화면이 같이 스크롤되지 않게 한다.
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+    }
   }, [onClose])
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div
-        className="modal"
+        className={variant === 'viewer' ? 'modal modal--viewer' : 'modal'}
         role="dialog"
         aria-modal="true"
         aria-label={title}

@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react'
 
 import { fetchStatus, type ApplicationStatus, type DocStatus } from '../../api.ts'
+import FileLink from '../../components/FileLink.tsx'
 import './my-page.css'
 
 const STATUS_LABEL: Record<DocStatus, string> = {
@@ -160,7 +161,9 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
               const status = d.status ?? 'NEEDS_REVIEW'
               return (
                 <tr key={d.document_id}>
-                  <td>{d.file_name}</td>
+                  <td>
+                    <FileLink url={d.file_url} name={d.file_name} format={d.file_format} />
+                  </td>
                   <td>{d.detected_doc_type ?? '미판별'}</td>
                   <td>
                     <span className={`dstatus dstatus--${status.toLowerCase()}`}>
@@ -181,6 +184,7 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
 
       <section className="mypage__box">
         <h3>동의 이력</h3>
+        {data.consents.length === 0 && <p className="mypage__empty">아직 동의한 항목이 없습니다.</p>}
         <ul className="mypage__consents">
           {data.consents.map((c) => (
             <li key={c.consent_type}>

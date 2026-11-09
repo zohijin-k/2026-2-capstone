@@ -140,6 +140,8 @@ def document_dict(d: Document) -> dict[str, Any]:
         "slot_key": d.slot_key,
         "file_name": Path(d.file_path).name,
         "file_format": d.file_format,
+        # 신청자가 자기 서류를 다시 열어 보는 주소. 담당자 뷰어와 같은 인라인 스트리밍이다.
+        "file_url": f"/api/files/{d.id}",
         "expected_doc_type": d.expected_doc_type,
         "detected_doc_type": d.doc_type,
         "declared_issue_date": (

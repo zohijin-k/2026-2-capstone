@@ -13,6 +13,7 @@
   7. 본인인증 없이 올리면 대조하지 않는다 (기존 동작 유지)
   8. 담당자 화면에 본인인증·서약 여부가 보이고, 연락처는 나가지 않는다
   9. 서약 서명은 직접 서명(PNG) 또는 서명 파일(PNG·JPG·PDF, 5MB 이하)로 받는다
+ 10. 신청자도 자기가 올린 서류를 다시 열어 볼 수 있다 (인라인 주소, 저장 경로 없음)
 
 HTTP 경로(업로드 → 판정 → 제출 → 담당자 상세)를 그대로 탄다. 이미지 초본은
 가짜 OCR 엔진이 실측 레이아웃의 가상 인물 '김전북 / 1999-01-01'을 돌려준다.
@@ -108,6 +109,15 @@ def test_matching(client, tmp: Path) -> None:
     identify(client, own, "김전북", "1999-01-01")
     doc = upload_abstract(client, own, tmp, fake_abstract_words(), "본인초본")
     check("본인 초본 → 판정", doc["status"], "PASS")
+
+    print("\n[3-1] 올린 서류 다시 보기")
+    check_true("신청자 응답에 파일 주소", doc["file_url"].startswith("/api/files/"))
+    res = client.get(doc["file_url"])
+    check("파일 열기", res.status_code, 200)
+    check_true("인라인으로만 연다", res.headers["content-disposition"].startswith("inline"))
+    listed = client.get(f"/api/applications/{own}/documents").json()
+    rows = listed["documents"] if isinstance(listed, dict) else listed
+    check_true("목록에도 같은 주소", any(d["file_url"] == doc["file_url"] for d in rows))
 
     other = new_app(client)
     identify(client, other, "이익산", "1998-05-05")

@@ -397,26 +397,84 @@
 
 /* ---- 전자서명 ---- */
 
-.signature-pad {
-  border: 1px solid var(--line);
+.signature-box {
+  display: inline-grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+/* 서식 안에서는 서식 선 색, 그 밖(본인인증 등)에서는 앱 테두리 색을 쓴다 */
+.signature-frame {
+  position: relative;
+  display: block;
+  border: 1px solid var(--line, var(--border-strong, #bbb));
+  border-radius: 6px;
   background: #fff;
+  overflow: hidden;
+}
+
+/* 서명 기준선 — 어디에 쓰면 되는지 보이게 */
+.signature-frame::after {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 26%;
+  border-bottom: 1px dashed #d4d7dd;
+  pointer-events: none;
+}
+
+.signature-pad {
   display: block;
   touch-action: none;
   cursor: crosshair;
 }
 
-.signature-box {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: flex-start;
+.signature-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #a3a8b0;
+  font-size: 13px;
+  pointer-events: none;
 }
 
 .signature-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
   font-size: 12px;
+}
+
+.signature-clear {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-strong, #bbb);
+  border-radius: 6px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+
+.signature-clear:hover:not(:disabled) {
+  border-color: var(--brand, #1f3864);
+  color: var(--brand, #1f3864);
+}
+
+.signature-clear:disabled {
+  color: #b0b4ba;
+  cursor: default;
+}
+
+.signature-state {
+  color: var(--muted, #666);
+}
+
+.signature-state--done {
+  color: var(--success, #177245);
+  font-weight: 700;
 }
 
 .badge-proposal {

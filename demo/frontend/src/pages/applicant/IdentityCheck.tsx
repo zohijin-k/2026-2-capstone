@@ -14,6 +14,8 @@
 import { useEffect, useState } from 'react'
 
 import { verifyIdentity, type Identity } from '../../api.ts'
+import FilePreview from '../../components/FilePreview.tsx'
+import PdfPages from '../../components/PdfPages.tsx'
 import SignaturePad from '../../components/SignaturePad.tsx'
 import { DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
@@ -68,6 +70,7 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [drawn, setDrawn] = useState('')
   const [file, setFile] = useState<SignFile | null>(null)
   const [fileKey, setFileKey] = useState(0)
+  const [viewing, setViewing] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -231,7 +234,7 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
               ))}
             </div>
             {signMode === '직접 서명' ? (
-              <SignaturePad value={drawn} onChange={setDrawn} />
+              <SignaturePad value={drawn} onChange={setDrawn} width={320} height={120} />
             ) : (
               <div className="idcheck__file">
                 {!file && (
@@ -248,24 +251,35 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
                 )}
                 {file && (
                   <figure className="idcheck__previewbox">
-                    {file.type === 'application/pdf' ? (
-                      <object
-                        className="idcheck__preview idcheck__preview--pdf"
-                        data={`${file.previewUrl}#toolbar=0&navpanes=0&view=Fit`}
-                        type="application/pdf"
-                        aria-label="올린 서명 미리보기"
-                      >
-                        <p className="idcheck__filename">{file.name}</p>
-                      </object>
-                    ) : (
-                      <img className="idcheck__preview" src={file.previewUrl} alt="올린 서명 미리보기" />
-                    )}
+                    <button
+                      type="button"
+                      className="idcheck__preview"
+                      onClick={() => setViewing(true)}
+                      aria-label="올린 서명 크게 보기"
+                    >
+                      {file.type === 'application/pdf' ? (
+                        <PdfPages url={file.previewUrl} width={318} maxHeight={138} maxPages={1} />
+                      ) : (
+                        <img src={file.previewUrl} alt="올린 서명 미리보기" />
+                      )}
+                      <span className="idcheck__zoomhint" aria-hidden="true">
+                        크게 보기
+                      </span>
+                    </button>
                     <figcaption>
                       <span className="idcheck__filename">{file.name}</span>
                       <button type="button" className="btn btn--small" onClick={clearFile}>
                         다시 선택
                       </button>
                     </figcaption>
+                    {viewing && (
+                      <FilePreview
+                        url={file.previewUrl}
+                        name={file.name}
+                        kind={file.type === 'application/pdf' ? 'pdf' : 'image'}
+                        onClose={() => setViewing(false)}
+                      />
+                    )}
                   </figure>
                 )}
               </div>

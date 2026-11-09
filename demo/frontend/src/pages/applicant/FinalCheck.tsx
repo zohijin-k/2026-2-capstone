@@ -17,10 +17,12 @@ import { useEffect, useState } from 'react'
 import {
   fetchFinalCheck,
   submitApplication,
+  type Blocker,
   type DocStatus,
   type FinalCheck as FinalCheckData,
   type SubmitResult,
 } from '../../api.ts'
+import FileLink from '../../components/FileLink.tsx'
 import './final-check.css'
 
 const STATUS_LABEL: Record<DocStatus, string> = {
@@ -29,12 +31,25 @@ const STATUS_LABEL: Record<DocStatus, string> = {
   NEEDS_REVIEW: '확인필요',
 }
 
+/** 남은 항목을 어느 화면에서 고치는지 기준으로 묶는다. 순서는 신청 순서대로. */
+const BLOCKER_GROUPS: { goto: Blocker['goto']; title: string; action: string }[] = [
+  { goto: 'form1', title: '신청서', action: '신청서 작성으로' },
+  { goto: 'consent', title: '동의', action: '동의로' },
+  { goto: 'subsidy', title: '지원 항목', action: '지원 항목으로' },
+  { goto: 'upload', title: '서류', action: '서류 업로드로' },
+]
+
 export default function FinalCheck({
   applicationId,
   onSubmitted,
+  onBack,
+  onGoto,
 }: {
   applicationId: number
   onSubmitted: (result: SubmitResult) => void
+  onBack: () => void
+  /** 남은 항목을 고치러 해당 단계로 간다 */
+  onGoto: (stage: Blocker['goto']) => void
 }) {
   const [data, setData] = useState<FinalCheckData | null>(null)
   const [busy, setBusy] = useState(false)
@@ -70,6 +85,43 @@ export default function FinalCheck({
             {data.first_come.notice} 지금 제출하시면{' '}
             <strong>{data.first_come.position}번째</strong>로 접수됩니다.
           </p>
+        </section>
+      )}
+
+      {data.warnings.length > 0 && !data.already_submitted && (
+        <div className="fcheck__warn">
+          {data.warnings.map((w) => (
+            <p key={w}>{w}</p>
+          ))}
+        </div>
+      )}
+
+      {!data.already_submitted && data.blockers.length > 0 && (
+        <section className="fcheck__todo" aria-labelledby="fcheck-todo">
+          <h3 id="fcheck-todo">
+            제출 전에 채워야 할 항목 <span>{data.blockers.length}건</span>
+          </h3>
+          <ul>
+            {BLOCKER_GROUPS.map((g) => {
+              const items = data.blockers.filter((b) => b.goto === g.goto)
+              if (items.length === 0) return null
+              return (
+                <li key={g.goto}>
+                  <span className="fcheck__todo-title">{g.title}</span>
+                  <span className="fcheck__todo-items">
+                    {items.map((b) => (
+                      <span key={`${b.kind}-${b.target}`} title={b.message}>
+                        {b.label}
+                      </span>
+                    ))}
+                  </span>
+                  <button type="button" className="btn btn--small" onClick={() => onGoto(g.goto)}>
+                    {g.action}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
         </section>
       )}
 
@@ -147,7 +199,9 @@ export default function FinalCheck({
                 const status = d.status ?? 'NEEDS_REVIEW'
                 return (
                   <tr key={d.document_id}>
-                    <td>{d.file_name}</td>
+                    <td>
+                      <FileLink url={d.file_url} name={d.file_name} format={d.file_format} />
+                    </td>
                     <td>{d.detected_doc_type ?? '미판별'}</td>
                     <td>{d.declared_issue_date ?? '-'}</td>
                     <td>
@@ -155,7 +209,7 @@ export default function FinalCheck({
                         {STATUS_LABEL[status]}
                       </span>
                     </td>
-                    <td className="fcheck__reason">
+                    <td className={d.findings.length ? 'fcheck__reason' : 'fcheck__none'}>
                       {d.findings.map((f) => f.message).join(' / ') || '-'}
                     </td>
                   </tr>
@@ -169,6 +223,9 @@ export default function FinalCheck({
       {error && <p className="fcheck__error">{error}</p>}
 
       <div className="flow__actions">
+        <button type="button" className="btn" onClick={onBack}>
+          이전
+        </button>
         <button
           type="button"
           className="btn btn--primary"
@@ -181,7 +238,7 @@ export default function FinalCheck({
               ? '제출 중…'
               : data.can_submit
                 ? '최종 제출'
-                : `확인이 필요한 항목이 ${data.blockers.length}건 남았습니다`}
+                : `${data.blockers.length}건을 채우면 제출할 수 있습니다`}
         </button>
       </div>
     </div>

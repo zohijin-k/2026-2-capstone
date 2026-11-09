@@ -227,6 +227,8 @@ export interface UploadedDocument {
   slot_key: string
   file_name: string
   file_format: string
+  /** 원본을 브라우저 안에서 여는 주소 (인라인 스트리밍) */
+  file_url: string
   expected_doc_type: string | null
   detected_doc_type: string | null
   declared_issue_date: string | null

@@ -31,32 +31,42 @@
 }
 
 .pcard {
-  border: 1px solid var(--form-border);
-  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: 20px 22px 22px;
+  transition: border-color var(--ease), box-shadow var(--ease);
   display: flex;
   flex-direction: column;
+}
+
+.pcard:hover {
+  border-color: #c3cad5;
+  box-shadow: var(--shadow-sm);
 }
 
 .pcard__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--form-border);
-  padding-bottom: 8px;
-  margin-bottom: 10px;
+  border-bottom: 2px solid var(--brand);
+  padding-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .pcard__head h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
+  letter-spacing: -0.02em;
   flex: 1;
 }
 
 .pcard__tag {
   font-size: 12px;
   border: 1px solid #1f3864;
+  border-radius: 999px;
   color: #1f3864;
-  padding: 1px 8px;
+  padding: 1px 10px;
 }
 
 .pcard__tag--fcfs {
@@ -222,9 +232,10 @@
 /* 카드 맨 위 요약 띠. 신청 기간과 지원 규모를 펼치기 전에 먼저 보여준다. */
 .pkg__summary {
   margin: 0 0 12px;
-  padding: 8px 10px;
-  background: var(--form-label-bg);
-  border: 1px solid var(--form-border);
+  padding: 10px 12px;
+  background: var(--brand-tint);
+  border: 1px solid color-mix(in srgb, var(--brand) 18%, transparent);
+  border-radius: var(--radius-sm);
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 4px 12px;

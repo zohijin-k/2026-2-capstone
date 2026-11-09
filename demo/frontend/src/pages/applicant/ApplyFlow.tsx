@@ -195,7 +195,7 @@ export default function ApplyFlow() {
   if (program === null || stage === 'program') {
     return (
       <div className="flow">
-        <header className="flow__head">
+        <header className="flow__head flow__head--solo">
           <div>
             <h1>사업 선택</h1>
             <p className="flow__sub">
@@ -233,7 +233,7 @@ export default function ApplyFlow() {
     ['final', '최종 확인'],
     ['mypage', '마이페이지'],
   ]
-  const stages: [Stage, string][] = stageNames.map(([key, label], i) => [key, `${i + 1}. ${label}`])
+  const currentIndex = stageNames.findIndex(([key]) => key === stage)
 
   /** 신청서 저장. 본인인증을 마쳤으면 성명·생년월일은 인증 값으로 고정된다. */
   const onForm1 = (next: Form1Value) => {
@@ -247,25 +247,40 @@ export default function ApplyFlow() {
       <header className="flow__head">
         <div>
           <h1>{program.name} 신청</h1>
-          <p className="flow__sub">
-            신청번호 {appNo || '발급 중…'} · 작성 내용은 단계마다 자동 저장됩니다
-            {program.is_first_come && ' · 선착순 접수'}
-          </p>
+          <p className="flow__sub">작성 내용은 단계마다 자동 저장됩니다</p>
         </div>
-        <ol className="flow__stages">
-          {stages.map(([key, label]) => (
-            <li key={key} className={stage === key ? 'is-current' : undefined}>
-              <button
-                type="button"
-                aria-current={stage === key ? 'step' : undefined}
-                onClick={() => jumpTo(key)}
-              >
-                {label}
-              </button>
-            </li>
-          ))}
-        </ol>
+        <dl className="flow__meta">
+          <div>
+            <dt>신청번호</dt>
+            <dd>{appNo || '발급 중…'}</dd>
+          </div>
+          {program.is_first_come && (
+            <div>
+              <dt>접수 방식</dt>
+              <dd>선착순</dd>
+            </div>
+          )}
+        </dl>
       </header>
+      <ol className="flow__stages" aria-label="신청 단계">
+        {stageNames.map(([key, label], i) => (
+          <li
+            key={key}
+            className={i === currentIndex ? 'is-current' : i < currentIndex ? 'is-past' : undefined}
+          >
+            <button
+              type="button"
+              aria-current={stage === key ? 'step' : undefined}
+              onClick={() => jumpTo(key)}
+            >
+              <span className="flow__stage-no" aria-hidden="true">
+                {i + 1}
+              </span>
+              <span className="flow__stage-label">{label}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
 
       {/* ── 본인인증 (데모) ── */}
       {stage === 'identity' && appId !== null && (
@@ -516,12 +531,9 @@ export default function ApplyFlow() {
               setStage('mypage')
               window.scrollTo({ top: 0 })
             }}
+            onBack={() => jumpTo('upload')}
+            onGoto={jumpTo}
           />
-          <div className="flow__actions">
-            <button type="button" className="btn" onClick={() => setStage('upload')}>
-              이전
-            </button>
-          </div>
         </>
       )}
 
