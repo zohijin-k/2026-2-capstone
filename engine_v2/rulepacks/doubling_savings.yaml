@@ -1,0 +1,77 @@
+# 전북청년 함께 두배적금 — 규칙팩
+# 공고가 바뀌면 이 파일만 고친다. ⚠️ 표시는 공고/허브센터 확정 전 가정값 (README 1-3).
+#
+# 메시지 원칙
+#   applicant: 신청자에게 그대로 노출. 기준 수치·배점·내부 판단 근거를 쓰지 않는다.
+#   reviewer : 담당자용. {중괄호}는 실행 시 실제 값으로 채운다.
+
+program_id: doubling_savings
+version: "2027-draft-1"
+reference_date: announcement_date        # 나이·발급일·거주기간 기준일 ⚠️ A2
+
+required_documents:
+  - resident_abstract
+
+documents:
+  resident_abstract:
+    rules:
+      - id: abstract.doc_type
+        type: doc_type_is
+        params: { expected: resident_abstract }
+        applicant: "주민등록표 초본이 아닌 서류가 올라왔어요. 등본이 아니라 '초본'을 올려주세요."
+        reviewer: "감지된 서류: {detected_type}"
+
+      - id: abstract.pages_complete
+        type: validation_passed
+        params: { validation: pages_complete }
+        applicant: "초본의 일부 쪽이 빠져 있어요. 모든 쪽을 한 파일로 올려주세요."
+        reviewer: "쪽 번호 {detail}"
+
+      - id: abstract.issue_date_recent
+        type: date_within_days
+        params: { field: issue_date, max_days: 30 }        # ⚠️ A1
+        applicant: "초본 발급일이 신청 기준에 맞지 않아요. 최근에 새로 발급받은 초본을 올려주세요."
+        reviewer: "발급일 {value} · 기준일 {reference_date} · 차이 {days}일 (허용 {max_days}일)"
+
+      - id: abstract.issue_date_matches_input
+        type: equals_declared
+        params: { field: issue_date, declared: issue_date }   # ⚠️ A6
+        applicant: "입력하신 발급일과 서류의 발급일이 달라요. 발급일을 다시 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: abstract.name_matches
+        type: equals_applicant
+        params: { field: name, applicant: name }
+        applicant: "신청자 성명과 초본의 성명이 달라요. 본인 초본인지 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: abstract.birth_matches
+        type: equals_applicant
+        params: { field: birth_date, applicant: birth_date }
+        applicant: "입력하신 생년월일과 초본의 정보가 달라요. 다시 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: abstract.age_eligible
+        type: age_between
+        params: { field: birth_date, min: 19, max: 39 }      # ⚠️ A3
+        applicant: "신청 자격(연령) 요건에 해당하지 않아요."
+        reviewer: "기준일 만 {age}세 (허용 {min}~{max})"
+
+      - id: abstract.lives_in_jeonbuk
+        type: current_sido_is
+        params: { field: current_address, sido: 전북 }       # ⚠️ A4
+        applicant: "현재 주소가 신청 지역 요건에 해당하지 않아요."
+        reviewer: "현 주소 시도: {sido}"
+
+      - id: abstract.residence_period
+        type: residence_months_at_least
+        params: { sido: 전북, months: 6, continuous: true }  # ⚠️ A5
+        applicant: "거주기간 요건을 확인할 수 없거나 충족하지 않아요."
+        reviewer: "전북 연속 거주 시작 {start}, 기준일까지 {months}개월 (요건 {min_months}개월)"
+
+# ---------------------------------------------------------------------------
+# 배점 — 대외비. 담당자 결과(ApplicationResult.internal)에만 들어간다.
+# 신청자용 출력(to_applicant_view)에는 구조적으로 포함되지 않는다.
+# 배점표 확정 전이므로 비워둔다.
+# ---------------------------------------------------------------------------
+scoring: {}
