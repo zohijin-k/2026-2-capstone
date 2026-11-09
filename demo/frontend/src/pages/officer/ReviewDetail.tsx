@@ -185,7 +185,11 @@ export default function ReviewDetail({
           >
             {detail.identity.verified
               ? `본인인증 완료${detail.identity.method === 'demo' ? '(데모)' : ''}${
-                  detail.identity.pledge_signed ? ' · 서약 서명' : ''
+                  detail.identity.pledge_signed
+                    ? detail.identity.pledge_kind === 'uploaded'
+                      ? ' · 서약 서명(파일)'
+                      : ' · 서약 서명'
+                    : ''
                 }`
               : '본인인증 없음'}
           </span>

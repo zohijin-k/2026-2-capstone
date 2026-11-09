@@ -5,7 +5,8 @@
  * 그래서 이 화면의 전부는 "올리는 순간 알려준다"에 걸려 있다.
  *
  *   근로유형 선택 → 본인에게 필요한 서류만 남는다 (R3.2)
- *   슬롯마다  [발급처 바로가기] [파일 선택] [발급일 직접 입력]
+ *   슬롯마다  [발급처 바로가기] [발급일 직접 입력] → [파일 선택]
+ *            발급일 입력을 받는 서류는 날짜를 다 적어야 파일을 고를 수 있다 (2차 검증의 기준값)
  *   업로드 즉시 적합 / 부적합 / 확인필요 + 사유 + 해결 방법 + 재업로드 (R2.1·R2.2)
  */
 
@@ -23,7 +24,7 @@ import {
 } from '../../api.ts'
 import Modal from '../../components/Modal.tsx'
 import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
-import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
+import { EMPTY_YMD, isCompleteYMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
 
 const STATUS_LABEL: Record<DocStatus, string> = {
@@ -175,6 +176,8 @@ function SlotCard({
   const [infoOpen, setInfoOpen] = useState(false)
   const doc = item.documents[0]
   const status = doc?.status ?? null
+  // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
+  const dateReady = !item.check_declared_date || isCompleteYMD(declared)
 
   return (
     <li className={`dslot${status ? ` dslot--${status.toLowerCase()}` : ''}`} id={`slot-${item.slot_key}`}>
@@ -220,10 +223,11 @@ function SlotCard({
         <button
           type="button"
           className="btn btn--small"
-          disabled={busy}
+          disabled={busy || !dateReady}
+          title={dateReady ? undefined : '서류에 찍힌 발급일을 먼저 입력해 주세요'}
           onClick={() => input.current?.click()}
         >
-          {busy ? '판독 중…' : '파일 선택'}
+          {busy ? '판독 중…' : dateReady ? '파일 선택' : '발급일 먼저 입력'}
         </button>
       </div>
 

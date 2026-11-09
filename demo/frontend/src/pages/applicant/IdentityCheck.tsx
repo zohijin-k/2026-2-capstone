@@ -7,6 +7,8 @@
  * 실서비스는 로그인할 때 PASS·간편인증으로 받는다. 데모는 그 단계를 흉내 내어
  * 입력값을 그대로 인증 결과로 쓴다. 서약 서명은 신원 증명이 아니라
  * "본인 서류만 제출한다"는 책임 확인이다.
+ *
+ * 서명은 화면에 직접 하거나, 서명 파일(PNG·JPG·PDF, 5MB 이하)을 올린다.
  */
 
 import { useState } from 'react'
@@ -16,6 +18,13 @@ import SignaturePad from '../../components/SignaturePad.tsx'
 import { DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './identity-check.css'
+
+const SIGN_MODES = ['직접 서명', '서명 파일 올리기'] as const
+type SignMode = (typeof SIGN_MODES)[number]
+
+const SIGN_FILE_ACCEPT = '.png,.jpg,.jpeg,.pdf'
+const SIGN_FILE_TYPES = ['image/png', 'image/jpeg', 'application/pdf']
+const SIGN_FILE_MAX = 5 * 1024 * 1024
 
 const PLEDGE =
   '본인은 위 정보의 당사자이며, 신청에 제출하는 서류는 모두 본인 명의임을 확인합니다. ' +
@@ -34,7 +43,9 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [birth, setBirth] = useState<YMD>(EMPTY_YMD)
   const [phone, setPhone] = useState('')
   const [pledge, setPledge] = useState(false)
-  const [signature, setSignature] = useState('')
+  const [signMode, setSignMode] = useState<SignMode>('직접 서명')
+  const [drawn, setDrawn] = useState('')
+  const [file, setFile] = useState<{ name: string; type: string; dataUrl: string } | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -73,7 +84,31 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   }
 
   const birthISO = ymdToISO(birth)
+  const signature = signMode === '직접 서명' ? drawn : (file?.dataUrl ?? '')
   const ready = name.trim() && birthISO && phone.replace(/\D/g, '').length >= 10 && pledge && signature
+
+  /** 서명 파일을 data URL로 읽는다. 형식·크기는 서버도 다시 확인한다. */
+  const pickFile = (picked: File | undefined) => {
+    setError('')
+    if (!picked) {
+      setFile(null)
+      return
+    }
+    if (!SIGN_FILE_TYPES.includes(picked.type)) {
+      setFile(null)
+      setError('서명 파일은 PNG·JPG·PDF만 올릴 수 있습니다.')
+      return
+    }
+    if (picked.size > SIGN_FILE_MAX) {
+      setFile(null)
+      setError('서명 파일은 5MB 이하로 올려 주세요.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () =>
+      setFile({ name: picked.name, type: picked.type, dataUrl: String(reader.result) })
+    reader.readAsDataURL(picked)
+  }
 
   const submit = async () => {
     setBusy(true)
@@ -85,6 +120,7 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
         phone,
         pledge,
         signature_data_url: signature,
+        signature_kind: signMode === '직접 서명' ? 'electronic' : 'uploaded',
       })
       onVerified(result)
     } catch (e) {
@@ -139,7 +175,43 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
         </label>
         <div className="idcheck__sign">
           <span>서명</span>
-          <SignaturePad value={signature} onChange={setSignature} />
+          <div>
+            <div className="idcheck__modes">
+              {SIGN_MODES.map((m) => (
+                <label key={m} className="form-check">
+                  <input
+                    type="radio"
+                    name="identity-sign-mode"
+                    checked={signMode === m}
+                    onChange={() => {
+                      setSignMode(m)
+                      setError('')
+                    }}
+                  />
+                  <span>{m}</span>
+                </label>
+              ))}
+            </div>
+            {signMode === '직접 서명' ? (
+              <SignaturePad value={drawn} onChange={setDrawn} />
+            ) : (
+              <div className="idcheck__file">
+                <input
+                  type="file"
+                  accept={SIGN_FILE_ACCEPT}
+                  aria-label="서명 파일"
+                  onChange={(e) => pickFile(e.target.files?.[0])}
+                />
+                <p className="idcheck__hint">PNG·JPG·PDF, 5MB 이하</p>
+                {file &&
+                  (file.type.startsWith('image/') ? (
+                    <img className="idcheck__preview" src={file.dataUrl} alt="올린 서명" />
+                  ) : (
+                    <p className="idcheck__filename">{file.name}</p>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -72,6 +72,40 @@
   font-weight: 700;
 }
 
+.idcheck__sign > div {
+  font-weight: 400;
+}
+
+.idcheck__modes {
+  display: inline-flex;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
+.idcheck__file {
+  display: grid;
+  gap: 6px;
+}
+
+.idcheck__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.idcheck__preview {
+  max-width: 260px;
+  max-height: 90px;
+  border: 1px solid #d7dbe0;
+  background: #fff;
+  object-fit: contain;
+}
+
+.idcheck__filename {
+  margin: 0;
+  font-size: 13px;
+}
+
 .idcheck__error {
   margin: 14px 0 0;
   color: #c00;

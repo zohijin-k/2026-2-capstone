@@ -12,12 +12,14 @@
   6. 시연용 샘플(가상 인물 '홍길동')은 대조하지 않는다 — 본인 초본 + 샘플로 시연 가능
   7. 본인인증 없이 올리면 대조하지 않는다 (기존 동작 유지)
   8. 담당자 화면에 본인인증·서약 여부가 보이고, 연락처는 나가지 않는다
+  9. 서약 서명은 직접 서명(PNG) 또는 서명 파일(PNG·JPG·PDF, 5MB 이하)로 받는다
 
 HTTP 경로(업로드 → 판정 → 제출 → 담당자 상세)를 그대로 탄다. 이미지 초본은
 가짜 OCR 엔진이 실측 레이아웃의 가상 인물 '김전북 / 1999-01-01'을 돌려준다.
 DB·저장소는 임시 폴더로 격리하고 끝나면 지운다. 실제 개인정보는 쓰지 않는다.
 """
 
+import base64
 import shutil
 import tempfile
 from pathlib import Path
@@ -182,7 +184,35 @@ def test_officer_view(client, tmp: Path) -> None:
     ident = detail["identity"]
     check("본인인증 여부", ident["verified"], True)
     check("서약 서명", ident["pledge_signed"], True)
+    check("서약 방식", ident["pledge_kind"], "electronic")
     check_true("연락처 미노출", "phone" not in ident and "010" not in str(ident))
+
+
+def test_signature_upload(client) -> None:
+    print("\n[8] 서명 파일 올리기")
+
+    def data_url(mime: str, raw: bytes) -> str:
+        return f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+
+    def attempt(kind: str, url: str) -> int:
+        app_id = new_app(client)
+        return identify(client, app_id, "김전북", "1999-01-01",
+                        signature_kind=kind, signature_data_url=url).status_code
+
+    check("PNG 파일 → 200", attempt("uploaded", data_url("image/png", b"\x89PNG\r\n")), 200)
+    check("JPG 파일 → 200", attempt("uploaded", data_url("image/jpeg", b"\xff\xd8\xff")), 200)
+    check("PDF 파일 → 200", attempt("uploaded", data_url("application/pdf", b"%PDF-1.7")), 200)
+    check("텍스트 파일 → 400", attempt("uploaded", data_url("text/plain", b"sign")), 400)
+    check("5MB 초과 → 400", attempt("uploaded", data_url("image/png", b"0" * (5 * 1024 * 1024 + 1))), 400)
+    check("깨진 base64 → 400", attempt("uploaded", "data:image/png;base64,@@@"), 400)
+    check("직접 서명인데 JPG → 400", attempt("electronic", data_url("image/jpeg", b"\xff\xd8")), 400)
+    check("알 수 없는 방식 → 400", attempt("stamp", data_url("image/png", b"\x89PNG")), 400)
+
+    app_id = new_app(client)
+    r = identify(client, app_id, "김전북", "1999-01-01", signature_kind="uploaded",
+                 signature_data_url=data_url("application/pdf", b"%PDF-1.7"))
+    check("저장된 서명 방식", r.json()["identity"]["pledge_signature_kind"], "uploaded")
+    check_true("PDF는 .pdf로 저장", r.json()["identity"]["pledge_signature_path"].endswith(".pdf"))
 
 
 def main() -> int:
@@ -198,6 +228,7 @@ def main() -> int:
             test_matching(client, tmp)
             test_samples_and_no_identity(client, tmp)
             test_officer_view(client, tmp)
+            test_signature_upload(client)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

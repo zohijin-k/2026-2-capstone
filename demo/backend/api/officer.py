@@ -868,6 +868,8 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
             "method": (app.identity_json or {}).get("method"),
             "verified_at": (app.identity_json or {}).get("verified_at"),
             "pledge_signed": bool((app.identity_json or {}).get("pledge_signature_path")),
+            # electronic(직접 서명) | uploaded(서명 파일)
+            "pledge_kind": (app.identity_json or {}).get("pledge_signature_kind"),
         },
         "program_code": app.program_code,
         "program_name": entry.program.name,

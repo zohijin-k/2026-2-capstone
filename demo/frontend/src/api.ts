@@ -423,6 +423,8 @@ export interface IdentityPayload {
   phone: string
   pledge: boolean
   signature_data_url: string
+  /** electronic(화면에 직접 서명) | uploaded(서명 파일 올리기) */
+  signature_kind: 'electronic' | 'uploaded'
 }
 
 /** 본인인증 (데모). 실패 사유는 서버 문구 그대로 보여준다. */
@@ -754,6 +756,7 @@ export interface ReviewDetailData {
     method: string | null
     verified_at: string | null
     pledge_signed: boolean
+    pledge_kind?: string | null
   }
   program_code: string
   program_name: string

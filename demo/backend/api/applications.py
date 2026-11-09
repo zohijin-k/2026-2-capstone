@@ -58,12 +58,40 @@ class IdentityRequest(BaseModel):
     phone: str
     #: "본인이 맞으며, 타인 서류·허위 제출 시 불이익에 동의합니다"
     pledge: bool
-    #: 서약 전자서명 data URL (data:image/png;base64,...)
+    #: 서약 서명 data URL. 직접 그린 서명이면 PNG, 파일로 올리면 PNG·JPG·PDF.
     signature_data_url: str
+    #: electronic(화면에 직접 서명) | uploaded(서명 파일 올리기)
+    signature_kind: str = "electronic"
 
 
 #: 본인인증 방식. 실서비스는 로그인 시 PASS·간편인증 결과를 받으므로 이 값이 바뀐다.
 IDENTITY_METHOD = "demo"
+
+#: 서약 서명으로 받는 파일 형식 → 저장 확장자. 직접 그린 서명은 PNG만 온다.
+SIGNATURE_TYPES = {"image/png": "png", "image/jpeg": "jpg", "application/pdf": "pdf"}
+SIGNATURE_MAX_BYTES = 5 * 1024 * 1024
+
+
+def _decode_signature(data_url: str, kind: str) -> tuple[bytes, str]:
+    """서명 data URL → (바이트, 확장자). 형식·크기가 맞지 않으면 400."""
+    if kind not in ("electronic", "uploaded"):
+        raise HTTPException(400, "서명 방식을 확인해 주세요.")
+    head, sep, payload = data_url.partition(",")
+    if not sep or not head.startswith("data:") or not head.endswith(";base64"):
+        raise HTTPException(400, "서약란에 서명해 주세요.")
+    mime = head[len("data:"): -len(";base64")]
+    allowed = {"image/png"} if kind == "electronic" else set(SIGNATURE_TYPES)
+    if mime not in allowed:
+        raise HTTPException(400, "서명 파일은 PNG·JPG·PDF만 올릴 수 있습니다.")
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except ValueError:
+        raise HTTPException(400, "서명 파일을 읽을 수 없습니다.") from None
+    if not raw:
+        raise HTTPException(400, "서약란에 서명해 주세요.")
+    if len(raw) > SIGNATURE_MAX_BYTES:
+        raise HTTPException(400, "서명 파일은 5MB 이하로 올려 주세요.")
+    return raw, SIGNATURE_TYPES[mime]
 
 
 def _ymd(d: date) -> dict[str, str]:
@@ -162,8 +190,7 @@ def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any
         raise HTTPException(400, "휴대폰 번호를 확인해 주세요.")
     if not body.pledge:
         raise HTTPException(400, "본인 확인 서약에 동의해 주세요.")
-    if "," not in body.signature_data_url:
-        raise HTTPException(400, "서약란에 서명해 주세요.")
+    signature, ext = _decode_signature(body.signature_data_url, body.signature_kind)
 
     with get_session() as s:
         app = s.get(Application, application_id)
@@ -175,8 +202,8 @@ def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any
             raise HTTPException(409, "이미 본인인증을 마친 신청입니다. 다른 사람으로 신청하려면 새로 시작해 주세요.")
 
         SIGNATURES.mkdir(parents=True, exist_ok=True)
-        target = SIGNATURES / f"{app.application_no}_identity_pledge.png"
-        target.write_bytes(base64.b64decode(body.signature_data_url.split(",", 1)[1]))
+        target = SIGNATURES / f"{app.application_no}_identity_pledge.{ext}"
+        target.write_bytes(signature)
 
         app.identity_json = {
             "name": name,
@@ -185,6 +212,7 @@ def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any
             "method": IDENTITY_METHOD,
             "verified_at": datetime.now().isoformat(timespec="seconds"),
             "pledge_signature_path": str(target.relative_to(STORAGE.parent)),
+            "pledge_signature_kind": body.signature_kind,
         }
         app.form1_json = _lock_identity(app.form1_json or {}, app.identity_json)
         app.updated_at = datetime.now()
