@@ -364,8 +364,10 @@ OCR 신뢰도는 동점일 때 보조 지표로만 쓴다. 상세 산정식은 6
 
 ## 엔진 사용법
 
+모든 명령은 **저장소 루트**에서 실행한다 (`engine_v2`는 패키지).
+
 ```python
-from engine import run
+from engine_v2.engine import run
 result = run(application_input)        # 담당자용 전체 (ApplicationResult)
 view = result.to_applicant_view()      # 신청자용 — 판정 + 보완 안내 문구만
 ```
@@ -373,8 +375,8 @@ view = result.to_applicant_view()      # 신청자용 — 판정 + 보완 안내
 실제 서류로 확인:
 
 ```bash
-python -m tools.run_engine data/private/초본.pdf --input data/private/초본.gt.json
-python -m tools.run_engine data/private/초본.pdf --input data/private/초본.gt.json --issue-date 2026-01-01   # 오류 시나리오
+python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json
+python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json --issue-date 2026-01-01   # 오류 시나리오
 ```
 
 새 서류 추출기 추가 (채운·지빈):
@@ -382,6 +384,29 @@ python -m tools.run_engine data/private/초본.pdf --input data/private/초본.g
 2. `engine.py`의 `EXTRACTORS`에 한 줄 등록
 3. `rulepacks/<사업>.yaml`의 `documents:` 아래에 규칙 추가
 4. `tests/`에 가짜 OCR 결과로 테스트 작성 (`test_resident_abstract.py` 참고)
+
+---
+
+## 데모 사이트 연결 (2026-11-10)
+
+데모 백엔드 OCR 체인에 **Tier1.5 로컬 판독**(`demo/backend/ocr/localocr.py`)으로 붙어 있다.
+
+```
+Tier1 fixture → Tier1.5 localocr (engine_v2) → Tier2 pdftext → Tier3 upstage(스텁)
+```
+
+| 파일 | 누가 읽나 |
+|---|---|
+| 시연용 샘플(파일명 일치) | Tier1 |
+| **텍스트 레이어 없는 PDF (브라우저 인쇄 초본) · 사진** | **Tier1.5** — 초본·등본은 구조 판독, 그 외는 Tier2 정규식을 OCR 텍스트에 적용 |
+| 텍스트 PDF · 암호 PDF | Tier2 (경계 기준을 Tier2와 동일하게: 첫 쪽에 글자가 있거나 암호면 Tier2) |
+| 서류 종류를 못 알아본 파일, OCR 엔진 없는 서버 | 기존 계층 그대로 |
+
+데모 필드로 넘기는 값: `성명`, `생년월일`, `발급일`, `전입일`(= 전북 연속 거주 시작일, 배점 '도 거주기간'의 근거), `주소변동내역`, `현주소시도`, `판독검증`(서류 내부 검증 n/9 통과) + 각 원본 좌표.
+
+OCR 엔진: 환경변수 `ENGINE_V2_OCR` = `applevision`(맥 기본) | `easyocr`(그 외 기본) | `paddle` | `off`
+
+검증: `python -m demo.backend.tests.run_p8_localocr_scenarios` (30개). 기존 p2~p7 790개 회귀 없음.
 
 ---
 
@@ -396,17 +421,18 @@ python -m tools.run_engine data/private/초본.pdf --input data/private/초본.g
 - [~] 7. OCR 선택 — Apple Vision 기준선 7/7. 서버 배포용 후보(EasyOCR/Paddle) 비교 남음
 - [ ] 8. 평가 설계 — 합성 초본 생성기 + 지표
 - [x] 9. 규칙 실행기 (`rules/registry.py`) + 엔진 진입점 (`engine.run`) — 테스트 9개
+- [x] 데모 연결 — Tier1.5 로컬 판독 (p8 시나리오 30개)
 - [ ] 10. 팀 공유 — 채운·지빈 서류 추출기를 `extractors/` 형식에 맞추기
 
 ---
 
 ## 본인 서류 점검 방법
 
-PDF를 다른 곳에 올리지 말고 **본인 PC에서** 실행한다.
+PDF를 다른 곳에 올리지 말고 **본인 PC에서**, **저장소 루트에서** 실행한다. 본인 서류는 `engine_v2/data/private/`에 둔다 (커밋 차단됨).
 
 ```bash
-python -m pip install -r requirements.txt
-python -m tools.inspect_pdf data/private/초본.pdf
+python -m pip install -r engine_v2/requirements.txt
+python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf
 ```
 
 - 텍스트 레이어 유무, 페이지 수, 이미지 수, 암호화 여부를 알려준다.

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Callable
 
-from schemas.models import ApplicantInput, CheckStatus, DocType, ExtractedField
+from ..schemas.models import ApplicantInput, CheckStatus, DocType, ExtractedField
 
 PASS, FAIL, UNKNOWN = CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.UNKNOWN
 

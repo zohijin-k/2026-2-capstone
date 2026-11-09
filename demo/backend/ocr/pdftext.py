@@ -23,8 +23,10 @@ NAME = "pdftext"
 #: 문서종류 분류 키워드. 앞에 오는 항목부터 검사하므로 **더 구체적인 것을 위에** 둔다.
 #: 예: "주민등록표 초본"이 "주민등록표"보다 먼저 와야 초본/등본이 갈린다.
 DOC_TYPE_KEYWORDS: list[tuple[DocType, tuple[str, ...]]] = [
-    (DocType.RESIDENT_ABSTRACT, ("주민등록표초본", "주민등록초본")),
-    (DocType.RESIDENT_CERTIFICATE, ("주민등록표등본", "주민등록등본")),
+    # 실측(2026-11-10): 실제 초본 제목은 "주민등록표 ( 초 본 )" → 공백 제거 후 "주민등록표(초본)".
+    # 괄호가 남아 기존 키워드로는 안 잡혔다. 본문 첫 문장 "이 초본은 ..."도 함께 본다.
+    (DocType.RESIDENT_ABSTRACT, ("주민등록표초본", "주민등록초본", "주민등록표(초본)", "이초본은")),
+    (DocType.RESIDENT_CERTIFICATE, ("주민등록표등본", "주민등록등본", "주민등록표(등본)", "이등본은")),
     (DocType.NHIS_ACQUISITION_LOSS, ("자격득실확인서",)),
     (DocType.NHIS_QUALIFICATION, ("자격확인서", "건강보험자격확인")),
     (DocType.NHIS_PAYMENT, ("보험료납부확인서", "건강보험료납부확인")),

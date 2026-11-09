@@ -5,10 +5,10 @@
   텍스트 레이어 없음 → 이미지 기반, OCR/VLM 필요
 
 사용법
-  python tools/inspect_pdf.py data/private/초본.pdf            # 요약만 (팀 공유 가능)
-  python tools/inspect_pdf.py data/private/초본.pdf --show     # 숫자 마스킹한 본문 (이름·주소는 보임, 공유 금지)
-  python tools/inspect_pdf.py data/private/초본.pdf --dump     # 단어별 좌표 JSON 저장 (data/private/, 커밋 금지)
-  python tools/inspect_pdf.py data/private/초본.pdf --render   # 페이지 PNG 저장 (OCR 실험용, 커밋 금지)
+  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf            # 요약만 (팀 공유 가능)
+  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --show     # 숫자 마스킹한 본문 (이름·주소는 보임, 공유 금지)
+  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --dump     # 단어별 좌표 JSON 저장 (data/private/, 커밋 금지)
+  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --render   # 페이지 PNG 저장 (OCR 실험용, 커밋 금지)
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import json
 import re
 import sys
 from pathlib import Path
+
+from ..paths import PRIVATE_DIR
 
 try:
     import pymupdf as fitz
@@ -65,7 +67,7 @@ def describe_images(page: "fitz.Page") -> list[dict]:
 
 def render_pages(doc: "fitz.Document", src: Path, dpi: int = 300) -> list[Path]:
     """페이지를 PNG로 렌더링. OCR 실험·전처리 확인용 (data/private/, 커밋 금지)."""
-    out_dir = Path("data/private")
+    out_dir = PRIVATE_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for i, page in enumerate(doc):
@@ -123,7 +125,7 @@ def show_masked(doc: "fitz.Document") -> None:
 
 
 def dump_words(doc: "fitz.Document", src: Path) -> Path:
-    out_dir = Path("data/private")
+    out_dir = PRIVATE_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{src.stem}.words.json"
     data = []
@@ -141,8 +143,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="서류 PDF 구조 점검 (로컬 전용)")
     ap.add_argument("pdf", type=Path)
     ap.add_argument("--show", action="store_true", help="숫자 마스킹한 본문 출력")
-    ap.add_argument("--dump", action="store_true", help="단어별 좌표를 data/private/에 저장")
-    ap.add_argument("--render", action="store_true", help="페이지를 300dpi PNG로 data/private/에 저장")
+    ap.add_argument("--dump", action="store_true", help="단어별 좌표를 engine_v2/data/private/에 저장")
+    ap.add_argument("--render", action="store_true", help="페이지를 300dpi PNG로 engine_v2/data/private/에 저장")
     args = ap.parse_args()
 
     if not args.pdf.exists():

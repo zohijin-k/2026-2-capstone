@@ -1,8 +1,8 @@
 """OCR 엔진 비교 — 반드시 본인 PC에서 실행.
 
-  python -m tools.ocr_bench data/private/초본.pdf
-  python -m tools.ocr_bench data/private/초본.pdf --engines applevision easyocr
-  python -m tools.ocr_bench data/private/초본.pdf --gt data/private/초본.gt.json
+  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf
+  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf --engines applevision easyocr
+  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf --gt engine_v2/data/private/초본.gt.json
 
 출력 (터미널) — 팀 공유 가능: 엔진별 시간, 인식 단어 수, 평균 신뢰도, 키워드 적중, 정답 필드 맞음/틀림
 저장 (data/private/ocr_<엔진>.txt) — 엔진별 전체 인식 텍스트. 개인정보 포함, 공유·커밋 금지
@@ -25,8 +25,10 @@ import re
 from datetime import date
 from pathlib import Path
 
-from pipeline.ocr import ENGINES, run_ocr
-from pipeline.preprocess import PageSource, preprocess
+from ..paths import PRIVATE_DIR
+
+from ..pipeline.ocr import ENGINES, run_ocr
+from ..pipeline.preprocess import PageSource, preprocess
 
 # 초본에 거의 항상 등장하는 고정 문구 — 읽혔는지로 기본 인식력 확인 (개인정보 아님)
 KEYWORDS = ["주민등록표", "초본", "성명", "주민등록번호", "주소", "발생일", "신고일",
@@ -72,7 +74,7 @@ def main() -> None:
 
     pages = [p for p in preprocess(args.file) if p.source != PageSource.TEXT_LAYER]
     gt = json.loads(args.gt.read_text(encoding="utf-8")) if args.gt else None
-    out_dir = Path("data/private")
+    out_dir = PRIVATE_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"페이지 {len(pages)}쪽, 엔진 {args.engines}\n")

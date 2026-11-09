@@ -1,16 +1,16 @@
 """초본 추출기 테스트 — 실측 레이아웃 좌표를 그대로 본뜬 가짜 OCR 결과 사용 (개인정보 없음).
 
-  python -m pytest tests/ -q      또는      python -m tests.test_resident_abstract
+  python -m pytest tests/ -q      또는      python -m engine_v2.tests.test_resident_abstract
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from extractors.resident_abstract import extract, months_between, trailing_residence_start
-from pipeline.ocr import OcrResult, OcrWord
-from pipeline.preprocess import PageImage, PageSource
-from schemas.models import DocType
+from ..extractors.resident_abstract import extract, months_between, trailing_residence_start
+from ..pipeline.ocr import OcrResult, OcrWord
+from ..pipeline.preprocess import PageImage, PageSource
+from ..schemas.models import DocType
 
 W, H = 2066, 2923
 

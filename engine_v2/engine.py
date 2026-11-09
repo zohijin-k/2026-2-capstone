@@ -16,12 +16,12 @@ from typing import Any, Callable
 
 import yaml
 
-from extractors import resident_abstract
-from extractors.resident_abstract import kst_today
-from pipeline.ocr import OcrResult, run_ocr
-from pipeline.preprocess import PageImage, PageSource, preprocess
-from rules.registry import RULES, RuleContext
-from schemas.models import (ApplicationInput, ApplicationResult, CheckResult, CheckStatus,
+from .extractors import resident_abstract
+from .extractors.resident_abstract import kst_today
+from .pipeline.ocr import OcrResult, run_ocr
+from .pipeline.preprocess import PageImage, PageSource, preprocess
+from .rules.registry import RULES, RuleContext
+from .schemas.models import (ApplicationInput, ApplicationResult, CheckResult, CheckStatus,
                             DocType, DocumentInput, DocumentResult, Evidence, ExtractedField,
                             InternalAssessment, Verdict)
 

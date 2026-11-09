@@ -26,10 +26,10 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from pipeline.layout import Word, group_lines, line_text, normalize, squash
-from pipeline.ocr import OcrResult
-from pipeline.preprocess import PageImage
-from schemas.models import BBox, DocType, ExtractedField, FieldSource
+from ..pipeline.layout import Word, group_lines, line_text, normalize, squash
+from ..pipeline.ocr import OcrResult
+from ..pipeline.preprocess import PageImage
+from ..schemas.models import BBox, DocType, ExtractedField, FieldSource
 
 # --- 패턴 ---------------------------------------------------------------
 ISO_DATE = re.compile(r"(\d{4})\s*[-.]\s*(\d{1,2})\s*[-.]\s*(\d{1,2})")

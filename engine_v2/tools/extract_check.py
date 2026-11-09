@@ -1,6 +1,6 @@
 """실제 초본에 추출기를 돌려 정답과 비교 — 본인 PC에서 실행.
 
-  python -m tools.extract_check data/private/초본.pdf --gt data/private/초본.gt.json
+  python -m engine_v2.tools.extract_check engine_v2/data/private/초본.pdf --gt engine_v2/data/private/초본.gt.json
 
 출력은 값 대신 맞음/틀림, 검증 통과 여부, 이력 구조(시도·사유)만 보여준다 → 팀 공유 가능.
 """
@@ -12,9 +12,9 @@ import json
 from datetime import date
 from pathlib import Path
 
-from extractors.resident_abstract import extract, kst_today, months_between, resolved_sido, trailing_residence_start
-from pipeline.ocr import run_ocr
-from pipeline.preprocess import PageSource, preprocess
+from ..extractors.resident_abstract import extract, kst_today, months_between, resolved_sido, trailing_residence_start
+from ..pipeline.ocr import run_ocr
+from ..pipeline.preprocess import PageSource, preprocess
 
 
 def main() -> None:
@@ -25,9 +25,9 @@ def main() -> None:
     args = ap.parse_args()
 
     if not args.file.exists():
-        raise SystemExit(f"서류 파일이 없어요: {args.file}  → data/private/ 에 PDF를 넣어주세요")
+        raise SystemExit(f"서류 파일이 없어요: {args.file}  → engine_v2/data/private/ 에 PDF를 넣어주세요")
     if args.gt and not args.gt.exists():
-        raise SystemExit(f"정답 파일이 없어요: {args.gt}  → python -m tools.make_gt 로 만들거나 --gt 없이 실행하세요")
+        raise SystemExit(f"정답 파일이 없어요: {args.gt}  → python -m engine_v2.tools.make_gt 로 만들거나 --gt 없이 실행하세요")
 
     pages = []
     for p in preprocess(args.file):

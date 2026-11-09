@@ -1,16 +1,16 @@
 """규칙 실행기 + 판정 테스트 (가짜 초본, 개인정보 없음).
 
-  python -m tests.test_engine
+  python -m engine_v2.tests.test_engine
 """
 
 from __future__ import annotations
 
 from datetime import date
 
-from engine import combine, evaluate_document, load_rulepack
-from schemas.models import (ApplicantInput, ApplicationInput, CheckStatus, DocType, DocumentInput,
+from ..engine import combine, evaluate_document, load_rulepack
+from ..schemas.models import (ApplicantInput, ApplicationInput, CheckStatus, DocType, DocumentInput,
                             Verdict)
-from tests.test_resident_abstract import build
+from ..tests.test_resident_abstract import build
 
 TODAY = date(2026, 11, 10)
 RP = load_rulepack("doubling_savings")

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from pipeline.ocr import OcrWord
+from ..pipeline.ocr import OcrWord
 
 
 @dataclass

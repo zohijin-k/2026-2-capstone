@@ -1,11 +1,11 @@
 """실제 서류로 엔진 전체 실행 — 본인 PC에서.
 
-  python -m tools.run_engine data/private/초본.pdf --input data/private/초본.gt.json
-  python -m tools.run_engine data/private/초본.pdf --input data/private/초본.gt.json --issue-date 2026-11-09   # 일부러 틀리게
+  python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json
+  python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json --issue-date 2026-11-09   # 일부러 틀리게
 
 --input: 신청자 입력값으로 쓸 JSON (make_gt로 만든 정답 파일을 그대로 써도 됨: name, birth_date, issue_date)
 출력: 신청자용 결과 + 규칙별 통과/실패 (값 없음, 공유 가능)
-저장: data/private/result_reviewer.json — 담당자용 전체 결과 (값 포함, 공유 금지)
+저장: engine_v2/data/private/result_reviewer.json — 담당자용 전체 결과 (값 포함, 공유 금지)
 """
 
 from __future__ import annotations
@@ -15,9 +15,11 @@ import json
 from datetime import date
 from pathlib import Path
 
-from engine import run
-from extractors.resident_abstract import kst_today
-from schemas.models import ApplicantInput, ApplicationInput, DocType, DocumentInput
+from ..paths import PRIVATE_DIR
+
+from ..engine import run
+from ..extractors.resident_abstract import kst_today
+from ..schemas.models import ApplicantInput, ApplicationInput, DocType, DocumentInput
 
 
 def main() -> None:
@@ -58,7 +60,7 @@ def main() -> None:
             print(f"  검토사유: {r}")
     print(f"\n신청 최종: {result.status.value}")
 
-    out = Path("data/private/result_reviewer.json")
+    out = PRIVATE_DIR / "result_reviewer.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     print(f"담당자용 전체 결과: {out} (공유 금지)")

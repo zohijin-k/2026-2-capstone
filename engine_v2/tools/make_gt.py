@@ -1,6 +1,6 @@
-"""정답 파일 만들기 — 질문에 답하면 data/private/초본.gt.json 을 만든다.
+"""정답 파일 만들기 — 질문에 답하면 engine_v2/data/private/초본.gt.json 을 만든다.
 
-  python -m tools.make_gt
+  python -m engine_v2.tools.make_gt
 
 초본 이미지(data/private/초본_p0.png)를 옆에 열어두고, 보이는 그대로 입력하면 된다.
 모르는 항목은 그냥 엔터로 건너뛰면 된다. 파일은 본인 PC에만 저장된다.
@@ -13,7 +13,9 @@ import re
 from datetime import date
 from pathlib import Path
 
-OUT = Path("data/private/초본.gt.json")
+from ..paths import PRIVATE_DIR
+
+OUT = PRIVATE_DIR / "초본.gt.json"
 
 
 def ask_date(prompt: str) -> str | None:
@@ -65,7 +67,7 @@ def main() -> None:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(gt, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n저장: {OUT}  (항목 {len(gt)}개, 커밋 금지)")
-    print("다음: python -m tools.ocr_bench data/private/초본.pdf --engines applevision --gt", OUT)
+    print("다음: python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf --engines applevision --gt", OUT)
 
 
 if __name__ == "__main__":

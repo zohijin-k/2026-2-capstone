@@ -1,6 +1,6 @@
 """OCR 결과의 '줄 구조'를 개인정보 없이 보여준다 — 추출 규칙 설계용.
 
-  python -m tools.layout_dump data/private/초본.pdf --engine applevision
+  python -m engine_v2.tools.layout_dump engine_v2/data/private/초본.pdf --engine applevision
 
 양식 라벨(성명, 주소, 발생일, 신고일, 변동사유 ...)은 그대로 두고 나머지는 가린다.
   한글 → ○   숫자 → #   영문 → x
@@ -16,8 +16,8 @@ import argparse
 import re
 from pathlib import Path
 
-from pipeline.ocr import OcrWord, run_ocr
-from pipeline.preprocess import PageSource, preprocess
+from ..pipeline.ocr import OcrWord, run_ocr
+from ..pipeline.preprocess import PageSource, preprocess
 
 # 양식에 고정으로 찍히는 문구만. 개인을 특정할 수 있는 단어(시군·동 이름 등)는 넣지 않는다.
 LABELS = sorted({
