@@ -1,0 +1,116 @@
+/* 본인인증 (데모) — 신청 맨 앞. 서류 본인 대조의 기준을 정하는 화면 */
+
+.idcheck {
+  border: 1px solid #ccc;
+  background: #fff;
+  padding: 22px 24px;
+}
+
+.idcheck__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.idcheck__demo {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.idcheck__form {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  max-width: 460px;
+}
+
+.idcheck__form label {
+  display: grid;
+  grid-template-columns: 80px 1fr;
+  align-items: center;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.idcheck__form label > span {
+  font-weight: 700;
+}
+
+.idcheck__pledge {
+  margin-top: 22px;
+  padding: 14px 16px;
+  border: 1px solid #d7dbe0;
+  background: #f8f9fb;
+}
+
+.idcheck__pledge h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.idcheck__pledge p {
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.idcheck__agree {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.idcheck__sign {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.idcheck__error {
+  margin: 14px 0 0;
+  color: #c00;
+  font-size: 13.5px;
+}
+
+.idcheck__done {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid #177245;
+  background: #f2fbf5;
+}
+
+.idcheck__done strong {
+  color: #177245;
+}
+
+.idcheck__done dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 24px;
+  margin: 10px 0 0;
+}
+
+.idcheck__done dl div {
+  display: flex;
+  gap: 8px;
+}
+
+.idcheck__done dt {
+  color: var(--muted);
+}
+
+.idcheck__done dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.idcheck__done p {
+  margin: 10px 0 0;
+  font-size: 13px;
+}

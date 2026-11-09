@@ -126,8 +126,15 @@ def list_consents(application_id: int) -> list[Consent]:
         )
 
 
+#: 신청자 화면에 보여줄 판독값. "내 서류를 제대로 읽었구나"를 확인하는 데 필요한 것만 둔다.
+#: 전입일·가구원수·건강보험료(배점·소득 판정 근거), 판독 검증 결과 같은 담당자용 값은
+#: 신청자 응답에 아예 싣지 않는다 — 화면에서 숨기는 것만으로는 개발자 도구에 그대로 보인다.
+#: 담당자 화면은 officer.py가 따로 만들므로 전부 보인다.
+APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액")
+
+
 def document_dict(d: Document) -> dict[str, Any]:
-    """업로드 서류 한 건의 화면 표현. 점수는 들어가지 않는다."""
+    """업로드 서류 한 건의 신청자 화면 표현. 점수와 담당자용 판독값은 들어가지 않는다."""
     return {
         "document_id": d.id,
         "slot_key": d.slot_key,
@@ -140,7 +147,11 @@ def document_dict(d: Document) -> dict[str, Any]:
         ),
         "status": d.stage1_status,
         "findings": d.findings_json or [],
-        "extracted": (d.ocr_json or {}).get("fields", {}),
+        "extracted": {
+            k: v
+            for k, v in ((d.ocr_json or {}).get("fields") or {}).items()
+            if k in APPLICANT_VISIBLE_FIELDS
+        },
         "ocr_confidence": (d.ocr_json or {}).get("confidence"),
         "ocr_tier": (d.ocr_json or {}).get("tier"),
         "elapsed_ms": (d.ocr_json or {}).get("elapsed_ms"),

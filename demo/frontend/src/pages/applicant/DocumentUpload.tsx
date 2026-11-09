@@ -34,6 +34,9 @@ const STATUS_LABEL: Record<DocStatus, string> = {
 
 const WORKPLACE_COUNTS = ['1개', '2개', '3개'] as const
 
+/** 판독 계층·신뢰도·소요시간은 신청자에게 의미가 없다. 시연에서 보여줄 때만 `?debug=1`. */
+const SHOW_TECH = new URLSearchParams(window.location.search).has('debug')
+
 function StatusBadge({ status }: { status: DocStatus }) {
   return <span className={`dstatus dstatus--${status.toLowerCase()}`}>{STATUS_LABEL[status]}</span>
 }
@@ -52,12 +55,15 @@ function DocumentResult({
       <div className="dresult__head">
         <StatusBadge status={status} />
         <span className="dresult__file">{doc.file_name}</span>
-        {doc.detected_doc_type && (
+        {/* 적합이면 서류 종류는 이미 맞은 것이라 다시 말하지 않는다 */}
+        {status !== 'PASS' && doc.detected_doc_type && (
           <span className="dresult__detected">판독: {doc.detected_doc_type}</span>
         )}
-        <span className="dresult__meta">
-          {doc.ocr_tier} · 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} · {doc.elapsed_ms ?? 0}ms
-        </span>
+        {SHOW_TECH && (
+          <span className="dresult__meta">
+            {doc.ocr_tier} · 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} · {doc.elapsed_ms ?? 0}ms
+          </span>
+        )}
         <button type="button" className="btn btn--small" onClick={onRetry}>
           다시 올리기
         </button>
@@ -75,8 +81,7 @@ function DocumentResult({
         </div>
       ))}
 
-      {status === 'PASS' && <p className="dfinding__ok">확인이 끝났습니다.</p>}
-
+      {/* 적합 여부는 배지와 슬롯 머리의 '확인 완료'로 이미 보인다 */}
       {extracted.length > 0 && (
         <dl className="dextract">
           {extracted.map(([k, v]) => (

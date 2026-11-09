@@ -171,6 +171,13 @@
   background: #fff5f5;
 }
 
+/* 본인인증 없이 서류 단계로 건너뛴 경우 */
+.flow-block--warn {
+  border-color: #b45309;
+  background: #fffbeb;
+  margin: 0 0 14px;
+}
+
 .flow-block--ok {
   border-color: #177245;
   background: #f2fbf5;

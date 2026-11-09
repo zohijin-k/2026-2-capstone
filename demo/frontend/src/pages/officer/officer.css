@@ -953,3 +953,25 @@
   margin: 8px 0 0;
   font-size: 12.5px;
 }
+
+/* 본인인증 표시 — 서류 본인 대조의 기준이 있는지 담당자가 바로 본다 */
+.review__id {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #c7ccd4;
+  border-radius: 999px;
+  color: #4b5563;
+  white-space: nowrap;
+}
+
+.review__id--ok {
+  border-color: #177245;
+  color: #177245;
+  background: #f2fbf5;
+}
+
+.review__id--none {
+  border-color: #b45309;
+  color: #b45309;
+  background: #fffbeb;
+}

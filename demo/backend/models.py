@@ -31,6 +31,10 @@ class Application(SQLModel, table=True):
     form5_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     #: 서류 체크리스트를 조립하는 입력 (근로유형·사업장 수·자필서명 여부)
     doc_context_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    #: 본인인증 결과 {name, birth, phone, method, verified_at, pledge_signature_path}.
+    #: 업로드 서류가 '이 신청자의 것인지' 대조하는 기준. 신청서 입력값은 기준이 될 수 없다.
+    #: 실서비스는 로그인 시 PASS·간편인증 결과(+CI)가 들어온다. 데모는 method="demo".
+    identity_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     submitted_at: Optional[datetime] = None

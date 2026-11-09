@@ -5,7 +5,8 @@ P1 범위: 파일 업로드 없이 서식1~5를 끝까지 작성·저장할 수 
 """
 
 import base64
-from datetime import datetime
+import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from sqlmodel import select
 
-from ..models import Application, Consent, get_session
+from ..models import STATUS_DRAFT, Application, Consent, get_session
 from ..rules.programs import get_program
 from ..rules.self_check import evaluate
 
@@ -48,6 +49,40 @@ class ConsentItem(BaseModel):
 
 class ConsentRequest(BaseModel):
     consents: list[ConsentItem]
+
+
+class IdentityRequest(BaseModel):
+    name: str
+    #: YYYY-MM-DD
+    birth: str
+    phone: str
+    #: "본인이 맞으며, 타인 서류·허위 제출 시 불이익에 동의합니다"
+    pledge: bool
+    #: 서약 전자서명 data URL (data:image/png;base64,...)
+    signature_data_url: str
+
+
+#: 본인인증 방식. 실서비스는 로그인 시 PASS·간편인증 결과를 받으므로 이 값이 바뀐다.
+IDENTITY_METHOD = "demo"
+
+
+def _ymd(d: date) -> dict[str, str]:
+    """서식1의 년·월·일 3분할 입력 형태."""
+    return {"y": str(d.year), "m": str(d.month), "d": str(d.day)}
+
+
+def _lock_identity(form1: dict[str, Any], identity: dict[str, Any]) -> dict[str, Any]:
+    """신청서의 성명·생년월일을 본인인증 값으로 고정한다.
+
+    화면에서 칸을 잠그는 것만으로는 부족하다 — API를 직접 부르면 바꿀 수 있다.
+    신청 도중 성명을 바꿔 남의 서류에 맞추는 것을 서버에서 막는다.
+    """
+    if not identity:
+        return form1
+    locked = dict(form1)
+    locked["name"] = identity["name"]
+    locked["birth"] = _ymd(date.fromisoformat(identity["birth"]))
+    return locked
 
 
 def _next_application_no(program_code: str) -> str:
@@ -93,7 +128,7 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
         if app is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
         if body.form1 is not None:
-            app.form1_json = body.form1
+            app.form1_json = _lock_identity(body.form1, app.identity_json or {})
         if body.self_check is not None:
             app.self_check_json = body.self_check
         if body.form5 is not None:
@@ -103,6 +138,60 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
         s.commit()
         s.refresh(app)
         return app.model_dump()
+
+
+@router.post("/{application_id}/identity")
+def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any]:
+    """본인인증 (데모).
+
+    실서비스는 로그인할 때 PASS·간편인증으로 성명·생년월일·CI를 받는다. 데모는 그 단계를
+    흉내 내어 입력값을 그대로 인증 결과로 쓴다 — 실연동 시 바꾸는 곳은 이 함수 하나다.
+    인증 결과는 신청 건마다 한 번만 정한다. 바꾸려면 새 신청으로 시작한다.
+    """
+    name = re.sub(r"\s+", "", body.name)
+    if not name:
+        raise HTTPException(400, "성명을 입력해 주세요.")
+    try:
+        birth = date.fromisoformat(body.birth)
+    except ValueError:
+        raise HTTPException(400, "생년월일을 확인해 주세요.") from None
+    if birth >= date.today():
+        raise HTTPException(400, "생년월일을 확인해 주세요.")
+    phone = re.sub(r"\D", "", body.phone)
+    if not 10 <= len(phone) <= 11:
+        raise HTTPException(400, "휴대폰 번호를 확인해 주세요.")
+    if not body.pledge:
+        raise HTTPException(400, "본인 확인 서약에 동의해 주세요.")
+    if "," not in body.signature_data_url:
+        raise HTTPException(400, "서약란에 서명해 주세요.")
+
+    with get_session() as s:
+        app = s.get(Application, application_id)
+        if app is None:
+            raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
+        if app.status != STATUS_DRAFT:
+            raise HTTPException(409, "이미 제출된 신청입니다.")
+        if app.identity_json:
+            raise HTTPException(409, "이미 본인인증을 마친 신청입니다. 다른 사람으로 신청하려면 새로 시작해 주세요.")
+
+        SIGNATURES.mkdir(parents=True, exist_ok=True)
+        target = SIGNATURES / f"{app.application_no}_identity_pledge.png"
+        target.write_bytes(base64.b64decode(body.signature_data_url.split(",", 1)[1]))
+
+        app.identity_json = {
+            "name": name,
+            "birth": birth.isoformat(),
+            "phone": f"{phone[:3]}-****-{phone[-4:]}",
+            "method": IDENTITY_METHOD,
+            "verified_at": datetime.now().isoformat(timespec="seconds"),
+            "pledge_signature_path": str(target.relative_to(STORAGE.parent)),
+        }
+        app.form1_json = _lock_identity(app.form1_json or {}, app.identity_json)
+        app.updated_at = datetime.now()
+        s.add(app)
+        s.commit()
+        s.refresh(app)
+        return {"identity": app.identity_json, "form1": app.form1_json}
 
 
 @router.post("/{application_id}/self-check")

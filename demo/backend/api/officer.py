@@ -862,6 +862,13 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
         "application_id": app.id,
         "application_no": app.application_no,
         "name": entry.name,
+        # 본인인증 여부. 연락처 등 원문은 내보내지 않는다.
+        "identity": {
+            "verified": bool(app.identity_json),
+            "method": (app.identity_json or {}).get("method"),
+            "verified_at": (app.identity_json or {}).get("verified_at"),
+            "pledge_signed": bool((app.identity_json or {}).get("pledge_signature_path")),
+        },
         "program_code": app.program_code,
         "program_name": entry.program.name,
         "region": entry.region,

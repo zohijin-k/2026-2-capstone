@@ -429,3 +429,11 @@
   margin-left: 8px;
   white-space: nowrap;
 }
+
+/* 본인인증 정보로 채워져 고칠 수 없는 칸 */
+.form-input[readonly],
+.form-date input[readonly] {
+  background: #f3f4f6;
+  color: #374151;
+  cursor: not-allowed;
+}

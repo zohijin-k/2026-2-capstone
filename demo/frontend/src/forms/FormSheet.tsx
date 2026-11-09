@@ -159,9 +159,18 @@ interface TextProps {
   ariaLabel: string
   placeholder?: string
   type?: 'text' | 'tel' | 'email'
+  /** 본인인증 값처럼 신청자가 고칠 수 없는 칸 */
+  readOnly?: boolean
 }
 
-export function Text({ value, onChange, ariaLabel, placeholder, type = 'text' }: TextProps) {
+export function Text({
+  value,
+  onChange,
+  ariaLabel,
+  placeholder,
+  type = 'text',
+  readOnly = false,
+}: TextProps) {
   return (
     <input
       className="form-input"
@@ -169,6 +178,8 @@ export function Text({ value, onChange, ariaLabel, placeholder, type = 'text' }:
       value={value}
       placeholder={placeholder}
       aria-label={ariaLabel}
+      readOnly={readOnly}
+      title={readOnly ? '본인인증 정보로 채워진 칸입니다' : undefined}
       onChange={(e) => onChange(e.target.value)}
     />
   )
@@ -183,10 +194,12 @@ export function DateTriple({
   value,
   onChange,
   ariaPrefix,
+  readOnly = false,
 }: {
   value: YMD
   onChange: (v: YMD) => void
   ariaPrefix: string
+  readOnly?: boolean
 }) {
   const set = (k: keyof YMD, max: number) => (raw: string) => {
     const digits = raw.replace(/\D/g, '').slice(0, k === 'y' ? 4 : 2)
@@ -199,6 +212,7 @@ export function DateTriple({
         className="form-date__y"
         inputMode="numeric"
         aria-label={`${ariaPrefix} 년`}
+        readOnly={readOnly}
         value={value.y}
         onChange={(e) => set('y', 9999)(e.target.value)}
       />
@@ -207,6 +221,7 @@ export function DateTriple({
         className="form-date__m"
         inputMode="numeric"
         aria-label={`${ariaPrefix} 월`}
+        readOnly={readOnly}
         value={value.m}
         onChange={(e) => set('m', 12)(e.target.value)}
       />
@@ -215,6 +230,7 @@ export function DateTriple({
         className="form-date__d"
         inputMode="numeric"
         aria-label={`${ariaPrefix} 일`}
+        readOnly={readOnly}
         value={value.d}
         onChange={(e) => set('d', 31)(e.target.value)}
       />

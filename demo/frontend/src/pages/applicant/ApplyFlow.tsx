@@ -1,8 +1,11 @@
 /**
  * 신청자 플로우.
  *
- *   [0] 사업 선택 → [1] 자가진단 → [2] 신청서 → [3] 동의 → (취업패키지: 지원 항목)
- *   → [4] 서류 업로드(즉시 판정) → [5] 제출 전 최종 확인 → [6] 제출 → [7] 마이페이지
+ *   [0] 사업 선택 → 본인인증(데모) → 자가진단 → 신청서 → 동의 → (취업패키지: 지원 항목)
+ *   → 서류 업로드(즉시 판정) → 제출 전 최종 확인 → 제출 → 마이페이지
+ *
+ * 본인인증이 맨 앞에 오는 이유: 업로드 서류가 '이 신청자의 것인지' 대조할 기준이
+ * 필요하다. 신청서의 성명·생년월일은 인증 값으로 채워지고 잠긴다.
  *
  * 두배적금은 서식1의 절(Ⅰ~Ⅳ) 경계를 그대로 스텝 경계로 쓴다. 스텝은 서식을
  * 재구성한 것이 아니라 스크롤 위치를 나눈 것에 가깝고, "서식 전체 보기"를 켜면
@@ -22,12 +25,14 @@ import {
   postConsents,
   postSelfCheck,
   type ConsentPayload,
+  type Identity,
   type Program,
   type SelfCheckResult,
   type SubmitResult,
 } from '../../api.ts'
 import DocumentUpload from './DocumentUpload.tsx'
 import FinalCheck from './FinalCheck.tsx'
+import IdentityCheck from './IdentityCheck.tsx'
 import MyPage from './MyPage.tsx'
 import ProgramPicker from './ProgramPicker.tsx'
 import SubsidyItems from './SubsidyItems.tsx'
@@ -50,6 +55,7 @@ import './apply-flow.css'
 
 type Stage =
   | 'program'
+  | 'identity'
   | 'selfCheck'
   | 'form1'
   | 'consent'
@@ -66,6 +72,13 @@ const FORM1_STEPS = [
 ]
 
 type ConsentType = ConsentPayload['consent_type']
+
+/** 신청서의 성명·생년월일을 본인인증 값으로 덮는다 (서버도 같은 규칙으로 잠근다). */
+function lockIdentity(form: Form1Value, identity: Identity | null): Form1Value {
+  if (!identity) return form
+  const [y, m, d] = identity.birth.split('-')
+  return { ...form, name: identity.name, birth: { y, m: String(Number(m)), d: String(Number(d)) } }
+}
 
 /**
  * 받아야 하는 동의 종류.
@@ -87,6 +100,7 @@ export default function ApplyFlow() {
   const [appNo, setAppNo] = useState('')
   const [stage, setStage] = useState<Stage>('program')
   const [error, setError] = useState('')
+  const [identity, setIdentity] = useState<Identity | null>(null)
 
   const [answers, setAnswers] = useState<SelfCheckAnswers>({})
   const [checkResult, setCheckResult] = useState<SelfCheckResult | null>(null)
@@ -108,11 +122,13 @@ export default function ApplyFlow() {
     setProgram(picked)
     setAnswers({})
     setCheckResult(null)
+    setIdentity(null)
+    setForm1(EMPTY_FORM1)
     createApplication(picked.code)
       .then((a) => {
         setAppId(a.id)
         setAppNo(a.application_no)
-        setStage('selfCheck')
+        setStage('identity')
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
@@ -207,17 +223,24 @@ export default function ApplyFlow() {
       (form5.agree === '동의함' &&
         (signMode === '전자서명' ? !!form5.signature : !!form5.handwrittenFileName)))
 
-  const stages: [Stage, string][] = [
-    ['selfCheck', '1. 자가진단'],
-    ['form1', '2. 신청서 작성'],
-    ['consent', '3. 동의'],
-    ...(program.has_subsidy_items
-      ? ([['subsidy', '4. 지원 항목']] as [Stage, string][])
-      : []),
-    ['upload', `${program.has_subsidy_items ? 5 : 4}. 서류 업로드`],
-    ['final', `${program.has_subsidy_items ? 6 : 5}. 최종 확인`],
-    ['mypage', `${program.has_subsidy_items ? 7 : 6}. 마이페이지`],
+  const stageNames: [Stage, string][] = [
+    ['identity', '본인인증'],
+    ['selfCheck', '자가진단'],
+    ['form1', '신청서 작성'],
+    ['consent', '동의'],
+    ...(program.has_subsidy_items ? ([['subsidy', '지원 항목']] as [Stage, string][]) : []),
+    ['upload', '서류 업로드'],
+    ['final', '최종 확인'],
+    ['mypage', '마이페이지'],
   ]
+  const stages: [Stage, string][] = stageNames.map(([key, label], i) => [key, `${i + 1}. ${label}`])
+
+  /** 신청서 저장. 본인인증을 마쳤으면 성명·생년월일은 인증 값으로 고정된다. */
+  const onForm1 = (next: Form1Value) => {
+    const locked = lockIdentity(next, identity)
+    setForm1(locked)
+    save({ form1: locked })
+  }
 
   return (
     <div className={stage === 'upload' ? 'flow flow--fluid' : 'flow'}>
@@ -243,6 +266,21 @@ export default function ApplyFlow() {
           ))}
         </ol>
       </header>
+
+      {/* ── 본인인증 (데모) ── */}
+      {stage === 'identity' && appId !== null && (
+        <IdentityCheck
+          appId={appId}
+          identity={identity}
+          onVerified={(verified) => {
+            setIdentity(verified)
+            setForm1((prev) => lockIdentity(prev, verified))
+            setStage('selfCheck')
+            window.scrollTo({ top: 0 })
+          }}
+          onNext={() => setStage('selfCheck')}
+        />
+      )}
 
       {/* ── [1] 자가진단 ── */}
       {stage === 'selfCheck' && (
@@ -302,10 +340,8 @@ export default function ApplyFlow() {
           {program.has_subsidy_items ? (
             <FormJobApplication
               value={form1}
-              onChange={(next) => {
-                setForm1(next)
-                save({ form1: next })
-              }}
+              onChange={onForm1}
+              identityLocked={identity !== null}
             />
           ) : (
             <>
@@ -335,11 +371,9 @@ export default function ApplyFlow() {
 
               <Form1Application
                 value={form1}
-                onChange={(next) => {
-                  setForm1(next)
-                  save({ form1: next })
-                }}
+                onChange={onForm1}
                 only={wholeSheet ? undefined : FORM1_STEPS[step].key}
+                identityLocked={identity !== null}
               />
             </>
           )}
@@ -445,6 +479,17 @@ export default function ApplyFlow() {
       {/* ── [5] 서류 업로드 ── */}
       {stage === 'upload' && appId !== null && (
         <>
+          {identity === null && (
+            <div className="flow-block flow-block--warn">
+              <strong>본인인증 전입니다.</strong>
+              <p>
+                지금 올리는 서류는 본인 명의인지 대조하지 않습니다.{' '}
+                <button type="button" className="btn btn--small" onClick={() => jumpTo('identity')}>
+                  본인인증 하러 가기
+                </button>
+              </p>
+            </div>
+          )}
           <DocumentUpload key={checklistKey} applicationId={appId} />
           <div className="flow__actions">
             <button

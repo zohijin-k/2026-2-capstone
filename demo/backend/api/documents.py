@@ -18,6 +18,7 @@ from sqlmodel import select
 
 from ..models import UNASSIGNED_SLOT, Application, Document, get_session
 from ..ocr import read_document, split_pdf_pages
+from ..rules.identity import identity_of
 from ..ocr.base import OcrResult
 from ..rules.doc_check import THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
@@ -262,7 +263,9 @@ async def upload_document(
     path.write_bytes(await file.read())
 
     ocr = read_document(str(path), req.doc_type)
-    result = check_document(req, ocr, declared, path.suffix.lstrip(".").lower())
+    result = check_document(
+        req, ocr, declared, path.suffix.lstrip(".").lower(), identity_of(app.identity_json)
+    )
 
     _replace_existing(application_id, req.slot_key)
     row = _save_row(
@@ -358,7 +361,7 @@ async def _upload_merged(
             continue
 
         taken.add(req.slot_key)
-        result = check_document(req, ocr, None, "pdf")
+        result = check_document(req, ocr, None, "pdf", identity_of(app.identity_json))
         _replace_existing(app.id or 0, req.slot_key)
         row = _save_row(
             app,

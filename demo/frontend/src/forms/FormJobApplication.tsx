@@ -32,9 +32,15 @@ const COLS = [18, 32, 18, 32]
 interface Props {
   value: Form1Value
   onChange: (next: Form1Value) => void
+  /** 성명·생년월일을 본인인증 값으로 잠근다 */
+  identityLocked?: boolean
 }
 
-export default function FormJobApplication({ value: v, onChange }: Props) {
+export default function FormJobApplication({
+  value: v,
+  onChange,
+  identityLocked = false,
+}: Props) {
   const set =
     <K extends keyof Form1Value>(key: K) =>
     (next: Form1Value[K]) =>
@@ -56,11 +62,11 @@ export default function FormJobApplication({ value: v, onChange }: Props) {
         <tr>
           <LabelCell>성명</LabelCell>
           <Cell>
-            <Text ariaLabel="신청자 이름" value={v.name} onChange={set('name')} />
+            <Text ariaLabel="신청자 이름" value={v.name} onChange={set('name')} readOnly={identityLocked} />
           </Cell>
           <LabelCell>생년월일</LabelCell>
           <Cell>
-            <DateTriple value={v.birth} onChange={set('birth')} ariaPrefix="생년월일" />
+            <DateTriple value={v.birth} onChange={set('birth')} ariaPrefix="생년월일" readOnly={identityLocked} />
           </Cell>
         </tr>
 

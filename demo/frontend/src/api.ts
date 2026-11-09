@@ -407,6 +407,40 @@ export const patchApplication = (
     body: JSON.stringify(body),
   })
 
+/** 본인인증 결과. 서류 본인 대조의 기준이 된다 (연락처는 가려서 돌아온다). */
+export interface Identity {
+  name: string
+  birth: string
+  phone: string
+  method: string
+  verified_at: string
+}
+
+export interface IdentityPayload {
+  name: string
+  /** YYYY-MM-DD */
+  birth: string
+  phone: string
+  pledge: boolean
+  signature_data_url: string
+}
+
+/** 본인인증 (데모). 실패 사유는 서버 문구 그대로 보여준다. */
+export async function verifyIdentity(id: number, body: IdentityPayload): Promise<Identity> {
+  const res = await fetch(`/api/applications/${id}/identity`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const data = (await res.json().catch(() => null)) as
+    | { identity?: Identity; detail?: string }
+    | null
+  if (!res.ok || !data?.identity) {
+    throw new Error(data?.detail ?? `본인인증 실패 (${res.status})`)
+  }
+  return data.identity
+}
+
 export const postSelfCheck = (id: number, answers: Record<string, string>) =>
   json<SelfCheckResult>(`/api/applications/${id}/self-check`, {
     method: 'POST',
@@ -714,6 +748,13 @@ export interface ReviewDetailData {
   application_id: number
   application_no: string
   name: string
+  /** 본인인증 여부. 목업 데이터에는 없다. */
+  identity?: {
+    verified: boolean
+    method: string | null
+    verified_at: string | null
+    pledge_signed: boolean
+  }
   program_code: string
   program_name: string
   region: string
