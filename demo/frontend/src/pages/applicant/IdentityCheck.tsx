@@ -11,7 +11,7 @@
  * 서명은 화면에 직접 하거나, 서명 파일(PNG·JPG·PDF, 5MB 이하)을 올린다.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 import { verifyIdentity, type Identity } from '../../api.ts'
 import SignaturePad from '../../components/SignaturePad.tsx'
@@ -23,8 +23,29 @@ const SIGN_MODES = ['직접 서명', '서명 파일 올리기'] as const
 type SignMode = (typeof SIGN_MODES)[number]
 
 const SIGN_FILE_ACCEPT = '.png,.jpg,.jpeg,.pdf'
-const SIGN_FILE_TYPES = ['image/png', 'image/jpeg', 'application/pdf']
 const SIGN_FILE_MAX = 5 * 1024 * 1024
+/** 확장자 → 형식. 브라우저가 형식을 비워 보내는 경우가 있어 확장자로도 판별한다. */
+const SIGN_FILE_EXT: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  pdf: 'application/pdf',
+}
+
+function signFileType(file: File): string | null {
+  if (Object.values(SIGN_FILE_EXT).includes(file.type)) return file.type
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return SIGN_FILE_EXT[ext] ?? null
+}
+
+interface SignFile {
+  name: string
+  type: string
+  /** 서버로 보낼 값 */
+  dataUrl: string
+  /** 화면 미리보기용 (blob URL) */
+  previewUrl: string
+}
 
 const PLEDGE =
   '본인은 위 정보의 당사자이며, 신청에 제출하는 서류는 모두 본인 명의임을 확인합니다. ' +
@@ -45,9 +66,16 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [pledge, setPledge] = useState(false)
   const [signMode, setSignMode] = useState<SignMode>('직접 서명')
   const [drawn, setDrawn] = useState('')
-  const [file, setFile] = useState<{ name: string; type: string; dataUrl: string } | null>(null)
+  const [file, setFile] = useState<SignFile | null>(null)
+  const [fileKey, setFileKey] = useState(0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // 미리보기 URL은 파일을 바꾸거나 화면을 떠날 때 해제한다.
+  useEffect(() => {
+    if (!file) return undefined
+    return () => URL.revokeObjectURL(file.previewUrl)
+  }, [file])
 
   if (identity) {
     return (
@@ -94,7 +122,8 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
       setFile(null)
       return
     }
-    if (!SIGN_FILE_TYPES.includes(picked.type)) {
+    const type = signFileType(picked)
+    if (!type) {
       setFile(null)
       setError('서명 파일은 PNG·JPG·PDF만 올릴 수 있습니다.')
       return
@@ -105,9 +134,18 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
       return
     }
     const reader = new FileReader()
-    reader.onload = () =>
-      setFile({ name: picked.name, type: picked.type, dataUrl: String(reader.result) })
+    reader.onload = () => {
+      // 형식을 비워 보낸 파일도 서버가 읽을 수 있게 data URL 머리를 판별한 형식으로 맞춘다.
+      const raw = String(reader.result)
+      const dataUrl = `data:${type};base64,${raw.slice(raw.indexOf(',') + 1)}`
+      setFile({ name: picked.name, type, dataUrl, previewUrl: URL.createObjectURL(picked) })
+    }
     reader.readAsDataURL(picked)
+  }
+
+  const clearFile = () => {
+    setFile(null)
+    setFileKey((k) => k + 1) // 같은 파일을 다시 고를 수 있게 입력칸을 새로 만든다
   }
 
   const submit = async () => {
@@ -174,11 +212,11 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
           위 내용을 확인했으며 동의합니다.
         </label>
         <div className="idcheck__sign">
-          <span>서명</span>
+          <span className="idcheck__sign-label">서명</span>
           <div>
-            <div className="idcheck__modes">
+            <div className="idcheck__modes" role="radiogroup" aria-label="서명 방식">
               {SIGN_MODES.map((m) => (
-                <label key={m} className="form-check">
+                <label key={m} className="idcheck__mode">
                   <input
                     type="radio"
                     name="identity-sign-mode"
@@ -196,19 +234,40 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
               <SignaturePad value={drawn} onChange={setDrawn} />
             ) : (
               <div className="idcheck__file">
-                <input
-                  type="file"
-                  accept={SIGN_FILE_ACCEPT}
-                  aria-label="서명 파일"
-                  onChange={(e) => pickFile(e.target.files?.[0])}
-                />
-                <p className="idcheck__hint">PNG·JPG·PDF, 5MB 이하</p>
-                {file &&
-                  (file.type.startsWith('image/') ? (
-                    <img className="idcheck__preview" src={file.dataUrl} alt="올린 서명" />
-                  ) : (
-                    <p className="idcheck__filename">{file.name}</p>
-                  ))}
+                {!file && (
+                  <>
+                    <input
+                      key={fileKey}
+                      type="file"
+                      accept={SIGN_FILE_ACCEPT}
+                      aria-label="서명 파일"
+                      onChange={(e) => pickFile(e.target.files?.[0])}
+                    />
+                    <p className="idcheck__hint">PNG·JPG·PDF, 5MB 이하</p>
+                  </>
+                )}
+                {file && (
+                  <figure className="idcheck__previewbox">
+                    {file.type === 'application/pdf' ? (
+                      <object
+                        className="idcheck__preview idcheck__preview--pdf"
+                        data={`${file.previewUrl}#toolbar=0&navpanes=0&view=Fit`}
+                        type="application/pdf"
+                        aria-label="올린 서명 미리보기"
+                      >
+                        <p className="idcheck__filename">{file.name}</p>
+                      </object>
+                    ) : (
+                      <img className="idcheck__preview" src={file.previewUrl} alt="올린 서명 미리보기" />
+                    )}
+                    <figcaption>
+                      <span className="idcheck__filename">{file.name}</span>
+                      <button type="button" className="btn btn--small" onClick={clearFile}>
+                        다시 선택
+                      </button>
+                    </figcaption>
+                  </figure>
+                )}
               </div>
             )}
           </div>
