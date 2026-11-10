@@ -617,11 +617,11 @@ def _build_form5(doc: Any):
     sheet = read_sheet(doc[0], 0)
     fields = _text_fields(sheet, FORM5_TEXTS)
     fields.update(_choice_line(sheet, "agree", 442.8))
-    fields["name"]["box"][2] = 365.0
     fields["signature"] = {
         "type": "image", "page": sheet.number, "box": [369.5, 604.5, 401.9, 620.0],
         "anchor": "(서명또는인)",
     }
+    fields["name"]["box"][2] = round(fields["signature"]["box"][0] - 2.0, 2)
     return fields, []
 
 
@@ -630,8 +630,9 @@ def _build_job_application(doc: Any):
     specs = (
         TextField("name", "성  명", y_hint=139.1), TextField("birth", "생년월일", y_hint=139.1),
         TextField("address", "주  소", y_hint=170.7), TextField("mobile", "연락처", y_hint=189.3),
-        TextField("email", "이메일", y_hint=189.3), TextField("bankName", "은행", y_hint=210.1),
-        TextField("accountNo", "계좌번호", mode="after", y_hint=210.1),
+        TextField("email", "이메일", y_hint=189.3),
+        TextField("bankName", "계좌번호(", mode="after", y_hint=210.1),
+        TextField("accountNo", "은행)", mode="after", y_hint=210.1),
         TextField("job.photo.paymentDate", "결 제 일", y_hint=282.0),
         TextField("job.photo.cost", "사진비용", y_hint=282.0),
     )
@@ -677,10 +678,14 @@ def _build_job_consent(doc: Any):
     fields.update(_choice_line(sheet, "consent.privacy", 298.9))
     fields.update(_choice_line(sheet, "consent.thirdParty", 439.5))
     fields.update(_text_fields(sheet, (
-        TextField("consent.job.year", "2026년", mode="after", y_hint=664.0),
-        TextField("consent.job.month", "2026년 월", mode="after", y_hint=664.0, align="center"),
-        TextField("consent.job.day", "2026년 월 일", mode="after", y_hint=664.0, align="center"),
+        TextField("consent.job.month", "2026년", mode="after", y_hint=664.0, align="center"),
+        TextField("consent.job.day", "2026년 월", mode="after", y_hint=664.0, align="center"),
+        TextField("name", "신청인 :", mode="after", y_hint=705.4),
     )))
+    fields["name"]["box"][2] = 445.0
+    fields["consent.job.signature"] = _image_field(
+        sheet, ImageField("consent.job.signature", "(인)", y_hint=705.4, grow=(65, 0, -28, 0))
+    )
     return fields, []
 
 
@@ -703,6 +708,9 @@ def _build_form1_fields(doc: Any):
     fields = {spec.key: _text_field(p0, spec) for spec in FORM1_TEXTS_P0}
     for group in FORM1_CHECKS_P0:
         fields.update(_check_group(p0, group))
+    fields["householdSizeCount"] = _text_field(
+        p0, TextField("householdSizeCount", "10인 이상(", mode="after", y_hint=538.0, align="center")
+    )
     fields.update({spec.key: _text_field(p1, spec) for spec in FORM1_TEXTS_P1})
     for group in FORM1_CHECKS_P1:
         fields.update(_check_group(p1, group))

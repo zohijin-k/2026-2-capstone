@@ -79,6 +79,7 @@ def build_form1(app: Application, **_: Any) -> FilledForm:
         "bankName",
         "accountNo",
         "accountHolder",
+        "householdSizeCount",
     ):
         _put(filled.texts, key, form1.get(key))
 
@@ -144,7 +145,8 @@ def build_consent_form(form_no: str, app: Application, consents: list[Consent], 
     prefix = "consent.job" if form_no == "job_consent" else f"consent.form{form_no[-1]}"
     year, month, day = _written_values(stamp)
     if form_no == "job_consent":
-        for key, value in (("year", year), ("month", month), ("day", day)):
+        # 원본에 연도(2026년)가 인쇄되어 있어 월·일만 채운다.
+        for key, value in (("month", month), ("day", day)):
             _put(filled.texts, f"{prefix}.{key}", value)
     else:
         _put(filled.texts, f"{prefix}.year", year)

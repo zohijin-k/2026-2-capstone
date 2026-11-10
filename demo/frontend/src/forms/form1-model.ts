@@ -70,6 +70,8 @@ export interface Form1Value {
   transferIn: YMD
   householdType: string
   householdSize: string
+  /** 가구원 수가 10인 이상일 때 원본 서식의 괄호 안에 적는 인원 수. */
+  householdSizeCount: string
   workType: string
   employedAt: YMD
   workplaceRegion: string
@@ -103,6 +105,7 @@ export const EMPTY_FORM1: Form1Value = {
   transferIn: EMPTY_YMD,
   householdType: '',
   householdSize: '',
+  householdSizeCount: '',
   workType: '',
   employedAt: EMPTY_YMD,
   workplaceRegion: '',
