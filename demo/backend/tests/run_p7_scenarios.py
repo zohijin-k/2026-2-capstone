@@ -346,7 +346,7 @@ def test_coordinate_maps() -> None:
     """좌표가 원본 PDF에서 나온 그대로인지."""
     import pymupdf as fitz
 
-    from ...fixtures.build_form_coords import BUILDERS
+    from ...fixtures.build_form_coords import BUILDERS, _annotate_choice_geometry, read_sheet
 
     print("\n[1] 좌표 맵 — 원본 PDF에서 다시 뽑아 대조")
 
@@ -357,6 +357,11 @@ def test_coordinate_maps() -> None:
         saved = json.loads((COORDS / f"{form_no}.json").read_text(encoding="utf-8"))
         with fitz.open(TEMPLATES / f"{form_no}.pdf") as doc:
             rebuilt, masks = BUILDERS[form_no](doc)
+            _annotate_choice_geometry(
+                rebuilt,
+                [read_sheet(page, page_no) for page_no, page in enumerate(doc)],
+                form_no,
+            )
             page_rects = [page.rect for page in doc]
             markers = ["".join(p["title"].split()) for p in saved["source"]["pages"]]
             found = [
@@ -504,6 +509,20 @@ def test_form1_roundtrip(client, ds_id: int) -> None:
     print("\n[3] 서식1 왕복 — 값 → 좌표 → 되읽기")
     _, body = export(client, ds_id, "서식1")
     roundtrip("서식1", body, EXPECTED_TEXTS_FORM1, EXPECTED_CHECKS_FORM1)
+
+
+def test_email_format_validation(client, ds_id: int) -> None:
+    print("\n[이메일] 전각 입력 정리와 형식 검증")
+    fullwidth = dict(P7_FORM1, email="　ｄｅｍｏ＠ｅｘａｍｐｌｅ．ｃｏｍ　")
+    saved = client.patch(f"/api/applications/{ds_id}", json={"form1": fullwidth})
+    check("전각 이메일·앞뒤 공백 정리 저장", saved.status_code, 200)
+    check("정규화 이메일 값", saved.json().get("form1_json", {}).get("email"), "demo@example.com")
+
+    for value in ("ㅎㅎ", "user@", "user@domain"):
+        invalid = dict(P7_FORM1, email=value)
+        response = client.patch(f"/api/applications/{ds_id}", json={"form1": invalid})
+        check(f"잘못된 이메일 거부 ({value})", response.status_code, 400)
+        check(f"잘못된 이메일 안내 ({value})", response.json().get("detail"), "이메일 형식을 확인해 주세요.")
 
 
 def test_self_check_marks(client, ds_id: int) -> None:
@@ -844,6 +863,7 @@ def main(clock_day: date | None = None) -> int:
             ds_id, jp_id = seed(client, tmp)
             test_export_headers(client, ds_id, jp_id)
             test_form1_roundtrip(client, ds_id)
+            test_email_format_validation(client, ds_id)
             test_self_check_marks(client, ds_id)
             test_form5_roundtrip(client, ds_id, clock_day)
             test_signature(client, ds_id)

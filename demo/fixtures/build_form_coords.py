@@ -125,20 +125,25 @@ class Sheet:
         _, line, first, last = hits[0]
         return line, first, last
 
-    def boxes(self) -> list[tuple[Char, str]]:
-        """`□` 글자와 그 뒤에 붙은 보기 문구."""
-        out: list[tuple[Char, str]] = []
+    def option_boxes(self) -> list[tuple[Char, str, list[Char]]]:
+        """`□` 글자와 다음 보기 전까지의 글자·문구 bbox를 반환한다."""
+        out: list[tuple[Char, str, list[Char]]] = []
         for line in self.lines:
             for i, ch in enumerate(line.chars):
                 if ch.c not in {"□", "☐"}:
                     continue
-                label: list[str] = []
+                label_chars: list[Char] = []
                 for nxt in line.chars[i + 1 :]:
                     if nxt.c in {"□", "☐"}:
                         break
-                    label.append(nxt.c)
-                out.append((ch, "".join(label).strip()))
+                    label_chars.append(nxt)
+                visible_chars = [char for char in label_chars if char.c.strip()]
+                out.append((ch, "".join(char.c for char in label_chars).strip(), visible_chars))
         return out
+
+    def boxes(self) -> list[tuple[Char, str]]:
+        """`□` 글자와 그 뒤에 붙은 보기 문구."""
+        return [(char, label) for char, label, _ in self.option_boxes()]
 
     # -- 표 격자 -----------------------------------------------------------
     def cell_at(self, x: float, y: float) -> tuple[float, float, float, float]:
@@ -525,19 +530,27 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
 def _check_group(sheet: Sheet, spec: CheckGroup) -> dict[str, dict[str, Any]]:
     line, first, last = sheet.find(spec.anchor, spec.y_hint)
     baseline = line.chars[last].oy
-    candidates = sheet.boxes()
+    candidates = sheet.option_boxes()
     out: dict[str, dict[str, Any]] = {}
     for option in spec.options:
         target = norm(option)
         matches = [
-            (len(norm(label)), ch, label)
-            for ch, label in candidates
+            (len(norm(label)), ch, label, label_chars)
+            for ch, label, label_chars in candidates
             if norm(label).startswith(target)
         ]
         if not matches:
             raise LookupError(f"{spec.key}: 보기 {option!r} 체크 위치를 찾지 못했습니다.")
         matches.sort(key=lambda m: (abs(m[1].oy - (spec.y_hint or baseline)), m[0]))
-        _, ch, label = matches[0]
+        _, ch, label, label_chars = matches[0]
+        label_box = None
+        if label_chars:
+            label_box = [
+                round(min(char.x0 for char in label_chars), 2),
+                round(min(char.y0 for char in label_chars), 2),
+                round(max(char.x1 for char in label_chars), 2),
+                round(max(char.y1 for char in label_chars), 2),
+            ]
         out[f"{spec.key}.{option}"] = {
             "type": "check",
             "page": sheet.number,
@@ -545,6 +558,7 @@ def _check_group(sheet: Sheet, spec: CheckGroup) -> dict[str, dict[str, Any]]:
             "y": round(ch.oy, 2),
             "size": round(ch.size, 2),
             "box": [round(ch.x0, 2), round(ch.y0, 2), round(ch.x1, 2), round(ch.y1, 2)],
+            **({"label_box": label_box} if label_box else {}),
             "label": label,
         }
     return out
@@ -565,18 +579,24 @@ def _image_field(sheet: Sheet, spec: ImageField) -> dict[str, Any]:
 
 
 def _choice_line(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, Any]]:
-    boxes = [(char, label) for char, label in sheet.boxes() if abs(char.oy - y_hint) <= 5.0]
+    boxes = [item for item in sheet.option_boxes() if abs(item[0].oy - y_hint) <= 5.0]
     out = {}
     for option in ("동의함", "동의하지 않음"):
-        hit = next(((char, label) for char, label in boxes
+        hit = next(((char, label, label_chars) for char, label, label_chars in boxes
                     if norm(label).startswith(norm(option))), None)
         if hit is None:
             raise LookupError(f"{key}: '{option}' 선택 위치를 못 찾았습니다.")
-        char, label = hit
+        char, label, label_chars = hit
         out[f"{key}.{option}"] = {
             "type": "check", "page": sheet.number, "x": round(char.ox, 2),
             "y": round(char.oy, 2), "size": round(char.size, 2),
             "box": [round(char.x0, 2), round(char.y0, 2), round(char.x1, 2), round(char.y1, 2)],
+            "label_box": [
+                round(min(c.x0 for c in label_chars), 2),
+                round(min(c.y0 for c in label_chars), 2),
+                round(max(c.x1 for c in label_chars), 2),
+                round(max(c.y1 for c in label_chars), 2),
+            ] if label_chars else None,
             "label": label,
         }
     return out
@@ -768,6 +788,111 @@ REQUIREMENTS = {
 }
 
 
+def _choice_group(key: str) -> str:
+    parts = key.split(".")
+    return ".".join(parts[:2]) if parts[0] in {"self_check", "consent", "subsidy"} else parts[0]
+
+
+def _annotate_choice_geometry(fields: dict[str, dict[str, Any]], sheets: list[Sheet], form_no: str) -> None:
+    """Store the clickable and required-outline bounds for every printed choice."""
+    conditional_fields: dict[tuple[str, str], list[str]] = {}
+    for rule in REQUIREMENTS.get(form_no, []):
+        if rule.get("kind") == "when_choice":
+            conditional_fields[(rule["field"], rule["equals"])] = rule["required"]
+
+    for key, field in fields.items():
+        if field.get("type") != "check":
+            continue
+        if field.get("control") == "radio_text":
+            field["label_box"] = field["box"]
+            field["choice_box"] = field.get("group_box", field["box"])
+            field["click_box"] = field.get("group_box", field["box"])
+            continue
+        label_box = field.get("label_box")
+        if not label_box:
+            raise LookupError(f"{form_no}.{key}: 보기 글자 좌표를 찾지 못했습니다.")
+        prefix = _choice_group(key)
+        option = key[len(prefix) + 1:]
+        related_keys = conditional_fields.get((prefix, option), [])
+        boxes = [field["box"], label_box]
+        click_boxes = list(boxes)
+        boxes.extend(fields[name]["box"] for name in related_keys if name in fields)
+        xs = [box[0] for box in boxes] + [box[2] for box in boxes]
+        ys = [box[1] for box in boxes] + [box[3] for box in boxes]
+        raw = [min(xs), min(ys), max(xs), max(ys)]
+        sheet = sheets[field["page"]]
+        cells = []
+        for box in boxes:
+            cells.append(sheet.cell_at((box[0] + box[2]) / 2, (box[1] + box[3]) / 2))
+        allowed = [min(cell[0] for cell in cells), min(cell[1] for cell in cells),
+                   max(cell[2] for cell in cells), max(cell[3] for cell in cells)]
+        field["cell_box"] = [round(value, 2) for value in allowed]
+        margin = 2.5
+        click_cells = [sheet.cell_at((box[0] + box[2]) / 2, (box[1] + box[3]) / 2) for box in click_boxes]
+        click_allowed = [min(cell[0] for cell in click_cells), min(cell[1] for cell in click_cells),
+                         max(cell[2] for cell in click_cells), max(cell[3] for cell in click_cells)]
+        field["click_box"] = [
+            round(max(click_allowed[0], min(box[0] for box in click_boxes)), 2),
+            round(max(click_allowed[1], min(box[1] for box in click_boxes)), 2),
+            round(min(click_allowed[2], max(box[2] for box in click_boxes)), 2),
+            round(min(click_allowed[3], max(box[3] for box in click_boxes)), 2),
+        ]
+        cell_inset = 0.2
+        field["choice_box"] = [
+            round(max(allowed[0] + cell_inset, raw[0] - margin), 2),
+            round(max(allowed[1] + cell_inset, raw[1] - margin), 2),
+            round(min(allowed[2] - cell_inset, raw[2] + margin), 2),
+            round(min(allowed[3] - cell_inset, raw[3] + margin), 2),
+        ]
+
+    # Adjacent label hit areas meet at the midpoint between checkboxes. This keeps
+    # each printed word clickable without letting a long label select its neighbor.
+    checks = [(key, field) for key, field in fields.items()
+              if field.get("type") == "check" and field.get("control") != "radio_text"]
+    for _ in range(len(checks) + 1):
+        changed = False
+        for index, (_, first) in enumerate(checks):
+            a = first["click_box"]
+            for _, second in checks[index + 1:]:
+                if first["page"] != second["page"]:
+                    continue
+                b = second["click_box"]
+                if not (a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]):
+                    continue
+                acx = (first["box"][0] + first["box"][2]) / 2
+                acy = (first["box"][1] + first["box"][3]) / 2
+                bcx = (second["box"][0] + second["box"][2]) / 2
+                bcy = (second["box"][1] + second["box"][3]) / 2
+                if abs(acx - bcx) >= abs(acy - bcy):
+                    midpoint = (acx + bcx) / 2
+                    if acx <= bcx:
+                        a[2], b[0] = min(a[2], midpoint), max(b[0], midpoint)
+                    else:
+                        a[0], b[2] = max(a[0], midpoint), min(b[2], midpoint)
+                else:
+                    midpoint = (acy + bcy) / 2
+                    if acy <= bcy:
+                        a[3], b[1] = min(a[3], midpoint), max(b[1], midpoint)
+                    else:
+                        a[1], b[3] = max(a[1], midpoint), min(b[3], midpoint)
+                first["click_box"] = [round(value, 2) for value in a]
+                second["click_box"] = [round(value, 2) for value in b]
+                changed = True
+        if not changed:
+            break
+
+    by_group: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for key, field in fields.items():
+        if field.get("type") == "check":
+            by_group.setdefault((field["page"], _choice_group(key)), []).append(field)
+    for siblings in by_group.values():
+        boxes = [field.get("choice_box", field["box"]) for field in siblings]
+        union = [round(min(box[0] for box in boxes), 2), round(min(box[1] for box in boxes), 2),
+                 round(max(box[2] for box in boxes), 2), round(max(box[3] for box in boxes), 2)]
+        for field in siblings:
+            field["choice_group_box"] = union
+
+
 def _build_form1_fields(doc: Any):
     p0, p1 = read_sheet(doc[0], 0), read_sheet(doc[1], 1)
     fields = {spec.key: _text_field(p0, spec) for spec in FORM1_TEXTS_P0}
@@ -796,6 +921,8 @@ def build_all(out_dir: Path = COORDS) -> list[Path]:
             raise FileNotFoundError(f"템플릿이 없습니다: {template}")
         with pymupdf.open(template) as doc:
             fields, masks = builder(doc)
+            sheets = [read_sheet(page, page_no) for page_no, page in enumerate(doc)]
+            _annotate_choice_geometry(fields, sheets, key)
             payload = {
                 "form_no": key, "title": spec.title, "template": f"templates/{key}.pdf",
                 "public_form": spec.public_form,

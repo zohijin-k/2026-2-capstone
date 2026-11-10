@@ -198,6 +198,53 @@ def run() -> None:
                     if field["page"] == other["page"] and a.intersects(pymupdf.Rect(*other["box"])):
                         failures.append(f"{key}.{name}/{other_name}: 입력 상자 겹침")
 
+            check_fields = [(name, field) for name, field in spec["fields"].items()
+                            if field.get("type") == "check" and field.get("control") != "radio_text"]
+            choice_groups: dict[tuple[int, str], list[tuple[str, dict]]] = {}
+            for name, field in check_fields:
+                group = ".".join(name.split(".")[:2]) if name.split(".")[0] in {"self_check", "consent", "subsidy"} else name.split(".")[0]
+                choice_groups.setdefault((field["page"], group), []).append((name, field))
+                for box_key in ("label_box", "choice_box", "click_box", "cell_box", "choice_group_box"):
+                    if not field.get(box_key):
+                        failures.append(f"{key}.{name}: {box_key} 보기 좌표가 없음")
+                if not all(field.get(box_key) for box_key in ("label_box", "choice_box", "click_box", "cell_box")):
+                    continue
+                label_box = pymupdf.Rect(*field["label_box"])
+                choice_box = pymupdf.Rect(*field["choice_box"])
+                click_box = pymupdf.Rect(*field["click_box"])
+                cell_box = pymupdf.Rect(*field["cell_box"])
+                source_check_box = pymupdf.Rect(*field["box"])
+                if not choice_box.contains(label_box) or not choice_box.contains(source_check_box):
+                    failures.append(f"{key}.{name}: 빨간 테두리 보기 영역이 □·글자 bbox를 포함하지 않음")
+                if not click_box.contains(label_box) or not click_box.contains(source_check_box):
+                    failures.append(f"{key}.{name}: 보기 글자 클릭 영역이 글자·□를 포함하지 않음")
+                if not cell_box.contains(choice_box):
+                    failures.append(f"{key}.{name}: 보기 테두리가 해당 표 셀 경계를 넘음")
+            for index, (name, field) in enumerate(check_fields):
+                click_box = pymupdf.Rect(*field["click_box"])
+                for other_name, other in check_fields[index + 1:]:
+                    if field["page"] != other["page"]:
+                        continue
+                    other_box = pymupdf.Rect(*other["click_box"])
+                    if (click_box.x0 < other_box.x1 - .01 and other_box.x0 < click_box.x1 - .01
+                            and click_box.y0 < other_box.y1 - .01 and other_box.y0 < click_box.y1 - .01):
+                        failures.append(f"{key}.{name}/{other_name}: 보기 클릭 영역이 겹침")
+            for (page_no, group), entries in choice_groups.items():
+                group_box = pymupdf.Rect(*entries[0][1]["choice_group_box"])
+                for other_name, other in check_fields:
+                    if other["page"] != page_no:
+                        continue
+                    other_group = ".".join(other_name.split(".")[:2]) if other_name.split(".")[0] in {"self_check", "consent", "subsidy"} else other_name.split(".")[0]
+                    if other_group != group and group_box.intersects(pymupdf.Rect(*other["choice_box"])):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 다른 보기 {other_name}와 겹침")
+                sheet = read_sheet(template[page_no], page_no)
+                for y, x0, x1 in sheet.hlines:
+                    if (abs(y - group_box.y0) < .01 or abs(y - group_box.y1) < .01) and max(x0, group_box.x0) < min(x1, group_box.x1):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 표 가로 경계와 겹침")
+                for x, y0, y1 in sheet.vlines:
+                    if (abs(x - group_box.x0) < .01 or abs(x - group_box.x1) < .01) and max(y0, group_box.y0) < min(y1, group_box.y1):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 표 세로 경계와 겹침")
+
         fake = FilledForm(form_no=key)
         for name, field in spec["fields"].items():
             if field["type"] == "text":

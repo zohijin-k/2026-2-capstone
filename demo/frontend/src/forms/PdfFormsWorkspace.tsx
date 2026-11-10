@@ -15,6 +15,7 @@ import {
 import Modal from '../components/Modal.tsx'
 import SignaturePad from '../components/SignaturePad.tsx'
 import type { ConsentValue } from './consent-model.ts'
+import { isValidEmail, normalizeEmail } from './email.ts'
 import { formatPhone, isValidPhone, phoneCursorPosition } from './phone.ts'
 import { EMPTY_FORM1, type Form1Value } from './form1-model.ts'
 import { JOB_PACKAGE_SELF_CHECK_ITEMS, SELF_CHECK_ITEMS, type SelfCheckAnswers } from './form2-model.ts'
@@ -246,6 +247,7 @@ export default function PdfFormsWorkspace({
     if (key === 'agree') return !!form5.agree
     if (key === 'signature') return signMode === '전자서명' ? !!form5.signature : !!form5.handwrittenFileName
     if (key === 'ecContact') return isValidPhone(String(readForm(form1, key) || ''))
+    if (key === 'email') return isValidEmail(normalizeEmail(String(readForm(form1, key) || '')))
     if (key.endsWith('.signature')) return !!readForm(form1, key)
     return truthy(readForm(form1, key))
   }
@@ -259,13 +261,9 @@ export default function PdfFormsWorkspace({
       const entry = Object.entries(fields).find(([fieldKey, field]) => field.type === 'check' && (fieldKey === missingKey || fieldGroup(fieldKey) === missingKey))
       if (!entry) continue
       const group = fieldGroup(entry[0])
-      const siblings = Object.entries(fields).filter(([fieldKey, field]) => field.type === 'check' && field.page === targetPage && fieldGroup(fieldKey) === group)
-      const boxes = siblings.map(([, field]) => field.group_box || field.box)
-      if (!boxes.length) continue
-      const box: [number, number, number, number] = [
-        Math.min(...boxes.map((item) => item[0])), Math.min(...boxes.map((item) => item[1])),
-        Math.max(...boxes.map((item) => item[2])), Math.max(...boxes.map((item) => item[3])),
-      ]
+      const groupBox = entry[1].choice_group_box || entry[1].group_box || entry[1].choice_box || entry[1].box
+      if (entry[1].page !== targetPage) continue
+      const box: [number, number, number, number] = [...groupBox] as [number, number, number, number]
       groups.set(`${targetPage}-${group}`, box)
     }
     return [...groups.values()]
@@ -460,9 +458,16 @@ export default function PdfFormsWorkspace({
           </Fragment>
         )
       }
+      const [cx0, cy0, cx1, cy1] = field.click_box || field.box
+      const clickStyle = {
+        left: cx0 * scale,
+        top: cy0 * scale,
+        width: Math.max(8, (cx1 - cx0) * scale),
+        height: Math.max(8, (cy1 - cy0) * scale),
+      }
       const markSize = (Math.max(x1 - x0, y1 - y0) + 3) * scale
       return (
-        <label key={key} data-field-ref={fieldRef} className="pdf-form__check" style={boxStyle}>
+        <label key={key} data-field-ref={fieldRef} className="pdf-form__check" style={clickStyle}>
           <input
             id={publicId}
             type="checkbox"
@@ -477,6 +482,7 @@ export default function PdfFormsWorkspace({
             height={markSize}
             viewBox="0 0 24 24"
             aria-hidden="true"
+            style={{ left: (x0 - cx0 + (x1 - x0) / 2) * scale, top: (y0 - cy0 + (y1 - y0) / 2) * scale }}
           ><rect x="1" y="1" width="22" height="22" rx="1" /><path d="M5 12.5 10 17 19 7" /></svg>}
         </label>
       )
@@ -500,6 +506,7 @@ export default function PdfFormsWorkspace({
       )
     }
     const value = readText(key)
+    const invalidEmail = key === 'email' && !!value && !isValidEmail(normalizeEmail(value))
     const required = requiredItems(active.formNo).includes(key)
     const round = key.match(/^job\.(interview|suit|certificate)\.(\d+)\./)
     const roundEnabled = !round || (subsidySelections.find((item) => item.item_type === round[1])?.count ?? 0) >= Number(round[2])
@@ -528,14 +535,15 @@ export default function PdfFormsWorkspace({
     const baseFont = Math.min(12, Math.max(8, Number(field.size || 9) * scale))
     const fitFont = value.length > 0 ? Math.max(7, Math.min(baseFont, boxStyle.width / (value.length * 0.62))) : baseFont
     return (
-      <input
-        key={key}
+      <Fragment key={key}>
+        <input
         id={publicId}
         data-field-ref={fieldRef}
-        type={key === 'transferIn' || key === 'employedAt' ? 'date' : 'text'}
+        type={key === 'transferIn' || key === 'employedAt' ? 'date' : key === 'email' ? 'email' : 'text'}
         className={`pdf-form__text pdf-form__text--${field.font_family || 'sans'} ${isMissing && required ? 'is-missing' : ''}`}
         style={{ ...boxStyle, fontSize: fitFont, textAlign: field.align || 'left' }}
         aria-label={label}
+        aria-invalid={invalidEmail || undefined}
         value={key === 'transferIn' || key === 'employedAt' ? isoDate(readForm(form1, key) as unknown as Form1Value['transferIn']) : applyFieldFormat(dateValue, field.format)}
         readOnly={readOnly || locked || !roundEnabled || !photoEnabled || !householdCountEnabled || suitFieldsLinked || key.startsWith('written') || key.includes('.year') || key.includes('.month') || key.includes('.day') || key.startsWith('job.application')}
         inputMode={key === 'householdSizeCount' || key === 'ecContact' ? 'numeric' : undefined}
@@ -553,9 +561,12 @@ export default function PdfFormsWorkspace({
             requestAnimationFrame(() => {
               input.setSelectionRange(phoneCursorPosition(formatted, digitCount), phoneCursorPosition(formatted, digitCount))
             })
-          } else setText(key, next)
+          } else setText(key, key === 'email' ? normalizeEmail(next) : next)
         }}
-      />
+        onBlur={key === 'email' ? () => setText(key, normalizeEmail(value)) : undefined}
+        />
+        {invalidEmail && <span className="pdf-form__email-hint" role="alert" style={{ left: x0 * scale, top: y1 * scale + 2, width: Math.max(150, 190 * scale), fontSize: Math.max(10, 10 * scale) }}>이메일 형식으로 입력해 주세요.</span>}
+      </Fragment>
     )
   }
 
@@ -684,7 +695,7 @@ export default function PdfFormsWorkspace({
                   })}
                   {missingGroupBoxes(active.formNo, page).map((box, index) => {
                     const [x0, y0, x1, y1] = box
-                    return <span key={`missing-choice-${index}`} className="pdf-form__group-missing" aria-hidden="true" style={{ left: x0 * scale - 2, top: y0 * scale - 2, width: (x1 - x0) * scale + 4, height: (y1 - y0) * scale + 4 }} />
+                    return <span key={`missing-choice-${index}`} className="pdf-form__group-missing" aria-hidden="true" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />
                   })}
                   {Object.entries(currentLayout.fields)
                     .sort((a, b) => a[1].page - b[1].page || a[1].box[1] - b[1].box[1] || a[1].box[0] - b[1].box[0])

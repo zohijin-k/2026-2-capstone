@@ -460,6 +460,11 @@ export interface FormFieldLayout {
   control?: 'radio_text'
   page: number
   box: [number, number, number, number]
+  label_box?: [number, number, number, number]
+  click_box?: [number, number, number, number]
+  choice_box?: [number, number, number, number]
+  choice_group_box?: [number, number, number, number]
+  cell_box?: [number, number, number, number]
   x?: number
   y?: number
   size?: number
