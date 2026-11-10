@@ -13,6 +13,7 @@ from sqlmodel import select
 
 from ..models import Application, Consent, Document, SubsidyItem, get_session
 from ..rules.criteria import for_application, issue_bounds, issue_rule_label, read_criteria
+from ..rules.months import format_month_ranges
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ApplicantDocInput,
@@ -124,7 +125,7 @@ def checklist_for(app: Application) -> list[DocRequirement]:
             prefix = f"{years[0]}년 " if len(years) == 1 else ""
             req.label = f"{prefix}건강보험료 납부확인서"
             req.notes.extend([
-                f"조회기간에 {', '.join(months)}월이 포함되어야 합니다.",
+                f"조회기간에 {format_month_ranges(months)}이 포함되어야 합니다.",
                 "실납부액이 아니라 고지금액 기준으로 심사합니다.",
             ])
         elif req.slot_key == "nhis_acquisition_loss":

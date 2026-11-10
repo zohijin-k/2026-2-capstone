@@ -38,6 +38,7 @@ DOC_TYPE_KEYWORDS: list[tuple[DocType, tuple[str, ...]]] = [
     (DocType.FISHERY_BIZ_CERT, ("어업경영체",)),
     (DocType.LABOR_CONTRACT, ("근로계약서",)),
     (DocType.ADMIN_INFO_CONSENT, ("행정정보공동이용",)),
+    (DocType.ID_PHOTO_COPY, ("면접용사진사본", "면접용증명사진사본", "면접사진")),
     (DocType.INTERVIEW_CONFIRMATION, ("면접확인서",)),
     (DocType.EXAM_CONFIRMATION, ("응시확인서",)),
     (DocType.EXAM_TRANSCRIPT, ("성적표",)),
@@ -89,11 +90,17 @@ def _squeeze(text: str) -> str:
 
 def classify(text: str) -> DocType | None:
     """본문 텍스트로 문서 종류를 판별한다."""
+    return classify_with_evidence(text)[0]
+
+
+def classify_with_evidence(text: str) -> tuple[DocType | None, str]:
+    """기대 슬롯과 무관하게 본문 제목·서식 키워드로 종류와 근거를 고른다."""
     flat = _squeeze(text)
     for doc_type, keywords in DOC_TYPE_KEYWORDS:
-        if any(k in flat for k in keywords):
-            return doc_type
-    return None
+        for keyword in keywords:
+            if _squeeze(keyword) in flat:
+                return doc_type, f"본문에서 '{keyword}' 제목·서식 단서를 확인했습니다."
+    return None, "본문에서 지원 서류의 제목·서식 단서를 찾지 못했습니다."
 
 
 def _to_date(groups: tuple[str, str, str]) -> date | None:
@@ -187,7 +194,7 @@ def _confidence(text: str, doc_type: DocType | None, issue_date: date | None) ->
 
 def read_page_text(text: str, page, page_index: int) -> OcrResult:
     """페이지 텍스트 하나를 판독 결과로 만든다. 병합 PDF 분리에서도 이걸 쓴다."""
-    doc_type = classify(text)
+    doc_type, type_evidence = classify_with_evidence(text)
     issue_date = extract_issue_date(text)
 
     fields: dict[str, str] = {}
@@ -248,6 +255,8 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
         fields=fields,
         bboxes=bboxes,
         tier=NAME,
+        classification_evidence=type_evidence,
+        classification_confidence=0.95 if doc_type is not None else 0.0,
     )
 
 

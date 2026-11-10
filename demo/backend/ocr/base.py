@@ -63,6 +63,10 @@ class OcrResult:
     page_count: int = 1
     #: 어느 계층이 읽었는지. 담당자 화면과 로그에 그대로 노출한다.
     tier: str = "none"
+    #: OCR 본문에서 찾은 종류 단서. 신청자 응답에는 보내지 않는다.
+    classification_evidence: str = ""
+    #: 문서 종류 판별 신뢰도. 추출 필드 신뢰도와 분리한다.
+    classification_confidence: float = 0.0
     #: 판독 소요 시간(ms). R2.1의 5초 기준을 화면에서 보여주기 위해 남긴다.
     elapsed_ms: int = 0
 

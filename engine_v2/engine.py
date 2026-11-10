@@ -19,6 +19,7 @@ import yaml
 from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract
 from .extractors.resident_abstract import kst_today
 from .pipeline.ocr import OcrResult, OcrWord, run_ocr
+from .pipeline.field_safety import remove_header_only_fields
 from .pipeline.preprocess import PageImage, PageSource, preprocess
 from .rules.registry import RULES, RuleContext
 from .schemas.models import (ApplicationInput, ApplicationResult, CheckResult, CheckStatus,
@@ -77,6 +78,7 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
                               review_reasons=["이 서류 종류의 판독 부품이 아직 없음 (수동 심사)"])
 
     ex: _Extraction = extractor(pages, today=today)
+    remove_header_only_fields(ex.fields)
     ctx = RuleContext(
         reference_date=app.announcement_date, applicant=app.applicant,
         declared_values=doc.declared_values, detected_type=ex.detected_type, fields=ex.fields,

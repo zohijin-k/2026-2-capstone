@@ -323,6 +323,8 @@ class FixtureOcr:
             is_screen_capture=hit.is_screen_capture,
             page_count=hit.page_count,
             tier=NAME,
+            classification_evidence=hit.classification_evidence,
+            classification_confidence=hit.classification_confidence,
         )
 
 

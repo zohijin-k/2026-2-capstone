@@ -303,6 +303,11 @@ def test_declared_date_second_check(tmp: Path) -> None:
     r = check_document(slot, ocr, date(2026, 11, 9))
     check("판독 확실 + 입력 틀림 → 판정", r.status, "FAIL")
     check_true("사유: DECLARED_DATE_MISMATCH", "DECLARED_DATE_MISMATCH" in r.codes)
+    mismatch = next(f for f in r.findings if f.code == "DECLARED_DATE_MISMATCH")
+    check_true("확실한 불일치에 읽은 날짜 포함",
+               "2026년 11월 10일" in mismatch.message and "2026년 11월 9일" in mismatch.message)
+    check_true("확실한 불일치 문구가 원본 확인 문구가 아님",
+               "서류를 보고 고쳐 주세요." in mismatch.message)
 
     # 3쪽 중 2쪽의 발급일을 OCR이 잘못 읽음 → 다수결도 틀린 값, 쪽 간 불일치로 신뢰도 낮음
     words = fake_abstract_words()
@@ -318,6 +323,115 @@ def test_declared_date_second_check(tmp: Path) -> None:
     check("판독 불확실 + 입력 맞음 → 판정", r.status, "NEEDS_REVIEW")
     check_true("사유: DECLARED_DATE_UNCERTAIN", "DECLARED_DATE_UNCERTAIN" in r.codes)
     check_true("'불일치' 단정 안 함", "DECLARED_DATE_MISMATCH" not in r.codes)
+    uncertain = next(f for f in r.findings if f.code == "DECLARED_DATE_UNCERTAIN")
+    check_true("불확실할 때 담당자 원본 확인 안내",
+               "담당자가 원본에서 직접 확인" in (uncertain.message + uncertain.how_to_fix))
+
+
+def test_slot_independent_classification(tmp: Path) -> None:
+    print("\n[9] 기대 칸과 무관한 본문 서류 종류 판별")
+    from engine_v2.tests.test_nhis_extractors import acquisition_pages
+
+    source_words = acquisition_pages()[0][1].words
+    sx, sy = 2066 / 1000, 2923 / 1400
+    ocr_words = [type(word)(
+        word.text, word.confidence,
+        (word.bbox_px[0] * sx, word.bbox_px[1] * sy,
+         word.bbox_px[2] * sx, word.bbox_px[3] * sy),
+    ) for word in source_words]
+    pdf = make_image_pdf(tmp / "content_only.pdf", pages=1)
+    install_fake_ocr([ocr_words])
+    result = read_document(str(pdf), DocType.NHIS_PAYMENT)
+    check("납부확인서 칸에서도 본문 종류는 자격득실로 판별",
+          result.detected_doc_type, DocType.NHIS_ACQUISITION_LOSS)
+    check_true("담당자 판별 근거 보존", "자격득실확인서" in result.classification_evidence)
+
+    text_pdf = make_text_pdf(tmp / "text_content_only.pdf", [
+        "건강보험 자격득실확인서",
+        "성명 김전북",
+        "생년월일 1999.01.01",
+        "발급일 2026.11.10",
+        "가입자구분 자격취득일 자격상실일 사업장명칭",
+        "직장가입자 2018.01.01 가상사업장",
+    ])
+    text_result = read_document(str(text_pdf), DocType.NHIS_PAYMENT)
+    check("텍스트 PDF도 기대 칸과 무관하게 분류",
+          text_result.detected_doc_type, DocType.NHIS_ACQUISITION_LOSS)
+
+    slots = build_checklist(PROGRAM, ApplicantDocInput(work_category=WorkCategory.EMPLOYEE))
+    payment = find_slot(slots, "nhis_payment")
+    acquisition = find_slot(slots, "nhis_acquisition_loss")
+    wrong = check_document(
+        payment, result, date(2026, 11, 10), suggested_slot_label=acquisition.label,
+    )
+    check("다른 종류는 부적합", wrong.status, "FAIL")
+    check("다른 종류는 한 finding만", wrong.codes, ["WRONG_DOCUMENT_TYPE"])
+    wrong_finding = wrong.findings[0]
+    check_true("명확한 서류명 안내",
+               "'건강보험료 납부확인서' 자리에 '건강보험 자격득실확인서'" in wrong_finding.message)
+    check_true("필요한 칸 안내", "건강보험 자격득실확인서 칸에" in wrong_finding.how_to_fix)
+    check_true("후속 발급일·항목 경고 없음",
+               not any("발급일" in finding.message or "찾지 못했습니다" in finding.message
+                       for finding in wrong.findings))
+    check_true("담당자 상세에 판별 근거", "자격득실확인서" in wrong_finding.detail)
+
+    from engine_v2.pipeline.ocr import OcrWord
+
+    unknown_pdf = make_image_pdf(tmp / "unknown_content.pdf", pages=1)
+    install_fake_ocr([[OcrWord("자료 안내", 0.99, (50, 50, 160, 70))]])
+    unknown_ocr = read_document(str(unknown_pdf), DocType.NHIS_PAYMENT)
+    unknown = check_document(payment, unknown_ocr, date(2026, 11, 10))
+    check("판별 불가 → 확인필요", unknown.status, "NEEDS_REVIEW")
+    check("판별 불가도 한 finding만", unknown.codes, ["UNKNOWN_DOCUMENT_TYPE"])
+
+
+def test_header_only_field_filter() -> None:
+    print("\n[10] 공통 머리표 값 차단")
+    from engine_v2.pipeline.field_safety import remove_header_only_fields
+
+    fields = {
+        "성명": "주민등록번호",
+        "생년월일": "생년월일",
+        "가입자성명": "김전북",
+    }
+    removed = remove_header_only_fields(fields)
+    check("머리표만인 값은 미판독", removed, ["성명", "생년월일"])
+    check("실제 값은 유지", fields, {"가입자성명": "김전북"})
+
+    from .. import ocr as ocr_module
+    from ..ocr.base import OcrResult
+
+    class HeaderAdapter:
+        name = "test-header-only"
+
+        def read(self, file_path, expected):
+            return OcrResult(
+                detected_doc_type=DocType.RESIDENT_ABSTRACT,
+                confidence=0.95,
+                fields={"성명": "주민등록번호", "발급일": "2026-11-10"},
+                tier=self.name,
+            )
+
+    original_chain = ocr_module.CHAIN[:]
+    try:
+        ocr_module.CHAIN[:] = [HeaderAdapter()]
+        result = ocr_module.read_document("content-only.pdf", DocType.RESIDENT_ABSTRACT)
+    finally:
+        ocr_module.CHAIN[:] = original_chain
+    check("OCR 공통 경로에서도 머리표 성명은 미판독",
+          result.fields, {"발급일": "2026-11-10"})
+
+
+def test_month_rendering() -> None:
+    print("\n[11] 고지월 안내 표기")
+    from ..rules.months import format_month_ranges
+
+    check("단일 달", format_month_ranges(["2026-01"]), "2026년 1월")
+    check("같은 해 연속 구간",
+          format_month_ranges(["2025-12", "2025-10", "2025-11"]), "2025년 10월~12월")
+    check("해를 넘는 연속 구간",
+          format_month_ranges(["2026-01", "2025-12", "2025-11"]),
+          "2025년 11월~2026년 1월")
 
 
 def test_applicant_payload() -> None:
@@ -352,6 +466,9 @@ def main() -> int:
         test_title_with_parentheses(tmp)
         test_nhis_extractors_text_and_image_pdf(tmp)
         test_declared_date_second_check(tmp)
+        test_slot_independent_classification(tmp)
+        test_header_only_field_filter()
+        test_month_rendering()
         test_applicant_payload()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

@@ -47,6 +47,18 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
             tier="none",
         )
 
+    # 모든 OCR 계층이 공통으로 지난 뒤 추출값이 머리표만으로 구성됐는지 확인한다.
+    from pathlib import Path
+    import sys
+
+    repo_root = str(Path(__file__).resolve().parents[3])
+    if repo_root not in sys.path:
+        sys.path.insert(0, repo_root)
+    from engine_v2.pipeline.field_safety import remove_header_only_fields
+
+    for key in remove_header_only_fields(result.fields):
+        result.bboxes.pop(key, None)
+
     result.elapsed_ms = int((time.perf_counter() - started) * 1000)
     return result
 

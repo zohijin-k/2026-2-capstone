@@ -188,6 +188,8 @@ def _ocr_json(ocr: OcrResult) -> dict[str, Any]:
         "is_screen_capture": ocr.is_screen_capture,
         "page_count": ocr.page_count,
         "tier": ocr.tier,
+        "classification_evidence": ocr.classification_evidence,
+        "classification_confidence": ocr.classification_confidence,
         "elapsed_ms": ocr.elapsed_ms,
     }
 
@@ -229,7 +231,8 @@ def _save_row(
 def _refresh_nhis_identity(application_id: int, app: Application, checklist: list[DocRequirement]) -> None:
     """건강보험 납부·자격확인서는 짝 서류가 도착할 때마다 함께 다시 대조한다."""
     nhis_types = {str(DocType.NHIS_PAYMENT), str(DocType.NHIS_QUALIFICATION)}
-    rows = [d for d in _list_documents(application_id) if d.doc_type in nhis_types]
+    all_rows = _list_documents(application_id)
+    rows = [d for d in all_rows if d.doc_type in nhis_types]
     if not rows:
         return
     identity = identity_of(app.identity_json)
@@ -265,10 +268,15 @@ def _refresh_nhis_identity(application_id: int, app: Application, checklist: lis
             is_screen_capture=bool(raw.get("is_screen_capture")),
             page_count=int(raw.get("page_count") or 1),
             tier=str(raw.get("tier") or "none"),
+            classification_evidence=str(raw.get("classification_evidence") or ""),
+            classification_confidence=float(raw.get("classification_confidence") or 0.0),
         )
         result = check_document(
             req, ocr, row.declared_issue_date, row.file_format, identity,
             related_nhis_docs=related,
+            suggested_slot_label=_suggested_other_slot_label(
+                req, checklist, all_rows, detected,
+            ),
         )
         with get_session() as session:
             saved = session.get(Document, row.id)
@@ -277,6 +285,26 @@ def _refresh_nhis_identity(application_id: int, app: Application, checklist: lis
                 saved.findings_json = [finding.as_dict() for finding in result.findings]
                 session.add(saved)
                 session.commit()
+
+
+def _suggested_other_slot_label(
+    req: DocRequirement,
+    checklist: list[DocRequirement],
+    uploaded: list[Document],
+    detected: DocType | None,
+) -> str | None:
+    if detected is None:
+        return None
+    occupied = {row.slot_key for row in uploaded if row.slot_key != req.slot_key}
+    for candidate in checklist:
+        if (
+            candidate.upload
+            and candidate.slot_key != req.slot_key
+            and candidate.slot_key not in occupied
+            and candidate.accepts(detected)
+        ):
+            return candidate.label
+    return None
 
 
 def _replace_existing(application_id: int, slot_key: str) -> None:
@@ -328,8 +356,12 @@ async def upload_document(
     path.write_bytes(await file.read())
 
     ocr = read_document(str(path), req.doc_type)
+    suggested_slot_label = _suggested_other_slot_label(
+        req, checklist, _list_documents(application_id), ocr.detected_doc_type,
+    )
     result = check_document(
-        req, ocr, declared, path.suffix.lstrip(".").lower(), identity_of(app.identity_json)
+        req, ocr, declared, path.suffix.lstrip(".").lower(), identity_of(app.identity_json),
+        suggested_slot_label=suggested_slot_label,
     )
     if req.slot_key.endswith("_receipt") and ocr.tier == "none" and not ocr.is_encrypted:
         # 판독 계층이 하나도 결과를 내지 못했을 때 낮은 기본 화질 점수로
