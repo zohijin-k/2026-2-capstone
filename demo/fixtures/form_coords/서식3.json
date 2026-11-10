@@ -79,6 +79,7 @@
       "y": 740.07,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         397.92,
         728.07,
@@ -112,6 +113,7 @@
       "y": 740.07,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         422.29,
         728.07,
@@ -145,6 +147,7 @@
       "y": 740.07,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         455.87,
         728.07,

@@ -27,6 +27,7 @@
       "y": 247.89,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         344.54,
         237.89,
@@ -43,6 +44,7 @@
       "y": 247.89,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         409.31,
         237.89,
@@ -59,6 +61,7 @@
       "y": 247.89,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         483.43,
         237.89,
@@ -75,6 +78,7 @@
       "y": 294.9,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         143.44,
         277.66,
@@ -91,6 +95,7 @@
       "y": 294.9,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         296.96,
         277.66,
@@ -107,6 +112,7 @@
       "y": 324.63,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         143.44,
         307.15,
@@ -123,6 +129,7 @@
       "y": 354.6,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         196.46,
         337.11,
@@ -139,6 +146,7 @@
       "y": 354.6,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         383.55,
         337.11,
@@ -155,6 +163,7 @@
       "y": 389.95,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         196.46,
         367.08,
@@ -171,6 +180,7 @@
       "y": 389.95,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         335.7,
         367.08,
@@ -187,6 +197,7 @@
       "y": 389.95,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         453.48,
         367.08,
@@ -203,6 +214,7 @@
       "y": 701.47,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         212.38,
         691.47,
@@ -219,6 +231,7 @@
       "y": 744.39,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         234.32,
         734.39,
@@ -235,6 +248,7 @@
       "y": 758.65,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         234.32,
         748.65,
@@ -825,6 +839,7 @@
       "y": 541.45,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         373.32,
         531.45,
@@ -841,6 +856,7 @@
       "y": 144.44,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         190.91,
         134.44,
@@ -857,6 +873,7 @@
       "y": 144.44,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         296.57,
         134.44,
@@ -873,6 +890,7 @@
       "y": 144.44,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         467.36,
         134.44,
@@ -889,6 +907,7 @@
       "y": 416.9,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         286.62,
         404.9,
@@ -923,6 +942,7 @@
       "y": 416.9,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         311.44,
         404.9,

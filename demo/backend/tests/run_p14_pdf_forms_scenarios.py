@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pymupdf
 
@@ -10,6 +11,58 @@ from ..forms.render import format_field_text, render, render_page_png
 from ..forms.values import FilledForm
 from ...fixtures.build_form_coords import read_sheet
 from ...fixtures.cut_templates import TEMPLATES_SPEC
+
+
+def _form_font_corpus() -> set[str]:
+    """All Hangul/ASCII, static form text, field labels, and fake entered values."""
+    chars = {chr(code) for code in range(0x20, 0x7F)}
+    for lead in range(0xB0, 0xC9):
+        for trail in range(0xA1, 0xFF):
+            try:
+                value = bytes((lead, trail)).decode("euc_kr")
+            except UnicodeDecodeError:
+                continue
+            if len(value) == 1 and 0xAC00 <= ord(value) <= 0xD7A3:
+                chars.add(value)
+    for spec in COORDS_DIR.glob("*.json"):
+        chars.update(spec.read_text(encoding="utf-8"))
+    from .run_p7_scenarios import P7_FORM1, P7_FORM5
+
+    def collect(value):
+        if isinstance(value, str):
+            chars.update(value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(P7_FORM1)
+    collect(P7_FORM5)
+    return {char for char in chars if ord(char) >= 0x20}
+
+
+def _check_bundled_form_fonts() -> list[str]:
+    from ..forms.render import _font
+
+    repo_demo = Path(__file__).resolve().parents[2]
+    fonts_dir = repo_demo / "frontend" / "src" / "assets" / "fonts"
+    failures = []
+    corpus = _form_font_corpus()
+    for family, directory in (("sans", "NotoSansKR"), ("serif", "NotoSerifKR")):
+        folder = fonts_dir / directory
+        ttf = folder / f"{directory}-subset.ttf"
+        woff2 = folder / f"{directory}-subset.woff2"
+        license_file = folder / "OFL.txt"
+        if not ttf.is_file() or not woff2.is_file() or not license_file.is_file():
+            failures.append(f"{directory}: TTF/WOFF2/OFL 파일 누락")
+            continue
+        font = _font(family)
+        missing = sorted(ord(char) for char in corpus if not font.has_glyph(ord(char)))
+        if missing:
+            failures.append(f"{directory}: 글리프 누락 " + " ".join(f"U+{code:04X}" for code in missing))
+    return failures
 
 
 def _chars(page):
@@ -51,6 +104,7 @@ def _has_source_square(page, rect: pymupdf.Rect) -> bool:
 
 def run() -> None:
     failures: list[str] = []
+    failures.extend(_check_bundled_form_fonts())
     form_keys = [spec.key for spec in TEMPLATES_SPEC]
     for key in form_keys:
         template_path = FIXTURES / "templates" / f"{key}.pdf"

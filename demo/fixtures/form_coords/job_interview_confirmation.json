@@ -23,6 +23,7 @@
       "y": 170.0,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         151.43,
@@ -39,6 +40,7 @@
       "y": 170.0,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         151.43,
@@ -55,6 +57,7 @@
       "y": 202.54,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         183.56,
@@ -71,6 +74,7 @@
       "y": 235.15,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         216.52,
@@ -87,6 +91,7 @@
       "y": 235.15,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         216.52,

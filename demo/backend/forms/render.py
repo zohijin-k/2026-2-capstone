@@ -31,11 +31,16 @@ MIN_SIZE = 5.0
 CHECK_INSET_RATIO = 0.16
 
 
-def _font() -> Any:
+@lru_cache(maxsize=2)
+def _font(family: str = "sans") -> Any:
     import fitz
 
-    # 내장 CJK 폰트. 한글·✓ 모두 이 하나로 찍는다(별도 폰트 파일 의존이 없다).
-    return fitz.Font("cjk")
+    family = "serif" if family == "serif" else "sans"
+    name = "NotoSerifKR" if family == "serif" else "NotoSansKR"
+    path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "assets" / "fonts" / name / f"{name}-subset.ttf"
+    if not path.is_file():
+        raise FileNotFoundError(f"서식 글꼴 파일이 없습니다: {name}")
+    return fitz.Font(fontfile=str(path))
 
 
 def fit_size(font: Any, text: str, size: float, max_width: float) -> float:
@@ -123,7 +128,6 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             "`python -m demo.fixtures.build_form_coords` 를 먼저 돌리세요."
         )
 
-    font = _font()
     doc = fitz.open(coords.template)
     writers: dict[tuple[int, tuple[float, float, float]], Any] = {}
     check_text_writers: dict[int, Any] = {}
@@ -161,9 +165,10 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         slot_width = (x1 - x0) / 2
         baseline = float(options["예"].get("y", options["아니오"].get("y", (y0 + y1) / 2)))
         size = float(options["예"].get("size", 9.5))
+        row_font = _font(str(options["예"].get("font_family", "sans")))
         square_size = size * 0.78
         for index, option in enumerate(("예", "아니오")):
-            label_width = font.text_length(option, size)
+            label_width = row_font.text_length(option, size)
             total_width = square_size + 3.0 + label_width
             sx = x0 + index * slot_width + max(1.0, (slot_width - total_width) / 2)
             sy = (y0 + y1 - square_size) / 2
@@ -178,7 +183,7 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
                                color=(1, 1, 1), width=max(.7, size * .09), overlay=True)
             else:
                 page.draw_rect(square, color=INK, width=.8, overlay=True)
-            writer(page_no, PRINT_INK).append((sx + square_size + 3.0, baseline), option, font=font, fontsize=size)
+            writer(page_no, PRINT_INK).append((sx + square_size + 3.0, baseline), option, font=row_font, fontsize=size)
 
     # --- 글자 ---------------------------------------------------------
     for key, text in filled.texts.items():
@@ -189,17 +194,18 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         box = spec["box"]
         width = box[2] - box[0]
         height = box[3] - box[1]
+        field_font = _font(str(spec.get("font_family", "sans")))
         reference = spec.get("date_reference") or {}
         size = float(reference.get("size", spec["size"])) * float(reference.get("render_size_scale", 1)) if spec.get("auto_date") else float(spec["size"])
         if not spec.get("auto_date") or not text.isdigit():
-            size = fit_size(font, text, size, width)
+            size = fit_size(field_font, text, size, width)
         x = float(spec["x"])
         if spec.get("align") == "center":
-            x = box[0] + (width - font.text_length(text, size)) / 2
+            x = box[0] + (width - field_font.text_length(text, size)) / 2
         page_no = int(spec["page"])
         color = PRINT_INK if spec.get("auto_date") else INK
         baseline = float(reference.get("render_baseline", reference.get("baseline", spec["y"]))) if spec.get("auto_date") else float(spec["y"])
-        writer(page_no, color).append((x, baseline), text, font=font, fontsize=size)
+        writer(page_no, color).append((x, baseline), text, font=field_font, fontsize=size)
 
     # --- 체크 ---------------------------------------------------------
     for key in filled.checks:

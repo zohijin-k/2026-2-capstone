@@ -12,12 +12,13 @@
   2. **값 → 좌표 → 되읽기 왕복** — 내보낸 PDF를 PyMuPDF로 다시 열어, 넣은 값이
      **그 필드의 칸 안에서** 글자로 추출되는지 본다. 그려만 놓고 못 읽는 그림이
      아니라는 뜻이고, 자리도 맞다는 뜻이다.
-  3. **체크는 체크한 곳에만** — `✓`가 체크한 보기의 `□` 자리에만 찍히고, 체크하지
-     않은 보기 자리에는 없는지 본다.
+  3. **체크는 체크한 곳에만** — 선택한 보기 좌표에 남색 채운 네모 벡터가 있고,
+     미선택 보기에는 없는지 본다. 자가진단은 다시 그린 예/아니오 행을 확인한다.
   4. **겹치지 않는다** — 얹은 글자가 원본 글자·표 선과 겹치지 않는지 좌표로 본다.
      서식 위에 값을 쓰는 일의 성패가 여기에 달려 있다.
-  5. **서명 합성** — 서식5 서명란 좌표에 이미지 객체가 실제로 들어갔는지 (R9.2).
-  6. **다운로드 0회 유지** — 응답이 전부 `inline`이다 (R9.3 / P4 DoD).
+  5. **서명 합성** — 서식5 및 취업패키지 서명이 인쇄된 `(서명 또는 인)`·`(인)`과 겹치는지 본다.
+  6. **신청자 API 비식별** — 레이아웃에 불투명 ID만 있고, 담당자 작성본 PDF에 값이 있는지 본다.
+  7. **다운로드 0회 유지** — 응답이 전부 `inline`이다 (R9.3 / P4 DoD).
 
 pytest 없이 돌아간다. DB와 저장소는 임시 경로에 만들고 끝나면 지운다 —
 `demo/storage`·`demo/demo.db`(시연용 데이터)를 건드리지 않는다. 입력값은 전부
@@ -26,6 +27,7 @@ pytest 없이 돌아간다. DB와 저장소는 임시 경로에 만들고 끝나
 
 import argparse
 import json
+import re
 import shutil
 import tempfile
 from datetime import date, timedelta
@@ -210,6 +212,83 @@ def added_words(filled: Any, template: Any) -> dict[int, list[tuple]]:
             w for w in filled[page_no].get_text("words") if word_key(w) not in original
         ]
     return out
+
+
+def _brand_square_rects(page: Any) -> list[Any]:
+    """Return the navy filled-square checkbox marks, not searchable text marks."""
+    import fitz
+
+    marks = []
+    for drawing in page.get_drawings():
+        fill = drawing.get("fill")
+        if not fill or any(abs(float(a) - b) > 0.002 for a, b in zip(fill, (0.05, 0.10, 0.45))):
+            continue
+        for item in drawing.get("items", []):
+            if item[0] == "re":
+                marks.append(fitz.Rect(item[1]))
+    return marks
+
+
+def checkbox_mark_errors(form_no: str, body: bytes, selected: set[str]) -> list[str]:
+    """Compare blue vector squares with each selected/unselected view coordinate."""
+    import fitz
+
+    from ..forms.render import _font
+
+    spec = json.loads((COORDS / f"{form_no}.json").read_text(encoding="utf-8"))
+    errors = []
+    with fitz.open(stream=body, filetype="pdf") as doc:
+        for key, field in spec["fields"].items():
+            if field["type"] != "check":
+                continue
+            page_no = int(field["page"])
+            page_marks = _brand_square_rects(doc[page_no])
+            if field.get("control") == "radio_text":
+                x0, y0, x1, y1 = field["group_box"]
+                label = field["label"]
+                slot = 0 if label == "예" else 1
+                width = (x1 - x0) / 2
+                size = float(field.get("size", 9.5))
+                square_size = size * 0.78
+                label_width = _font(str(field.get("font_family", "sans"))).text_length(label, size)
+                total = square_size + 3.0 + label_width
+                left = x0 + slot * width + max(1.0, (width - total) / 2)
+                center = fitz.Rect(left, (y0 + y1 - square_size) / 2,
+                                   left + square_size, (y0 + y1 + square_size) / 2)
+            else:
+                x0, y0, x1, y1 = field["box"]
+                size = max(x1 - x0, y1 - y0) + 3.0
+                cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+                center = fitz.Rect(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2)
+            present = any(all(abs(a - b) < 0.3 for a, b in zip(mark, center)) for mark in page_marks)
+            if present != (key in selected):
+                errors.append(f"p{page_no}:{key} expected {'filled' if key in selected else 'empty'} square at {center}")
+    return errors
+
+
+def signature_overlaps_source(body: bytes, form_no: str, field_key: str, marker: str) -> bool:
+    """Check that the placed signature image overlaps its printed signature phrase."""
+    import fitz
+
+    spec = json.loads((COORDS / f"{form_no}.json").read_text(encoding="utf-8"))
+    template = fitz.open(TEMPLATES / f"{form_no}.pdf")
+    filled = fitz.open(stream=body, filetype="pdf")
+    try:
+        page_no = int(spec["fields"][field_key]["page"])
+        source_page = template[page_no]
+        phrase_boxes = [
+            fitz.Rect(word[:4]) for word in source_page.get_text("words")
+            if marker.replace(" ", "") in word[4].replace(" ", "")
+        ]
+        image_boxes = [
+            fitz.Rect(rect)
+            for image in filled[page_no].get_images(full=True)
+            for rect in filled[page_no].get_image_rects(image[0])
+        ]
+        return any(image.intersects(phrase) for image in image_boxes for phrase in phrase_boxes)
+    finally:
+        template.close()
+        filled.close()
 
 
 def ink_collision(form_no: str, body: bytes, dpi: int = 150) -> tuple[int, int]:
@@ -406,41 +485,9 @@ def roundtrip(form_no: str, body: bytes, expected_texts, expected_checks) -> Non
             homeless.append(f"p{page_no}:{word[4]}")
     check(f"{form_no} 칸 밖으로 나간 글자", homeless, [])
 
-    # --- (b) ✓는 체크한 보기에만
-    checked_boxes: dict[int, set[str]] = {i: set() for i in range(filled.page_count)}
-    stray: list[str] = []
-    for page_no, words in added.items():
-        for word in words:
-            if "✓" not in word[4]:
-                continue
-            rect = fitz.Rect(word[:4])
-            hit = [
-                key
-                for key, field in fields.items()
-                if field["type"] == "check"
-                and field["page"] == page_no
-                and rect.intersects(fitz.Rect(*field["box"]))
-            ]
-            if hit:
-                checked_boxes[page_no].update(hit)
-            else:
-                stray.append(f"p{page_no}:{rect}")
-    check(f"{form_no} 체크 자리 밖의 ✓", stray, [])
-    for page_no, expected in expected_checks.items():
-        check(f"{form_no} p{page_no} 체크된 보기", checked_boxes[page_no], expected)
-
-    every_check = {key for key, field in fields.items() if field["type"] == "check"}
+    # --- (b) Selected views have navy filled-square vector marks; others stay empty.
     expected_all = {key for keys in expected_checks.values() for key in keys}
-    check(
-        f"{form_no} 체크 안 한 보기 수",
-        len(every_check - expected_all),
-        len(every_check) - len(expected_all),
-    )
-    check(
-        f"{form_no} 체크 안 한 보기에 찍힌 ✓",
-        sorted(k for keys in checked_boxes.values() for k in keys if k not in expected_all),
-        [],
-    )
+    check(f"{form_no} 채운 네모의 선택 위치·미선택 보기", checkbox_mark_errors(form_no, body, expected_all), [])
 
     filled.close()
     template.close()
@@ -457,6 +504,13 @@ def test_form1_roundtrip(client, ds_id: int) -> None:
     print("\n[3] 서식1 왕복 — 값 → 좌표 → 되읽기")
     _, body = export(client, ds_id, "서식1")
     roundtrip("서식1", body, EXPECTED_TEXTS_FORM1, EXPECTED_CHECKS_FORM1)
+
+
+def test_self_check_marks(client, ds_id: int) -> None:
+    print("\n[3-1] 자가진단 8행 — 다시 그린 예/아니오 칸의 벡터 네모")
+    _, body = export(client, ds_id, "서식2")
+    selected = {f"self_check.{row}.예" for row in range(1, 9)}
+    check("자가진단 1~8행 채운 네모·미선택 보기", checkbox_mark_errors("서식2", body, selected), [])
 
 
 def test_form5_roundtrip(client, ds_id: int, clock_day: date) -> None:
@@ -519,11 +573,8 @@ def test_signature(client, ds_id: int) -> None:
     inside = all(box.contains(fitz.Rect(r)) for r in placed)
     check("서명이 서명란 좌표 안", inside, True)
 
-    # 원문 "(서명또는인)" 자리다 — 종이에 도장을 찍는 그 자리.
-    words = [w for w in page.get_text("words") if "서명" in w[4] or "인)" in w[4]]
-    signature_field = fitz.Rect(*spec["fields"]["signature"]["box"])
-    near = any(fitz.Rect(w[:4]).x0 >= signature_field.x1 - 1 and fitz.Rect(w[:4]).y0 < signature_field.y1 + 4 for w in words)
-    check("서명 입력칸이 원문 서명 안내 바로 앞", near, True)
+    # The image must cover the printed signature phrase as an actual stamp would.
+    check("서명 이미지가 (서명 또는 인) 문구와 겹침", signature_overlaps_source(body, "서식5", "signature", "서명또는인"), True)
 
     # 서명이 없는 신청 건은 이미지도 없어야 한다 — 빈 자리에 아무거나 찍지 않는다.
     doc.close()
@@ -550,8 +601,11 @@ def test_without_signature(client) -> None:
     check("서명 없어도 내보내진다", res.status_code, 200)
     doc = fitz.open(stream=body, filetype="pdf")
     check("서명 이미지 없음", len(doc[0].get_images()), 0)
-    marks = [w[4] for w in doc[0].get_text("words") if "✓" in w[4]]
-    check("'동의하지 않음'에 체크", len(marks), 1)
+    check(
+        "서명 없는 건도 동의하지 않음 채운 네모 위치",
+        checkbox_mark_errors("서식5", body, {"agree.동의하지 않음"}),
+        [],
+    )
     doc.close()
 
 
@@ -578,18 +632,39 @@ def test_officer_tab(client, ds_id: int, jp_id: int) -> None:
             "inline",
         )
 
+    applicant_form = next(form for form in detail["forms"] if form["form_no"] == "서식1")
+    officer_pdf = client.get(applicant_form["file_url"])
+    import fitz
+    with fitz.open(stream=officer_pdf.content, filetype="pdf") as document:
+        officer_text = " ".join(page.get_text() for page in document)
+    check_true("담당자 작성본 API가 신청자 이름 값을 PDF에 제공", P7_FORM1["name"] in officer_text)
+    check_true("담당자 작성본 API가 은행 값을 PDF에 제공", P7_FORM1["bankName"] in officer_text)
+
     check("취업패키지 신청자 서식(목록 API)", [item["form_no"] for item in client.get(f"/api/applications/{jp_id}/forms").json()], ["job_application", "job_consent"])
 
 
-def test_layout_and_interview_form(client, jp_id: int, tmp: Path) -> None:
+def test_layout_and_interview_form(client, jp_id: int, ds_id: int, tmp: Path) -> None:
     print("\n[8] 취업패키지 좌표 응답·면접확인서 미리 채움")
     client.patch(f"/api/applications/{jp_id}", json={"form1": {
         "name": "김가상", "birth": {"y": "1999", "m": "1", "d": "1"},
         "address": "전북특별자치도 전주시", "mobile": "010-1111-2222", "email": "test@example.invalid",
+        "bankName": "가상은행", "accountNo": "111-222-333",
+        "job.signature": signature_png(tmp / "job-application-signature.png"),
     }})
     layout = client.get(f"/api/applications/{jp_id}/forms/layouts/job_application")
     check("레이아웃 응답", layout.status_code, 200)
-    check_true("레이아웃에 신청자 이름 좌표", "name" in layout.json()["fields"])
+    layout_data = layout.json()
+    serialized_layout = json.dumps(layout_data, ensure_ascii=False)
+    check_true("신청자 레이아웃은 불투명 필드 ID만 사용", bool(layout_data["fields"]) and all(re.fullmatch(r"f\d{4}", key) for key in layout_data["fields"]))
+    check("신청자 레이아웃 내부 키 노출", re.findall(r'"(?:name|bankName|self_check\.\d+)"\s*:', serialized_layout), [])
+    savings_layouts = [
+        client.get(f"/api/applications/{ds_id}/forms/layouts/{form_no}").json()
+        for form_no in ("서식1", "서식2")
+    ]
+    check_true(
+        "두배적금 신청서·자가진단 레이아웃 내부 키 없음",
+        all(all(re.fullmatch(r"f\d{4}", key) for key in item["fields"]) and not re.search(r'"(?:name|bankName|self_check\.\d+)"\s*:', json.dumps(item, ensure_ascii=False)) for item in savings_layouts),
+    )
     template = client.get(f"/api/applications/{jp_id}/forms/templates/job_application.pdf")
     check("원본 템플릿 응답", template.status_code, 200)
     check("원본 템플릿 PDF", template.content[:5], b"%PDF-")
@@ -604,6 +679,11 @@ def test_layout_and_interview_form(client, jp_id: int, tmp: Path) -> None:
     check("완성 미리보기 PNG", preview_png.status_code, 200)
     check("완성 PNG 캐시 금지", preview_png.headers.get("cache-control"), "no-store")
     check_true("완성 PNG는 원본 배경과 다름", preview_png.content != background.content)
+    app_pdf = client.get(f"/api/applications/{jp_id}/forms/job_application.pdf")
+    with pymupdf.open(stream=app_pdf.content, filetype="pdf") as document:
+        app_text = " ".join(page.get_text() for page in document)
+    check_true("신청자 API 입력값이 PDF 내보내기에 왕복", "김가상" in app_text and "가상은행" in app_text and "111-222-333" in app_text)
+    check("취업패키지 신청서 서명이 인쇄된 (인)과 겹침", signature_overlaps_source(app_pdf.content, "job_application", "job.signature", "(인)"), True)
     interview_png = client.get(f"/api/applications/{jp_id}/forms/job_interview_confirmation/pages/1.png")
     check("면접확인서 원본 PNG", interview_png.status_code, 200)
     filled = client.get(f"/api/applications/{jp_id}/forms/interview-confirmation/filled.pdf")
@@ -622,6 +702,7 @@ def test_layout_and_interview_form(client, jp_id: int, tmp: Path) -> None:
     consent_pdf = client.get(f"/api/applications/{jp_id}/forms/job_consent.pdf")
     with pymupdf.open(stream=consent_pdf.content, filetype="pdf") as document:
         check("취업패키지 동의서 서명 이미지", len(document[0].get_images()), 1)
+    check("취업패키지 동의서 서명이 인쇄된 (인)과 겹침", signature_overlaps_source(consent_pdf.content, "job_consent", "consent.job.signature", "(인)"), True)
 
     suit_only = client.post(f"/api/applications/{jp_id}/subsidy-items", json={"items": [
         {"item_type": "suit", "count": 1, "receipts": [30000], "linked_interview_indices": [1]},
@@ -763,11 +844,12 @@ def main(clock_day: date | None = None) -> int:
             ds_id, jp_id = seed(client, tmp)
             test_export_headers(client, ds_id, jp_id)
             test_form1_roundtrip(client, ds_id)
+            test_self_check_marks(client, ds_id)
             test_form5_roundtrip(client, ds_id, clock_day)
             test_signature(client, ds_id)
             test_without_signature(client)
             test_submitted_date_fixed(client, ds_id, clock_day)
-            test_layout_and_interview_form(client, jp_id, tmp)
+            test_layout_and_interview_form(client, jp_id, ds_id, tmp)
             test_submitted_forms_locked(client, ds_id)
             test_officer_tab(client, ds_id, jp_id)
     finally:

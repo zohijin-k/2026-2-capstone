@@ -533,7 +533,7 @@ export default function PdfFormsWorkspace({
         id={publicId}
         data-field-ref={fieldRef}
         type={key === 'transferIn' || key === 'employedAt' ? 'date' : 'text'}
-        className={`pdf-form__text ${isMissing && required ? 'is-missing' : ''}`}
+        className={`pdf-form__text pdf-form__text--${field.font_family || 'sans'} ${isMissing && required ? 'is-missing' : ''}`}
         style={{ ...boxStyle, fontSize: fitFont, textAlign: field.align || 'left' }}
         aria-label={label}
         value={key === 'transferIn' || key === 'employedAt' ? isoDate(readForm(form1, key) as unknown as Form1Value['transferIn']) : applyFieldFormat(dateValue, field.format)}

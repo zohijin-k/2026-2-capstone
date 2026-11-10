@@ -51,6 +51,7 @@
       "y": 602.46,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         253.28,
         589.65,
@@ -67,7 +68,7 @@
         "baseline": 602.46,
         "character": "년",
         "render_size_scale": 1.1,
-        "render_baseline": 603.18,
+        "render_baseline": 602.82,
         "font_family": "sans",
         "glyph_box": [
           266.74,
@@ -84,6 +85,7 @@
       "y": 602.46,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         281.97,
         589.65,
@@ -117,6 +119,7 @@
       "y": 602.46,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         321.67,
         589.65,

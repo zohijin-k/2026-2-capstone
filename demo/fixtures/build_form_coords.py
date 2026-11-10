@@ -244,6 +244,11 @@ def read_sheet(page: Any, number: int) -> Sheet:
 Align = Literal["left", "center"]
 
 
+def font_family(font_name: str) -> str:
+    lowered = font_name.lower()
+    return "serif" if any(part in lowered for part in ("batang", "myeongjo", "명조", "song", "serif")) else "sans"
+
+
 @dataclass(frozen=True)
 class TextField:
     """값을 적어 넣을 자리 하나."""
@@ -477,6 +482,7 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
         "y": round(y, 2),
         "size": round(size, 2),
         "align": spec.align,
+        "font_family": font_family(tail.font),
         "box": [round(v, 2) for v in box],
         "anchor": spec.anchor,
         "mode": spec.mode,
@@ -493,14 +499,17 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
             candidates = [ch for row in sheet.lines for ch in row.chars if ch.c.isdigit() and abs(ch.oy - baseline) <= 3.5]
         if candidates:
             reference = min(candidates, key=lambda ch: abs(ch.ox - (box[0] + box[2]) / 2))
-            font_name = reference.font.lower()
-            family = "serif" if any(part in font_name for part in ("batang", "myeongjo", "명조", "song")) else "sans"
+            render_baseline = reference.oy + (0.72 if not reference.c.isdigit() else 0.0)
+            if spec.key == "consent.form4.year":
+                # The printed year marker has a taller lower ink edge than the
+                # Noto numerals; a 0.36pt optical lift aligns their 200dpi baselines.
+                render_baseline -= 0.36
             result["date_reference"] = {
                 "size": round(reference.size, 2), "baseline": round(reference.oy, 2),
                 "character": reference.c,
                 "render_size_scale": 1.0 if reference.c.isdigit() else 1.1,
-                "render_baseline": round(reference.oy + (0.72 if not reference.c.isdigit() else 0.0), 2),
-                "font_family": family, "glyph_box": [round(reference.x0, 2), round(reference.y0, 2), round(reference.x1, 2), round(reference.y1, 2)],
+                "render_baseline": round(render_baseline, 2),
+                "font_family": font_family(reference.font), "glyph_box": [round(reference.x0, 2), round(reference.y0, 2), round(reference.x1, 2), round(reference.y1, 2)],
             }
             # Automatic dates use the adjacent printed glyph's baseline and size.
             # The embedded CJK font's extracted glyph box is slightly taller than
@@ -598,7 +607,7 @@ def _radio_pair(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, An
             "box": [round(value, 2) for value in box],
             "label": label,
             "group_box": group_box,
-            "font_family": "serif" if any(part in selected[0].font.lower() for part in ("batang", "myeongjo", "명조", "song")) else "sans",
+            "font_family": font_family(selected[0].font),
         }
     return out
 

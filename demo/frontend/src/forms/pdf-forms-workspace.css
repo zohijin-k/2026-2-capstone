@@ -27,11 +27,16 @@
 .pdf-form__overlay { position: absolute; inset: 0; pointer-events: none; }
 .pdf-form__mask { position: absolute; background: #fff; }
 .pdf-form__text, .pdf-form__check, .pdf-form__sign { position: absolute; box-sizing: border-box; pointer-events: auto; }
+.pdf-form__page { font-family: 'Noto Sans KR', sans-serif; }
+@font-face { font-family: 'Noto Sans KR'; src: url('../assets/fonts/NotoSansKR/NotoSansKR-subset.woff2') format('woff2'); font-style: normal; font-weight: 400; font-display: block; }
+@font-face { font-family: 'Noto Serif KR'; src: url('../assets/fonts/NotoSerifKR/NotoSerifKR-subset.woff2') format('woff2'); font-style: normal; font-weight: 400; font-display: block; }
 .pdf-form__text { padding: 0 2px; border: 1px solid rgb(51 83 147 / 25%); border-radius: 2px; background: rgb(242 247 255 / 72%); color: #101d42; line-height: 1.1; z-index: 2; }
+.pdf-form__text--sans { font-family: 'Noto Sans KR', sans-serif; }
+.pdf-form__text--serif { font-family: 'Noto Serif KR', serif; }
 .pdf-form__text:focus { outline: 2px solid var(--brand); z-index: 3; }
 .pdf-form__text[readonly] { background: rgb(239 242 246 / 65%); }
-.pdf-form__auto-date { position: absolute; display: block; box-sizing: border-box; overflow: visible; padding: 0; border: 0; background: transparent; color: #141414; font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; font-weight: 400; white-space: nowrap; pointer-events: none; user-select: none; z-index: 2; }
-.pdf-form__auto-date--serif { font-family: 'Noto Serif KR', 'AppleMyungjo', serif; }
+.pdf-form__auto-date { position: absolute; display: block; box-sizing: border-box; overflow: visible; padding: 0; border: 0; background: transparent; color: #141414; font-family: 'Noto Sans KR', sans-serif; font-weight: 400; white-space: nowrap; pointer-events: none; user-select: none; z-index: 2; }
+.pdf-form__auto-date--serif { font-family: 'Noto Serif KR', serif; }
 .pdf-form__text.is-missing, .pdf-form__check.is-missing, .pdf-form__sign.is-missing { outline: 2px solid #c33; outline-offset: 1px; }
 .pdf-form__check { display: block; z-index: 4; overflow: visible; }
 .pdf-form__check input { appearance: none; position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); margin: 0; cursor: pointer; border: 1px solid transparent; }
@@ -39,8 +44,8 @@
 .pdf-form__check-mark rect { fill: #112861; stroke: #112861; }
 .pdf-form__check-mark path { fill: none; stroke: #fff; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .pdf-form__check input:focus-visible { outline: 2px solid var(--brand); }
-.pdf-form__radio-text { position: absolute; display: flex; align-items: center; justify-content: center; gap: 4px; z-index: 5; overflow: visible; pointer-events: auto; color: #141414; font-family: 'Noto Sans KR', 'Apple SD Gothic Neo', sans-serif; font-weight: 400; white-space: nowrap; cursor: pointer; }
-.pdf-form__radio-text--serif { font-family: 'Noto Serif KR', 'AppleMyungjo', serif; }
+.pdf-form__radio-text { position: absolute; display: flex; align-items: center; justify-content: center; gap: 4px; z-index: 5; overflow: visible; pointer-events: auto; color: #141414; font-family: 'Noto Sans KR', sans-serif; font-weight: 400; white-space: nowrap; cursor: pointer; }
+.pdf-form__radio-text--serif { font-family: 'Noto Serif KR', serif; }
 .pdf-form__radio-text input { appearance: none; position: absolute; inset: -5px; width: calc(100% + 10px); height: calc(100% + 10px); margin: 0; border: 0; opacity: 0; cursor: pointer; }
 .pdf-form__radio-text input:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; opacity: 1; }
 .pdf-form__radio-box { flex: none; width: 14px; height: 14px; overflow: visible; pointer-events: none; }
