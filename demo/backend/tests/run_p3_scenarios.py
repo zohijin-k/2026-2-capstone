@@ -86,6 +86,13 @@ def test_income_table() -> None:
     for household_size, limits in expected.items():
         for insurance_type, limit in limits.items():
             check(f"{household_size}인 {insurance_type} 상한값", premium_limit_140(household_size, insurance_type)[0], limit)
+            if household_size >= 8:
+                source_note = premium_limit_140(household_size, insurance_type)[1]
+                check_true(
+                    f"{household_size}인 값의 출처와 공고문 표 밖 표시",
+                    "보건복지부 소득판정기준표(2025.1.1. 고시)" in source_note
+                    and "공고문 표(7인까지) 밖" in source_note,
+                )
             under = score_application(
                 ScoringFacts(household_size=household_size, monthly_premium=limit, insurance_type=insurance_type),
                 announcement_date=PROGRAM.announcement_date,
@@ -100,7 +107,10 @@ def test_income_table() -> None:
             check(f"{household_size}인 {insurance_type} 상한 초과 부적합", over_limit.income_over_limit, True)
 
     _, _, note_11 = income_percent(11, 500_000, "직장")
-    check_true("11인 이상 10인 상한·담당자 확인 사유", "10인 기준" in note_11 and "담당자 확인" in note_11)
+    check_true(
+        "11인 이상 10인 상한·공고문 표 범위·담당자 확인 사유",
+        "10인 기준" in note_11 and "공고문 표는 7인까지만" in note_11 and "담당자 확인" in note_11,
+    )
 
     residence_facts = build_facts(
         {"birth": "1999-01-01", "employedAt": "2023-01-01"},

@@ -140,6 +140,7 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.reset --yes
 
 pytest 없이 그대로 실행된다. 전부 임시 폴더에서 돌기 때문에 `demo/demo.db`·
 `demo/storage/`(시연용 데이터)를 건드리지 않는다.
+`demo/fixtures/samples/`가 없으면 첫 시나리오 실행 시 `make_samples`가 더미 PDF를 자동 생성한다.
 
 ```bash
 # 저장소 루트에서

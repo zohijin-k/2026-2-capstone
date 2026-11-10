@@ -122,6 +122,32 @@ def test_missing_household_forces_review() -> None:
     ))
 
 
+def test_scenario_package_creates_missing_samples(tmp: Path) -> None:
+    print("\n[1-3] 시연 샘플이 없으면 테스트 시작 전에 생성")
+    import demo.backend.tests as test_package
+    import demo.fixtures.make_samples as sample_builder
+
+    sample_dir = tmp / "auto-samples"
+    old_samples_dir = test_package.SAMPLES_DIR
+    old_generator = sample_builder.main
+    calls = []
+
+    def fake_make_samples() -> None:
+        calls.append(True)
+        sample_dir.mkdir(parents=True, exist_ok=True)
+        (sample_dir / "synthetic.pdf").write_bytes(b"synthetic")
+
+    test_package.SAMPLES_DIR = sample_dir
+    sample_builder.main = fake_make_samples
+    try:
+        test_package.ensure_demo_samples()
+        check("없는 샘플 경로에서 생성기를 호출", calls, [True])
+        check_true("샘플 파일 생성", (sample_dir / "synthetic.pdf").is_file())
+    finally:
+        test_package.SAMPLES_DIR = old_samples_dir
+        sample_builder.main = old_generator
+
+
 def _add_app(
     app_no: str, *, year: int, status: str, members: list[dict[str, str]],
     program: str = DOUBLE_SAVINGS, address: str = "임의 주소 A",
@@ -228,6 +254,7 @@ def main() -> int:
     try:
         test_household_source_and_income_review()
         test_missing_household_forces_review()
+        test_scenario_package_creates_missing_samples(tmp)
         test_overlapping_households_link_both_applications(tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
