@@ -85,6 +85,14 @@ def test_identity_api(client) -> None:
     check("서약 없이 → 400", identify(client, app_id, "김전북", "1999-01-01", pledge=False).status_code, 400)
     check("서명 없이 → 400", identify(client, app_id, "김전북", "1999-01-01", signature_data_url="").status_code, 400)
     check("미래 생년월일 → 400", identify(client, app_id, "김전북", "2999-01-01").status_code, 400)
+    invalid_phone_message = "010으로 시작하는 휴대폰 번호를 입력해 주세요."
+    invalid_prefix = identify(client, app_id, "김전북", "1999-01-01", phone="011-1234-5678")
+    check("011 시작 → 400", invalid_prefix.status_code, 400)
+    check("011 시작 오류 안내", invalid_prefix.json()["detail"], invalid_phone_message)
+    check("011-123-4567 (10자리) → 400",
+          identify(client, app_id, "김전북", "1999-01-01", phone="011-123-4567").status_code, 400)
+    check("010 10자리 → 400",
+          identify(client, app_id, "김전북", "1999-01-01", phone="0101234567").status_code, 400)
     r = identify(client, app_id, "김 전북", "1999-01-01")
     check("인증 → 200", r.status_code, 200)
     ident = r.json()["identity"]

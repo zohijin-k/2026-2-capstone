@@ -1,4 +1,4 @@
-/** 입력 중 휴대폰 번호를 숫자 3-4-4 또는 3-3-4 형식으로 보여준다. */
+/** 입력 중 휴대폰 번호를 숫자 3-4-4 형식으로 보여준다. */
 export function formatPhone(raw: string): string {
   let digits = raw.replace(/\D/g, '')
   if (raw.trimStart().startsWith('+82') && digits.startsWith('82')) {
@@ -7,11 +7,14 @@ export function formatPhone(raw: string): string {
   digits = digits.slice(0, 11)
 
   if (digits.length <= 3) return digits
-  if (digits.length === 10) {
-    return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`
-  }
   if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`
+}
+
+/** 본인인증에서 받는 010 휴대폰 번호인지 확인한다. */
+export function isValidPhone(raw: string): boolean {
+  const digits = raw.replace(/\D/g, '')
+  return digits.length === 11 && digits.startsWith('010')
 }
 
 /** 포맷된 값에서 앞에 있는 숫자 개수를 기준으로 커서 위치를 구한다. */
