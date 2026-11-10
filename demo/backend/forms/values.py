@@ -277,15 +277,22 @@ def build_form5(app: Application, consents: list[Consent], storage_root: Any, **
             target = storage_root.parent / admin.signature_path
             if target.exists():
                 filled.images["signature"] = str(target)
-    if "signature" not in filled.images:
-        signature = form5.get("signature")
-        if isinstance(signature, str) and signature.startswith("data:image/png;base64,"):
-            import base64
+    if form5.get("signatureScanUploaded"):
+        from .signature_scan import signature_scan_paths
 
-            try:
-                filled.images["signature"] = base64.b64decode(signature.split(",", 1)[1])
-            except ValueError:
-                pass
+        _, processed_scan = signature_scan_paths(storage_root, app.application_no)
+        if processed_scan.is_file():
+            filled.images["signature"] = str(processed_scan)
+    signature = form5.get("signature")
+    if isinstance(signature, str) and signature.startswith("data:image/png;base64,") and (
+        app.status == "draft" or "signature" not in filled.images
+    ):
+        import base64
+
+        try:
+            filled.images["signature"] = base64.b64decode(signature.split(",", 1)[1])
+        except ValueError:
+            pass
 
     return filled
 

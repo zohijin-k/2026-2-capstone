@@ -13,10 +13,15 @@ from hashlib import sha256
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from ..forms import coords as form_coords
+from ..forms.signature_scan import (
+    delete_signature_scan,
+    process_signature_scan,
+    signature_scan_paths,
+)
 from ..forms.render import (
     filled_payload,
     render,
@@ -27,9 +32,56 @@ from ..forms.values import BUILDERS, available_forms, form_date
 from .common import STORAGE, list_consents, load_application, subsidy_rows
 
 router = APIRouter(prefix="/api/applications", tags=["forms"])
+SIGNATURE_SCAN_MAX_BYTES = 10 * 1024 * 1024
 
 #: `files.py`와 같은 값이어야 한다. 검증 스크립트가 응답 헤더로 직접 확인한다.
 DISPOSITION = "inline"
+
+
+@router.post("/{application_id}/forms/signature-scan")
+async def upload_signature_scan(application_id: int, file: UploadFile = File(...)) -> dict[str, bool]:
+    """Save a processed signature image in the application's private storage."""
+    app = load_application(application_id)
+    from ..models import STATUS_DRAFT
+
+    if app.status != STATUS_DRAFT:
+        raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+    if file.content_type not in {"image/jpeg", "image/png"}:
+        raise HTTPException(400, "JPG 또는 PNG 이미지 파일을 올려 주세요.")
+    raw = await file.read(SIGNATURE_SCAN_MAX_BYTES + 1)
+    if len(raw) > SIGNATURE_SCAN_MAX_BYTES:
+        raise HTTPException(413, "서명 이미지는 10MB 이하로 올려 주세요.")
+    try:
+        processed = process_signature_scan(raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    original_base, processed_path = signature_scan_paths(STORAGE, app.application_no)
+    original_base.parent.mkdir(parents=True, exist_ok=True)
+    delete_signature_scan(STORAGE, app.application_no)
+    suffix = ".jpg" if file.content_type == "image/jpeg" else ".png"
+    original_base.with_suffix(suffix).write_bytes(raw)
+    processed_path.write_bytes(processed)
+    return {"uploaded": True}
+
+
+@router.delete("/{application_id}/forms/signature-scan")
+def delete_signature_scan_route(application_id: int) -> dict[str, bool]:
+    app = load_application(application_id)
+    from ..models import STATUS_DRAFT
+
+    if app.status != STATUS_DRAFT:
+        raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+    delete_signature_scan(STORAGE, app.application_no)
+    return {"uploaded": False}
+
+
+@router.get("/{application_id}/forms/signature-scan.png")
+def read_signature_scan(application_id: int) -> Response:
+    app = load_application(application_id)
+    _, processed = signature_scan_paths(STORAGE, app.application_no)
+    if not processed.is_file():
+        raise HTTPException(404, "서명 이미지가 없습니다.")
+    return Response(processed.read_bytes(), media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
 def form_links(application_id: int) -> list[dict[str, Any]]:

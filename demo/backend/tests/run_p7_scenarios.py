@@ -599,6 +599,77 @@ def test_signature(client, ds_id: int) -> None:
     doc.close()
 
 
+def test_signature_scan(client) -> None:
+    """Scanned signature is cleaned, shown in the form, and counted as complete."""
+    import fitz
+    import io
+    from PIL import Image, ImageDraw
+
+    print("\n[5b] 자필 스캔 서명 배경 제거·렌더·필수 충족")
+    app_id = client.post("/api/applications", json={"program_code": DOUBLE_SAVINGS}).json()["id"]
+    client.patch(f"/api/applications/{app_id}", json={"form5": {
+        "agree": "동의함", "signature": "", "signatureScanUploaded": False,
+    }})
+
+    # Synthetic white paper with a dark horizontal signature and EXIF orientation 6.
+    canvas = Image.new("RGB", (120, 240), "white")
+    draw = ImageDraw.Draw(canvas)
+    draw.line([(60, 20), (40, 70), (68, 105), (42, 145), (60, 220)], fill=(10, 10, 10), width=6)
+    exif = Image.Exif()
+    exif[274] = 6
+    source = io.BytesIO()
+    canvas.save(source, format="JPEG", exif=exif)
+    raw = source.getvalue()
+    blank = io.BytesIO()
+    Image.new("RGB", (60, 30), "white").save(blank, format="PNG")
+    faint = client.post(
+        f"/api/applications/{app_id}/forms/signature-scan",
+        files={"file": ("blank.png", blank.getvalue(), "image/png")},
+    )
+    check("잉크가 없는 이미지 안내", faint.status_code, 400)
+    check("잉크가 없는 이미지 안내 문구", faint.json()["detail"], "서명이 잘 보이지 않습니다. 흰 종이에 진하게 쓴 서명을 다시 올려 주세요.")
+    response = client.post(
+        f"/api/applications/{app_id}/forms/signature-scan",
+        files={"file": ("synthetic-signature.jpg", raw, "image/jpeg")},
+    )
+    check("합성 서명 업로드", response.status_code, 200)
+    saved = client.patch(f"/api/applications/{app_id}", json={"form5": {
+        "agree": "동의함", "signature": "", "signatureScanUploaded": True,
+    }})
+    check("서명 스캔이 필수 항목을 충족", saved.json()["form5_json"]["signatureScanUploaded"], True)
+    scan_response = client.get(f"/api/applications/{app_id}/forms/signature-scan.png")
+    check("처리 이미지 API", scan_response.status_code, 200)
+    cleaned = Image.open(io.BytesIO(scan_response.content)).convert("RGBA")
+    check("종이 모서리가 투명", cleaned.getpixel((0, 0))[3], 0)
+    check_true("EXIF 방향을 적용해 서명 획을 가로로 표시", cleaned.width > cleaned.height)
+
+    from ..forms.signature_scan import signature_scan_paths
+    from ..api import forms as forms_api
+    original, processed = signature_scan_paths(
+        forms_api.STORAGE, client.get(f"/api/applications/{app_id}").json()["application_no"]
+    )
+    expected_private_dir = forms_api.STORAGE / "signatures" / client.get(f"/api/applications/{app_id}").json()["application_no"]
+    check_true("원본·처리 이미지는 신청 건별 비공개 저장소에 보관", any(expected_private_dir.glob("scan-original.*")) and processed.is_file() and original.parent == expected_private_dir and processed.parent == expected_private_dir)
+    pdf = client.get(f"/api/applications/{app_id}/forms/서식5.pdf")
+    check("스캔 서명이 포함된 PDF", pdf.status_code, 200)
+    check("스캔 이미지가 서명 문구와 겹침", signature_overlaps_source(pdf.content, "서식5", "signature", "서명또는인"), True)
+    with fitz.open(stream=pdf.content, filetype="pdf") as doc:
+        check("PDF의 서명 이미지", len(doc[0].get_images(full=True)), 1)
+    consent_response = client.post(f"/api/applications/{app_id}/consents", json={"consents": [
+        {"consent_type": "admin_info", "agreed": True, "signature_kind": "handwritten"},
+    ]})
+    check("자필 서명을 동의 기록에 연결", consent_response.status_code, 200)
+    check("동의 기록에 서명 이미지 저장됨", consent_response.json()["saved"][0]["signature_saved"], True)
+    applicant_consents = client.get(f"/api/applications/{app_id}/consents").text
+    check_true("신청자 응답은 서명 저장 경로를 감춤", "scan-processed.png" not in applicant_consents and "scan-original" not in applicant_consents)
+    check("서명 스캔 삭제", client.delete(f"/api/applications/{app_id}/forms/signature-scan").status_code, 200)
+    after_delete = client.patch(f"/api/applications/{app_id}", json={"form5": {
+        "agree": "동의함", "signature": "", "signatureScanUploaded": True,
+    }})
+    check("삭제 후 필수 서명 상태", after_delete.json()["form5_json"]["signatureScanUploaded"], False)
+    check("삭제 후 처리 이미지 비공개", client.get(f"/api/applications/{app_id}/forms/signature-scan.png").status_code, 404)
+
+
 def test_without_signature(client) -> None:
     import fitz
 
@@ -867,6 +938,7 @@ def main(clock_day: date | None = None) -> int:
             test_self_check_marks(client, ds_id)
             test_form5_roundtrip(client, ds_id, clock_day)
             test_signature(client, ds_id)
+            test_signature_scan(client)
             test_without_signature(client)
             test_submitted_date_fixed(client, ds_id, clock_day)
             test_layout_and_interview_form(client, jp_id, ds_id, tmp)

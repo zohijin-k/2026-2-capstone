@@ -4,6 +4,8 @@ import {
   fetchFormLayout,
   fetchSubsidyItems,
   saveSubsidyItems,
+  uploadSignatureScan,
+  deleteSignatureScan,
   type FormFieldLayout,
   type FormLayout,
   type Identity,
@@ -135,6 +137,7 @@ export default function PdfFormsWorkspace({
   const [signatureTarget, setSignatureTarget] = useState<string | null>(null)
   const [previewKey, setPreviewKey] = useState(0)
   const [thumbnailVersion, setThumbnailVersion] = useState(0)
+  const [scanVersion, setScanVersion] = useState(0)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [subsidySelections, setSubsidySelections] = useState<SubsidySelection[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -245,7 +248,7 @@ export default function PdfFormsWorkspace({
     if (key === 'consent.uniqueId') return !!consent.uniqueId
     if (key === 'consent.thirdParty') return !!consent.thirdParty
     if (key === 'agree') return !!form5.agree
-    if (key === 'signature') return signMode === '전자서명' ? !!form5.signature : !!form5.handwrittenFileName
+    if (key === 'signature') return signMode === '전자서명' ? !!form5.signature : form5.signatureScanUploaded
     if (key === 'ecContact') return isValidPhone(String(readForm(form1, key) || ''))
     if (key === 'email') return isValidEmail(normalizeEmail(String(readForm(form1, key) || '')))
     if (key.endsWith('.signature')) return !!readForm(form1, key)
@@ -338,18 +341,72 @@ export default function PdfFormsWorkspace({
   }
 
   const signatureValue = (formNo: string): string => {
-    if (formNo === '서식5') return form5.signature
+    if (formNo === '서식5') return form5.signatureScanUploaded
+      ? `/api/applications/${applicationId}/forms/signature-scan.png?v=${scanVersion}`
+      : form5.signature
     const key = formNo === 'job_consent' ? 'consent.job.signature' : 'job.signature'
     const value = readForm(form1, key)
     return typeof value === 'string' ? value : ''
   }
 
-  const resetForm = (formNo: string) => {
+  const changeSignMode = async (next: SignMode) => {
+    if (next === signMode) return
+    const hasSignature = !!form5.signature || form5.signatureScanUploaded
+    if (hasSignature && !window.confirm('서명 방식을 바꾸면 현재 서명이 지워집니다. 바꾸시겠어요?')) return
+    try {
+      if (form5.signatureScanUploaded) await deleteSignatureScan(applicationId)
+      onForm5({ ...form5, signature: '', signatureScanUploaded: false })
+      onSignMode(next)
+      setScanVersion((value) => value + 1)
+    } catch (e: unknown) {
+      setLocalError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const uploadScan = async (file: File | undefined, input: HTMLInputElement) => {
+    if (!file) return
+    input.value = ''
+    setLocalError('')
+    if (!['image/jpeg', 'image/png'].includes(file.type)) {
+      setLocalError('JPG 또는 PNG 이미지 파일을 올려 주세요.')
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setLocalError('서명 이미지는 10MB 이하로 올려 주세요.')
+      return
+    }
+    try {
+      await uploadSignatureScan(applicationId, file)
+      onForm5({ ...form5, signature: '', signatureScanUploaded: true })
+      setScanVersion((value) => value + 1)
+    } catch (e: unknown) {
+      setLocalError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const removeScan = async () => {
+    try {
+      await deleteSignatureScan(applicationId)
+      onForm5({ ...form5, signatureScanUploaded: false })
+      setScanVersion((value) => value + 1)
+    } catch (e: unknown) {
+      setLocalError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  const resetForm = async (formNo: string) => {
     if (!window.confirm('작성한 내용과 서명이 모두 지워집니다. 다시 작성할까요?')) return
     if (formNo === '서식2') onAnswers({})
     else if (formNo === '서식3') onConsent({ ...consent, privacy: '', uniqueId: '' })
     else if (formNo === '서식4') onConsent({ ...consent, thirdParty: '' })
-    else if (formNo === '서식5') { onForm5(EMPTY_FORM5); onSignMode('전자서명') }
+    else if (formNo === '서식5') {
+      if (form5.signatureScanUploaded) {
+        try { await deleteSignatureScan(applicationId) }
+        catch (e: unknown) { setLocalError(e instanceof Error ? e.message : String(e)); return }
+      }
+      onForm5(EMPTY_FORM5)
+      onSignMode('전자서명')
+    }
     else if (formNo === 'job_consent') {
       onConsent({ ...consent, privacy: '', thirdParty: '' })
       onForm1({ ...(form1 as unknown as Record<string, unknown>), 'consent.job.signature': '' } as unknown as Form1Value)
@@ -404,23 +461,6 @@ export default function PdfFormsWorkspace({
   const pageImageUrl = active
     ? `/api/applications/${applicationId}/forms/${encodeURIComponent(active.formNo)}/pages/${page + 1}.png?preview=${active.mode === 'preview' ? 'true' : 'false'}&v=${previewKey}`
     : ''
-
-  const focusNextMissing = () => {
-    if (!active) return
-    const key = missing(active.formNo)[0]
-    if (!key) return
-    const entry = Object.entries(currentLayout?.fields || {}).find(([fieldKey]) => fieldKey === key || fieldGroup(fieldKey) === key)
-    if (!entry) return
-    const [fieldKey, field] = entry
-    if (field.page !== page) setPage(field.page)
-    const sorted = Object.entries(currentLayout?.fields || {}).sort((a, b) => a[1].page - b[1].page || a[1].box[1] - b[1].box[1] || a[1].box[0] - b[1].box[0])
-    const index = sorted.findIndex(([candidate]) => candidate === fieldKey)
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      const element = document.querySelector<HTMLElement>(`[data-field-ref="${field.page}-${index}"]`)
-      element?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
-      ;(element?.matches('input,button') ? element : element?.querySelector<HTMLElement>('input,button'))?.focus({ preventScroll: true })
-    }))
-  }
 
   const renderField = ([key, field]: [string, FormFieldLayout], fieldIndex: number) => {
     if (!active || field.page !== page) return null
@@ -496,12 +536,13 @@ export default function PdfFormsWorkspace({
           id={publicId}
           data-field-ref={fieldRef}
           disabled={readOnly}
-          className={`pdf-form__sign ${isMissing && !value ? 'is-missing' : ''}`}
+          className={`pdf-form__sign ${isMissing && !requirementSatisfied(key) ? 'is-missing' : ''}`}
           style={boxStyle}
           aria-label="서명 입력란"
+          title="눌러서 서명"
           onClick={() => setSignatureTarget(key)}
         >
-          {value ? <img src={value} alt="입력한 서명" /> : <span>서명</span>}
+          {value && <img src={value} alt="입력한 서명" />}
         </button>
       )
     }
@@ -652,7 +693,6 @@ export default function PdfFormsWorkspace({
           footer={active.mode === 'edit' && !readOnly ? (
             <>
               <span className="pdf-form__remaining">{missing(active.formNo).length === 0 ? '작성 완료' : `남은 항목 ${missing(active.formNo).length}개`}</span>
-              {missing(active.formNo).length > 0 && <button type="button" className="btn" onClick={focusNextMissing}>다음 빈칸으로</button>}
               <button type="button" className="btn" onClick={() => void startPreview(active.formNo)}>미리보기</button>
               <button type="button" className="btn" onClick={() => void saveAndClose()}>저장하고 닫기</button>
             </>
@@ -664,7 +704,6 @@ export default function PdfFormsWorkspace({
             <button type="button" className="btn" disabled={page <= 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>◀</button>
             <span>{page + 1} / {currentLayout.page_sizes.length}쪽</span>
             <button type="button" className="btn" disabled={page >= currentLayout.page_sizes.length - 1} onClick={() => setPage((p) => Math.min(currentLayout.page_sizes.length - 1, p + 1))}>▶</button>
-            {active.mode === 'edit' && <span className="pdf-form__hint">칸을 탭으로 이동할 수 있습니다.</span>}
           </div>
           <div className="pdf-form__scroll" ref={scrollRef} data-form-scroll>
             <div
@@ -707,18 +746,20 @@ export default function PdfFormsWorkspace({
           {active.mode === 'edit' && !readOnly && active.formNo === '서식5' && (
             <div className="pdf-form__signature-mode">
               <strong>서명 방식</strong>
-              <label><input type="radio" checked={signMode === '전자서명'} onChange={() => onSignMode('전자서명')} /> 전자서명</label>
-              <label><input type="radio" checked={signMode === '자필 스캔본 업로드'} onChange={() => onSignMode('자필 스캔본 업로드')} /> 자필 스캔본 제출</label>
-              <span>자필 서명본 제출은 업로드 단계에서 선택할 수 있습니다.</span>
+              <label><input type="radio" checked={signMode === '전자서명'} onChange={() => void changeSignMode('전자서명')} /> 전자서명</label>
+              <label><input type="radio" checked={signMode === '자필 스캔본 업로드'} onChange={() => void changeSignMode('자필 스캔본 업로드')} /> 자필 스캔본 제출</label>
             </div>
           )}
           {active.mode === 'edit' && !readOnly && signatureTarget && (
             <div className="pdf-form__sign-pad">
               <h4>서명 입력 <button type="button" className="btn" onClick={() => setSignatureTarget(null)}>완료</button></h4>
               {active.formNo === '서식5' && signMode === '자필 스캔본 업로드' ? (
-                <label>서명 스캔본 파일 이름
-                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(event) => onForm5({ ...form5, handwrittenFileName: event.target.files?.[0]?.name || '' })} />
-                </label>
+                <div className="pdf-form__scan-upload">
+                  <label>서명 이미지
+                    <input type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled={readOnly} onChange={(event) => void uploadScan(event.currentTarget.files?.[0], event.currentTarget)} />
+                  </label>
+                  {form5.signatureScanUploaded && <button type="button" className="btn" onClick={() => void removeScan()}>서명 이미지 지우기</button>}
+                </div>
               ) : (
                 <>
                   <SignaturePad value={signatureValue(active.formNo)} onChange={(value) => setSignature(active.formNo, value)} width={260} height={90} />

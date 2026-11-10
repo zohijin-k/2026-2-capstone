@@ -405,6 +405,20 @@ async function form<T>(path: string, body: FormData): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export async function uploadSignatureScan(id: number, file: File): Promise<void> {
+  const body = new FormData()
+  body.append('file', file)
+  await form<{ uploaded: boolean }>(`/api/applications/${id}/forms/signature-scan`, body)
+}
+
+export async function deleteSignatureScan(id: number): Promise<void> {
+  const res = await fetch(`/api/applications/${id}/forms/signature-scan`, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(data?.detail ?? `서명 이미지 삭제 실패 (${res.status})`)
+  }
+}
+
 export const fetchPrograms = () => json<Program[]>('/api/programs')
 
 export type IssueRule = { mode: 'after_date' | 'after_notice' | 'within_days' | 'none'; date?: string; days?: number }

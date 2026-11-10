@@ -209,7 +209,7 @@ export default function ApplyFlow() {
     consent.thirdParty === '동의함' &&
     (!needsAdminConsent ||
       (form5.agree === '동의함' &&
-        (signMode === '전자서명' ? !!form5.signature : !!form5.handwrittenFileName)))
+        (signMode === '전자서명' ? !!form5.signature : form5.signatureScanUploaded)))
 
   const stageNames: [Stage, string][] = [
     ['identity', '본인인증'],

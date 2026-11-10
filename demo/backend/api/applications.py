@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from ..models import STATUS_DRAFT, Application, Consent, get_session
+from ..forms.signature_scan import signature_scan_paths
 from ..forms.email import is_valid_email, normalize_email
 from ..rules.criteria import latest as latest_criteria
 from ..rules.programs import get_program
@@ -218,7 +219,27 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
         if body.self_check is not None:
             app.self_check_json = body.self_check
         if body.form5 is not None:
-            app.form5_json = _without_server_form_dates(body.form5)
+            saved_form5 = _without_server_form_dates(body.form5)
+            _, processed_scan = signature_scan_paths(STORAGE, app.application_no)
+            saved_form5.pop("handwrittenFileName", None)
+            saved_form5["signatureScanUploaded"] = processed_scan.is_file()
+            app.form5_json = saved_form5
+            # The mutable form is the draft signature source. Clearing it must also
+            # remove an earlier consent-record signature so previews cannot resurrect it.
+            if "signature" in body.form5 and not saved_form5.get("signature") and not saved_form5["signatureScanUploaded"]:
+                signature_root = (STORAGE / "signatures").resolve()
+                for consent in s.exec(
+                    select(Consent).where(
+                        Consent.application_id == application_id,
+                        Consent.consent_type == "admin_info",
+                    )
+                ).all():
+                    if consent.signature_path:
+                        target = (STORAGE.parent / consent.signature_path).resolve()
+                        if signature_root in target.parents:
+                            target.unlink(missing_ok=True)
+                    consent.signature_path = None
+                    consent.signature_kind = None
         app.updated_at = datetime.now()
         s.add(app)
         s.commit()
@@ -328,6 +349,11 @@ def save_consents(application_id: int, body: ConsentRequest, request: Request) -
 
         for item in body.consents:
             signature_path: str | None = None
+            if item.consent_type == "admin_info" and item.signature_kind == "handwritten":
+                _, processed_scan = signature_scan_paths(STORAGE, app.application_no)
+                if not processed_scan.is_file():
+                    raise HTTPException(400, "서명 이미지를 먼저 올려 주세요.")
+                signature_path = str(processed_scan.relative_to(STORAGE.parent))
             if item.signature_data_url and "," in item.signature_data_url:
                 raw = base64.b64decode(item.signature_data_url.split(",", 1)[1])
                 target = SIGNATURES / f"{app.application_no}_{item.consent_type}.png"
@@ -362,4 +388,10 @@ def list_consents(application_id: int) -> list[dict[str, Any]]:
         rows = s.exec(
             select(Consent).where(Consent.application_id == application_id)
         ).all()
-        return [r.model_dump() for r in rows]
+        return [
+            {
+                **r.model_dump(exclude={"signature_path"}),
+                "signature_saved": bool(r.signature_path),
+            }
+            for r in rows
+        ]
