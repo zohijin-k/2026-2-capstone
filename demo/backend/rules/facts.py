@@ -13,6 +13,7 @@ import json
 from typing import Any
 
 from .doc_types import DocType
+from .household import parse_household_members
 from .scoring import FactSource, ScoringFacts
 
 #: 업로드 서류 한 건을 채점 입력으로 넘길 때의 최소 형태.
@@ -107,12 +108,36 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
     abstract = _find(documents, DocType.RESIDENT_ABSTRACT)
     insurance4 = _find(documents, DocType.INSURANCE_4)
 
-    # --- 1. 소득: 자격확인서의 가구원수 + 납부확인서의 고지금액 (R5.2) ---
-    household = parse_int(_field(qualification, "가구원수"))
-    household_origin = "건강보험 자격확인서 판독"
-    if household is None:
-        household = parse_int(form1.get("householdSize"))
-        household_origin = "신청서 입력값(가구원 수)"
+    # --- 1. 소득: 자격확인서만 가구원수 근거로 사용 (R5.2) ---
+    qualification_fields = (qualification or {}).get("fields") or {}
+    printed_household = parse_int(_field(qualification, "가구원수"))
+    household_issue = None
+    member_list_present = "가구원목록" in qualification_fields
+    members = (
+        parse_household_members(qualification_fields.get("가구원목록"))
+        if member_list_present else None
+    )
+    if member_list_present and members is None:
+        household = None
+        household_issue = "건강보험 자격확인서에서 가구원 수를 확인하지 못했습니다."
+    elif members is not None:
+        listed_household = len(members)
+        if printed_household is not None and printed_household != listed_household:
+            household = None
+            household_issue = "건강보험 자격확인서 가구원 목록 인원 수와 가구원수 표기가 일치하지 않습니다."
+        else:
+            household = listed_household
+    else:
+        household = printed_household
+        if household is None:
+            household_issue = "건강보험 자격확인서에서 가구원 수를 확인하지 못했습니다."
+
+    form_household = parse_int(form1.get("householdSize"))
+    household_form_mismatch = (
+        (form_household, household)
+        if form_household is not None and household is not None and form_household != household
+        else None
+    )
     premium = parse_int(_field(payment, "건강보험료"))
     monthly_raw = _field(payment, "월별고지금액")
     if monthly_raw and payment_months:
@@ -126,12 +151,15 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
         _field(qualification, "가입구분") or _field(payment, "가입구분") or "직장"
     )
 
-    income_source = _source(
-        payment,
-        DocType.NHIS_PAYMENT,
-        "건강보험료",
-        f"건강보험료 납부확인서 고지금액 판독 · 가구원수는 {household_origin}",
-    )
+    income_origin = "건강보험료 납부확인서 고지금액 판독 · 가구원수는 건강보험 자격확인서 판독"
+    if household_issue:
+        income_origin += " · " + household_issue
+    if household_form_mismatch:
+        income_origin += (
+            f" · 신청서 입력 {household_form_mismatch[0]}명과 자격확인서 "
+            f"{household_form_mismatch[1]}명 불일치(신청서 값은 참고만 함)"
+        )
+    income_source = _source(payment, DocType.NHIS_PAYMENT, "건강보험료", income_origin)
 
     # --- 2. 거주기간: 초본의 전입일 우선, 없으면 신청서 입력값 ---
     transfer_in = parse_ymd(_field(abstract, "전입일"))
@@ -186,6 +214,8 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
         transfer_in_date=transfer_in,
         employment_date=employed_at,
         birth_date=birth,
+        household_size_issue=household_issue,
+        household_size_form_mismatch=household_form_mismatch,
         residence_history_incomplete_suspected=residence_history_incomplete_suspected,
         sources={
             "income": income_source,

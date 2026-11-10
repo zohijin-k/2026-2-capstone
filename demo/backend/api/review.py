@@ -33,10 +33,13 @@ from ..models import (
     STATUS_SUBMITTED,
     UNASSIGNED_SLOT,
     Application,
+    Document,
     Review,
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
+from ..rules.household import overlap_members, qualification_members
+from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria, supplement_for_application
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
@@ -234,6 +237,12 @@ def _warnings(app: Application, documents: list[Any]) -> list[str]:
         notes.append(
             f"서류 미비 시 {supplement['days']}일 내 보완 안내가 발송됩니다."
         )
+    if get_program(app.program_code).selection == "scored":
+        facts = build_facts(app.form1_json or {}, [document_fact(d) for d in documents])
+        if facts.household_size_form_mismatch:
+            notes.append("가구원 수는 건강보험 자격확인서 기준으로 판정합니다.")
+        elif facts.household_size_issue:
+            notes.append(facts.household_size_issue)
     review_count = sum(1 for d in documents if d.stage1_status == "NEEDS_REVIEW")
     if review_count:
         notes.append(
@@ -461,6 +470,30 @@ def _run_review(app: Application) -> Review:
     result = run_pipeline(applicant, to_engine_documents(rows), checklist_for(app))
     payload = inject_file_refs(result.review_payload, rows)
 
+    household_needs_review = bool(
+        program.selection == "scored" and facts.household_size_issue
+    )
+    if household_needs_review:
+        if payload is None:
+            payload = {
+                "applicant_id": app.application_no,
+                "name": applicant.name,
+                "program": applicant.program,
+                "submitted_at": datetime.now().isoformat(timespec="seconds"),
+                "final_status": "NEEDS_REVIEW",
+                "documents": [],
+                "reasons": [],
+                "recommended_action": "담당자 재검토 필요",
+            }
+        payload["final_status"] = "NEEDS_REVIEW"
+        payload["recommended_action"] = "담당자 재검토 필요"
+        reasons = payload.setdefault("reasons", [])
+        reasons.append({
+            "stage": "stage2_eligibility",
+            "code": "HEALTH_INSURANCE_HOUSEHOLD_SIZE_UNCONFIRMED",
+            "message": facts.household_size_issue,
+            "doc_type": str(DocType.NHIS_QUALIFICATION),
+        })
     if payload is None:
         # PASS면 엔진이 payload를 만들지 않는다. 담당자 화면은 항상 같은 모양을
         # 기대하므로 최소 형태로 채워 둔다.
@@ -484,6 +517,21 @@ def _run_review(app: Application) -> Review:
         }
         inject_file_refs(payload, rows)
 
+    if facts.household_size_form_mismatch:
+        form_count, certificate_count = facts.household_size_form_mismatch
+        reference_note = {
+            "code": "APPLICATION_HOUSEHOLD_SIZE_DIFFERS",
+            "message": "신청서 입력 가구원 수와 건강보험 자격확인서 값이 다릅니다. 자격확인서 값으로 판정했습니다.",
+            "application_count": form_count,
+            "certificate_count": certificate_count,
+        }
+        payload["household_reference_note"] = reference_note
+        payload.setdefault("reasons", []).append({
+            "stage": "stage2_eligibility",
+            **reference_note,
+            "doc_type": str(DocType.NHIS_QUALIFICATION),
+        })
+
     # 보완이 허용되는 사업에서 미비가 남은 채로 접수되면, 그 순간부터 기한이 돈다.
     # (추진체계: 지원대상자 및 서류보완 안내(1차) → 7일 내 서류 보완안내)
     supplement_deadline: datetime | None = None
@@ -493,15 +541,123 @@ def _run_review(app: Application) -> Review:
 
     return Review(
         application_id=app.id or 0,
-        final_status=result.status.value,
+        final_status="NEEDS_REVIEW" if household_needs_review else result.status.value,
         stage1_status=result.stage1.status.value,
-        stage2_status=result.stage2.status.value if result.stage2 else None,
+        stage2_status=(
+            "NEEDS_REVIEW" if household_needs_review
+            else result.stage2.status.value if result.stage2 else None
+        ),
         score_json=sheet.as_dict() if sheet else {},
         total_score=sheet.total if sheet else None,
         tiebreak_json=sheet.tiebreak if sheet else [],
         supplement_deadline=supplement_deadline,
         review_payload_json=payload,
     )
+
+
+def _append_household_link(
+    review: Review,
+    other: Application,
+    shared: list[dict[str, str]],
+) -> None:
+    payload = dict(review.review_payload_json or {})
+    related = list(payload.get("related_applications") or [])
+    link = {"application_id": other.id, "application_no": other.application_no}
+    if link not in related:
+        related.append(link)
+    payload["related_applications"] = related
+
+    matches = list(payload.get("household_overlap_details") or [])
+    detail = {
+        "application_id": other.id,
+        "application_no": other.application_no,
+        "members": shared,
+        "basis": "같은 사업·같은 연도 신청서의 건강보험 자격확인서 가구원 목록에서 성명과 생년월일이 일치했습니다.",
+    }
+    if not any(row.get("application_id") == other.id for row in matches):
+        matches.append(detail)
+    payload["household_overlap_details"] = matches
+
+    reasons = list(payload.get("reasons") or [])
+    if not any(
+        row.get("code") == "HEALTH_INSURANCE_HOUSEHOLD_OVERLAP"
+        and row.get("related_application_id") == other.id
+        for row in reasons
+    ):
+        reasons.append({
+            "stage": "stage2_eligibility",
+            "code": "HEALTH_INSURANCE_HOUSEHOLD_OVERLAP",
+            "message": "같은 사업·같은 연도 신청서의 건강보험 자격확인서 가구원 정보가 일부 겹쳐 담당자 재검토가 필요합니다.",
+            "doc_type": str(DocType.NHIS_QUALIFICATION),
+            "related_application_id": other.id,
+            "related_application_no": other.application_no,
+            "matched_members": shared,
+        })
+    payload["reasons"] = reasons
+    payload["final_status"] = "NEEDS_REVIEW"
+    payload["recommended_action"] = "담당자 재검토 필요"
+    review.review_payload_json = payload
+    review.final_status = "NEEDS_REVIEW"
+    review.stage2_status = "NEEDS_REVIEW"
+
+
+def _link_overlapping_households(app: Application, current_review: Review) -> None:
+    """같은 사업·신청연도 자격확인서의 겹치는 가구원을 양쪽 담당자 기록에 링크한다."""
+    if get_program(app.program_code).selection != "scored":
+        return
+    with get_session() as s:
+        current_docs = list(s.exec(
+            select(Document).where(Document.application_id == app.id)
+        ).all())
+        current_members = qualification_members([document_fact(d) for d in current_docs])
+        if not current_members:
+            return
+        candidates = list(s.exec(
+            select(Application).where(Application.program_code == app.program_code)
+        ).all())
+        candidates = [
+            candidate for candidate in candidates
+            if candidate.id != app.id and candidate.created_at.year == app.created_at.year
+            and candidate.status != STATUS_DRAFT
+        ]
+        if not candidates:
+            return
+        candidate_ids = [candidate.id for candidate in candidates if candidate.id is not None]
+        docs = list(s.exec(
+            select(Document).where(Document.application_id.in_(candidate_ids))
+        ).all())
+        docs_by_app: dict[int, list[Any]] = {}
+        for document in docs:
+            docs_by_app.setdefault(document.application_id, []).append(document)
+
+        current_changed = False
+        for candidate in candidates:
+            candidate_docs = docs_by_app.get(candidate.id or 0, [])
+            candidate_members = qualification_members([document_fact(d) for d in candidate_docs])
+            shared = overlap_members(current_members, candidate_members)
+            if not shared:
+                continue
+            previous = s.exec(
+                select(Review).where(Review.application_id == candidate.id)
+            ).first()
+            if previous is None:
+                continue
+            _append_household_link(current_review, candidate, shared)
+            _append_household_link(previous, app, shared)
+            candidate.status = STATUS_REVIEWING
+            candidate.updated_at = datetime.now()
+            # 기존 담당자 결정은 새 근거가 발견되었으므로 다시 확인받는다.
+            previous.officer_role = None
+            previous.officer_decision = None
+            previous.officer_memo = None
+            previous.decided_at = None
+            s.add(previous)
+            s.add(candidate)
+            current_changed = True
+        if current_changed:
+            current_review.final_status = "NEEDS_REVIEW"
+            current_review.stage2_status = "NEEDS_REVIEW"
+            s.commit()
 
 
 @router.post("/{application_id}/submit")
@@ -522,6 +678,7 @@ def submit(application_id: int) -> dict[str, Any]:
         )
 
     review = _run_review(app)
+    _link_overlapping_households(app, review)
 
     with get_session() as s:
         row = s.get(Application, application_id)

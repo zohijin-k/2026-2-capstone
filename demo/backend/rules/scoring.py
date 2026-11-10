@@ -124,6 +124,10 @@ class ScoringFacts:
     transfer_in_date: date | None = None
     employment_date: date | None = None
     birth_date: date | None = None
+    #: 소득 가구원수 판독 실패 또는 자격확인서 내부 표기 불일치 사유.
+    household_size_issue: str | None = None
+    #: (신청서 입력값, 건강보험 자격확인서 값). 계산에는 자격확인서만 사용한다.
+    household_size_form_mismatch: tuple[int, int] | None = None
     residence_history_incomplete_suspected: bool = False
     sources: dict[str, FactSource] = field(default_factory=dict)
 
@@ -277,11 +281,18 @@ def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, li
     """1. 중위소득 (40점). 가구원수 + '25.10~12월 고지금액 평균으로 판정한다."""
     source = facts.source("income")
     if not facts.household_size or not facts.monthly_premium:
+        missing = _missing(
+            "income", "중위소득(가구소득)", 40,
+            "건강보험 자격확인서 가구원 수" if facts.household_size_issue else "가구원수 또는 건강보험료 고지금액",
+            source,
+        )
+        if facts.household_size_issue:
+            missing.basis = facts.household_size_issue + " 담당자 재검토가 필요합니다."
         return (
-            _missing("income", "중위소득(가구소득)", 40, "가구원수 또는 건강보험료 고지금액", source),
+            missing,
             None,
             False,
-            [],
+            [facts.household_size_issue] if facts.household_size_issue else [],
         )
 
     insurance_type = facts.insurance_type if facts.insurance_type in INSURANCE_TYPES else "직장"
@@ -305,6 +316,12 @@ def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, li
     ]
     if note:
         notes.append(note)
+    if facts.household_size_form_mismatch:
+        form_count, certificate_count = facts.household_size_form_mismatch
+        notes.append(
+            f"신청서 입력 가구원수 {form_count}명과 건강보험 자격확인서 "
+            f"가구원수 {certificate_count}명이 다릅니다. 판정에는 자격확인서 값을 사용했습니다."
+        )
     return (
         ScoreItem(
             key="income",
