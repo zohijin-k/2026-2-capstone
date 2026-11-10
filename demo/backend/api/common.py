@@ -175,6 +175,20 @@ APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액")
 
 def document_dict(d: Document) -> dict[str, Any]:
     """업로드 서류 한 건의 신청자 화면 표현. 점수와 담당자용 판독값은 들어가지 않는다."""
+    findings = [
+        {
+            key: finding[key]
+            for key in ("code", "message", "how_to_fix", "link", "severity")
+            if key in finding
+        }
+        for finding in (d.findings_json or [])
+        if isinstance(finding, dict)
+    ]
+    nhis_subscriber_document = d.doc_type in {
+        "건강보험료납부확인서", "건강보험자격확인서",
+    } or d.expected_doc_type in {
+        "건강보험료납부확인서", "건강보험자격확인서",
+    }
     return {
         "document_id": d.id,
         "slot_key": d.slot_key,
@@ -188,11 +202,11 @@ def document_dict(d: Document) -> dict[str, Any]:
             d.declared_issue_date.isoformat() if d.declared_issue_date else None
         ),
         "status": d.stage1_status,
-        "findings": d.findings_json or [],
+        "findings": findings,
         "extracted": {
             k: v
             for k, v in ((d.ocr_json or {}).get("fields") or {}).items()
-            if k in APPLICANT_VISIBLE_FIELDS
+            if k in APPLICANT_VISIBLE_FIELDS and not (nhis_subscriber_document and k == "성명")
         },
         "ocr_confidence": (d.ocr_json or {}).get("confidence"),
         "ocr_tier": (d.ocr_json or {}).get("tier"),

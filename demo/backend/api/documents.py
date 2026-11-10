@@ -386,6 +386,11 @@ async def upload_document(
         [f.as_dict() for f in result.findings],
         result.status,
     )
+    if req.doc_type in (DocType.NHIS_PAYMENT, DocType.NHIS_QUALIFICATION) or ocr.detected_doc_type in (
+        DocType.NHIS_PAYMENT, DocType.NHIS_QUALIFICATION,
+    ):
+        _refresh_nhis_identity(application_id, app, checklist)
+        row = next((d for d in _list_documents(application_id) if d.id == row.id), row)
     return _document_dict(row)
 
 
@@ -485,6 +490,15 @@ async def _upload_merged(
         )
         assigned.append(_document_dict(row))
 
+    if any(doc["slot_key"] in {"nhis_payment", "nhis_qualification"} for doc in assigned):
+        _refresh_nhis_identity(app.id or 0, app, checklist)
+        refreshed = {d.id: d for d in _list_documents(app.id or 0)}
+        assigned = [
+            _document_dict(refreshed[doc["document_id"]])
+            if doc["document_id"] in refreshed else doc
+            for doc in assigned
+        ]
+
     return {
         "mode": "merged",
         "source_file": source.name,
@@ -503,12 +517,19 @@ def list_documents(application_id: int) -> list[dict[str, Any]]:
 @router.delete("/{application_id}/documents/{document_id}")
 def delete_document(application_id: int, document_id: int) -> dict[str, str]:
     """재업로드를 위한 삭제. 파일도 같이 지운다."""
+    app = _load(application_id)
+    checklist = _checklist(app)
+    nhis_types = {str(DocType.NHIS_PAYMENT), str(DocType.NHIS_QUALIFICATION)}
+    refresh_nhis = False
     with get_session() as s:
         row = s.get(Document, document_id)
         if row is None or row.application_id != application_id:
             raise HTTPException(404, "서류를 찾을 수 없습니다.")
+        refresh_nhis = row.doc_type in nhis_types or row.expected_doc_type in nhis_types
         target = STORAGE.parent / row.file_path
         target.unlink(missing_ok=True)
         s.delete(row)
         s.commit()
+    if refresh_nhis:
+        _refresh_nhis_identity(application_id, app, checklist)
     return {"deleted": str(document_id)}

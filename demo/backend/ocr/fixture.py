@@ -9,6 +9,7 @@ OCR이 흔들려서 화면이 무너지는 사고를 막는 안전장치이자, 
 실제 개인정보나 실물 서류는 일절 쓰지 않는다.
 """
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -151,6 +152,58 @@ FIXTURES: dict[str, OcrResult] = {
         image_quality=0.93,
         issue_date=date(2026, 3, 5),
         fields={"성명": "홍길동", "발급일": "2026-03-05", "가구원수": "4", "가입구분": "직장"},
+        bboxes=dict(_NHIS_BOXES),
+        tier=NAME,
+    ),
+    "P9_건강보험료납부확인서_부모명의": OcrResult(
+        detected_doc_type=DocType.NHIS_PAYMENT,
+        confidence=0.95,
+        image_quality=0.93,
+        issue_date=date(2026, 3, 5),
+        fields={
+            "성명": "김보호자",
+            "생년월일": "1970-02-02",
+            "발급일": "2026-03-05",
+            "건강보험료": "200000",
+            "고지월": "2025-10,2025-11,2025-12",
+            "가입구분": "직장",
+        },
+        bboxes=dict(_NHIS_BOXES),
+        tier=NAME,
+    ),
+    "P9_건강보험자격확인서_부모명의_본인포함": OcrResult(
+        detected_doc_type=DocType.NHIS_QUALIFICATION,
+        confidence=0.95,
+        image_quality=0.93,
+        issue_date=date(2026, 3, 5),
+        fields={
+            "성명": "김보호자",
+            "생년월일": "1970-02-02",
+            "발급일": "2026-03-05",
+            "가입구분": "직장",
+            "가구원목록": json.dumps([
+                {"성명": "김전북", "생년월일": "1999-01-01"},
+                {"성명": "김보호자", "생년월일": "1970-02-02"},
+            ], ensure_ascii=False),
+        },
+        bboxes=dict(_NHIS_BOXES),
+        tier=NAME,
+    ),
+    "P9_건강보험자격확인서_부모명의_본인미포함": OcrResult(
+        detected_doc_type=DocType.NHIS_QUALIFICATION,
+        confidence=0.95,
+        image_quality=0.93,
+        issue_date=date(2026, 3, 5),
+        fields={
+            "성명": "김보호자",
+            "생년월일": "1970-02-02",
+            "발급일": "2026-03-05",
+            "가입구분": "직장",
+            "가구원목록": json.dumps([
+                {"성명": "김보호자", "생년월일": "1970-02-02"},
+                {"성명": "김전주", "생년월일": "2001-04-03"},
+            ], ensure_ascii=False),
+        },
         bboxes=dict(_NHIS_BOXES),
         tier=NAME,
     ),

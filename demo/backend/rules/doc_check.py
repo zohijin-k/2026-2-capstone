@@ -92,6 +92,8 @@ class CheckFinding:
     link: str = ""
     #: FAIL | NEEDS_REVIEW
     severity: str = "FAIL"
+    #: 담당자 화면에서만 보는 근거. 신청자 API는 이 값을 직렬화하지 않는다.
+    detail: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return {
@@ -100,6 +102,7 @@ class CheckFinding:
             "how_to_fix": self.how_to_fix,
             "link": self.link,
             "severity": self.severity,
+            "detail": self.detail,
         }
 
 
@@ -330,9 +333,14 @@ def check_document(
                 identity, str(ocr.detected_doc_type), ocr.fields, related_nhis_docs or []
             )
             if assessment:
-                code, severity, message = assessment
-                applicant_message = HOW_TO_FIX.get(code, message)
-                findings.append(CheckFinding(code, message, applicant_message, severity=severity))
+                code, severity, applicant_message, officer_detail = assessment
+                findings.append(CheckFinding(
+                    code,
+                    applicant_message,
+                    HOW_TO_FIX.get(code, "가입자 명의 확인이 필요해 담당자가 확인합니다."),
+                    severity=severity,
+                    detail=officer_detail,
+                ))
         elif ocr.tier != "fixture":
             _, mismatched = compare(identity, ocr.fields)
             if mismatched:
