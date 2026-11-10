@@ -81,6 +81,8 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
         reference_date=app.announcement_date, applicant=app.applicant,
         declared_values=doc.declared_values, detected_type=ex.detected_type, fields=ex.fields,
         validations={v.name: (v.passed, v.detail) for v in ex.validations},
+        application_date=app.application_date,
+        criteria=app.criteria,
     )
 
     rules = rulepack.get("documents", {}).get(doc.declared_type.value, {}).get("rules", [])
@@ -115,6 +117,24 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
         elif status == CheckStatus.UNKNOWN:
             applicant_msg = REVIEW_MSG
             review.append(f"{r['id']}: 판단 불가 (필드 없음)")
+
+        if status == CheckStatus.FAIL and r["type"] == "settings_issue_date":
+            policy = (app.criteria.get("document_issue_rules") or {}).get(
+                ex.detected_type.value,
+                app.criteria.get("document_issue_fallback", {"mode": "none"}),
+            )
+            mode = policy.get("mode", "none")
+            if mode == "after_notice":
+                cutoff = app.announcement_date
+                applicant_msg = f"{cutoff.isoformat().replace('-', '.')} 이후 발급 서류만 인정됩니다. 새로 발급받아 올려 주세요."
+            elif mode == "after_date":
+                try:
+                    cutoff = date.fromisoformat(str(policy.get("date", "")))
+                    applicant_msg = f"{cutoff.isoformat().replace('-', '.')} 이후 발급 서류만 인정됩니다. 새로 발급받아 올려 주세요."
+                except ValueError:
+                    applicant_msg = REVIEW_MSG
+            elif mode == "within_days":
+                applicant_msg = f"신청일 기준 {policy.get('days')}일 이내 발급 서류만 인정됩니다. 새로 발급받아 올려 주세요."
 
         evidence = [Evidence(field=f, value=ex.fields[f].value if f != "address_history" else f"{len(ex.fields[f].value)}건",
                              bbox=ex.fields[f].bbox) for f in related if f in ex.fields]

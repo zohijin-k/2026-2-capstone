@@ -15,6 +15,7 @@ MESSAGES: dict[ReasonCode, str] = {
     ReasonCode.LOW_IMAGE_QUALITY: "'{doc_type}' 이미지의 화질이 낮아 내용을 확인하기 어렵습니다. 선명한 사진으로 다시 제출해 주세요.",
     ReasonCode.LOW_OCR_CONFIDENCE: "'{doc_type}'의 일부 항목이 자동으로 판독되지 않았습니다. 담당자가 직접 확인할 예정입니다.",
     ReasonCode.DOCUMENT_ISSUED_TOO_EARLY: "'{doc_type}'의 발급일({issue_date})이 인정 기준일({cutoff}) 이전입니다. {cutoff} 이후 발급본으로 다시 제출해 주세요.",
+    ReasonCode.DOCUMENT_ISSUED_AFTER_APPLICATION: "'{doc_type}'의 발급일({issue_date})이 신청일({cutoff})보다 늦습니다. 발급일을 확인해 주세요.",
     ReasonCode.DECLARED_DATE_MISMATCH: "입력하신 '{doc_type}' 발급일({declared})과 서류에서 확인된 발급일({actual})이 일치하지 않습니다.",
     ReasonCode.DECLARED_DATE_UNCERTAIN: "입력하신 '{doc_type}' 발급일과 서류에서 읽은 발급일이 다르게 판독되었습니다. 자동 판독이 확실하지 않아 담당자가 원본에서 직접 확인합니다.",
     ReasonCode.UNREADABLE_FILE: "'{doc_type}' 파일을 열 수 없습니다. 비밀번호가 걸려있지 않은 파일로 다시 제출해 주세요.",

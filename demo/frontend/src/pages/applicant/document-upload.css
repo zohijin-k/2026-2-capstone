@@ -374,6 +374,9 @@
   color: var(--muted);
 }
 
+.dslot__criteria { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.dslot__date-warning { flex-basis: 100%; margin: 4px 0; color: #b45309; font-size: 12px; }
+
 /* ---- 올린 뒤: 파일과 읽은 값 ---- */
 
 .dresult {

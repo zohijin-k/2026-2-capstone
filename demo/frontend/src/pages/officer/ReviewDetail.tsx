@@ -176,6 +176,7 @@ export default function ReviewDetail({
           ← 접수 목록
         </button>
         <span className="review__no">{detail.application_no}</span>
+        {detail.criteria_version != null && <span className="review__criteria">적용 기준 v{detail.criteria_version}</span>}
         <strong className="review__name">{detail.name}</strong>
         {detail.identity && (
           <span

@@ -48,6 +48,13 @@ def check_single_document(doc: Document, spec) -> list[Finding]:
                 render(ReasonCode.DOCUMENT_ISSUED_TOO_EARLY, doc_type=spec.doc_type,
                        issue_date=doc.issue_date.isoformat(), cutoff=spec.min_issue_date.isoformat()),
                 doc_type=spec.doc_type))
+    if spec.max_issue_date is not None and doc.issue_date is not None:
+        if doc.issue_date > spec.max_issue_date:
+            findings.append(Finding(
+                ReasonCode.DOCUMENT_ISSUED_AFTER_APPLICATION,
+                render(ReasonCode.DOCUMENT_ISSUED_AFTER_APPLICATION, doc_type=spec.doc_type,
+                       issue_date=doc.issue_date.isoformat(), cutoff=spec.max_issue_date.isoformat()),
+                doc_type=spec.doc_type))
 
     if spec.check_declared_date and doc.declared_issue_date is not None and doc.issue_date is not None:
         if doc.declared_issue_date != doc.issue_date:
@@ -71,8 +78,8 @@ def check_single_document(doc: Document, spec) -> list[Finding]:
     return findings
 
 
-def run_stage1(applicant: Applicant, documents: list[Document]) -> StageResult:
-    specs = config.REQUIRED_DOCUMENTS.get(applicant.program, [])
+def run_stage1(applicant: Applicant, documents: list[Document], required_documents=None) -> StageResult:
+    specs = required_documents if required_documents is not None else config.REQUIRED_DOCUMENTS.get(applicant.program, [])
     submitted_by_type = {d.doc_type: d for d in documents}
 
     findings: list[Finding] = []

@@ -9,7 +9,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, UniqueConstraint
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 DB_PATH = Path(__file__).resolve().parents[1] / "demo.db"
@@ -21,6 +21,8 @@ class Application(SQLModel, table=True):
     #: 엔진 `Applicant.applicant_id` 와 같은 키. 담당자가 원본과 매칭하는 유일 키.
     application_no: str = Field(index=True, unique=True)
     program_code: str = Field(index=True)
+    #: 신청서 생성 시 고정된 사업 기준 버전. 수정하지 않는다.
+    criteria_version: Optional[int] = Field(default=None, index=True)
     #: draft | submitted | reviewing | decided
     status: str = Field(default="draft", index=True)
     #: 서식1 입력값 전체
@@ -38,6 +40,19 @@ class Application(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     submitted_at: Optional[datetime] = None
+
+
+class ProgramCriteriaVersion(SQLModel, table=True):
+    """사업별 심사 기준의 불변 버전 이력."""
+
+    __table_args__ = (UniqueConstraint("program_code", "version"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    program_code: str = Field(index=True)
+    version: int
+    criteria_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    changed_at: datetime = Field(default_factory=datetime.now)
+    changed_role: str = "system"
 
 
 class Consent(SQLModel, table=True):
@@ -161,6 +176,9 @@ STATUS_DECIDED = "decided"
 def init_db() -> None:
     SQLModel.metadata.create_all(engine)
     _add_missing_columns()
+    from .rules.criteria import ensure_defaults
+
+    ensure_defaults()
 
 
 def _add_missing_columns() -> None:

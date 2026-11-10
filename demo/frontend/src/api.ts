@@ -257,6 +257,8 @@ export interface DocRequirementRow {
   requires_signature: boolean
   check_declared_date: boolean
   min_issue_date: string | null
+  max_issue_date: string | null
+  issue_rule_label: string
   issuer: string
   issuer_url: string
   notes: string[]
@@ -281,6 +283,9 @@ export interface ChecklistProgram {
   allows_supplement: boolean
   supplement_days: number | null
   document_cutoff: string
+  announcement_date: string
+  application_period: string[]
+  application_period_2: string[] | null
   asks_work_category: boolean
   has_subsidy_items: boolean
 }
@@ -393,6 +398,27 @@ async function form<T>(path: string, body: FormData): Promise<T> {
 }
 
 export const fetchPrograms = () => json<Program[]>('/api/programs')
+
+export type IssueRule = { mode: 'after_date' | 'after_notice' | 'within_days' | 'none'; date?: string; days?: number }
+export interface CriteriaData {
+  version: number
+  announcement_date: string
+  application_period: string[]
+  application_period_2: string[] | null
+  document_issue_rules: Record<string, IssueRule>
+  document_issue_fallback: IssueRule
+  nhis_payment_months: string[]
+  nhis_acquisition_loss_years: number
+}
+export interface CriteriaVersion extends CriteriaData { changed_at?: string; changed_role?: string }
+export interface CriteriaHistory { current: CriteriaVersion; history: CriteriaVersion[] }
+export const fetchProgramCriteria = (code: string) => json<CriteriaData>(`/api/programs/${code}/criteria`)
+export const fetchOfficerCriteria = (code: string, role = 'province') =>
+  json<CriteriaHistory>(`/api/officer/programs/${code}/criteria?role=${encodeURIComponent(role)}`)
+export const saveOfficerCriteria = (code: string, role: string, data: Omit<CriteriaData, 'version'>) =>
+  json<CriteriaVersion>(`/api/officer/programs/${code}/criteria?role=${encodeURIComponent(role)}`, {
+    method: 'PUT', body: JSON.stringify(data),
+  })
 
 export const createApplication = (programCode: string) =>
   json<ApplicationRow>('/api/applications', {
@@ -751,6 +777,7 @@ export interface FormExport {
 export interface ReviewDetailData {
   application_id: number
   application_no: string
+  criteria_version?: number | null
   name: string
   /** 본인인증 여부. 목업 데이터에는 없다. */
   identity?: {

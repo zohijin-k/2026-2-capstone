@@ -89,6 +89,8 @@ class ApplicationInput(BaseModel):
     announcement_date: date = Field(description="공고일. 나이·발급일·거주기간 계산 기준일")
     applicant: ApplicantInput
     documents: list[DocumentInput]
+    application_date: date | None = None
+    criteria: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

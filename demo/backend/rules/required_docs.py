@@ -85,6 +85,9 @@ class DocRequirement:
     requires_signature: bool = False
     check_declared_date: bool = True
     min_issue_date: date | None = None
+    max_issue_date: date | None = None
+    premium_months: list[str] = field(default_factory=list)
+    recent_years: int | None = None
     #: 발급처 이름 / 바로가기 URL
     issuer: str = ""
     issuer_url: str = ""
@@ -131,6 +134,7 @@ def _make(
     requires_signature: bool = False,
     check_declared_date: bool = True,
     min_issue_date: date | None = None,
+    max_issue_date: date | None = None,
     accepted_doc_types: list[DocType] | None = None,
     required_fields: list[str] | None = None,
 ) -> DocRequirement:
@@ -144,6 +148,7 @@ def _make(
         requires_signature=requires_signature,
         check_declared_date=check_declared_date,
         min_issue_date=min_issue_date,
+        max_issue_date=max_issue_date,
         issuer=issuer,
         issuer_url=issuer_url,
         notes=notes or [],

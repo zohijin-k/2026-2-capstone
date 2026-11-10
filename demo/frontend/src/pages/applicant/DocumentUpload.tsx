@@ -252,6 +252,14 @@ function SlotCard({
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
   const dateReady = !item.check_declared_date || isCompleteYMD(declared)
+  const issueISO = isCompleteYMD(declared) ? ymdToISO(declared) : ''
+  const current = new Date()
+  const todayISO = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
+  const dateWarning = issueISO && issueISO > todayISO
+    ? '발급일이 오늘 이후입니다. 다시 확인해 주세요.'
+    : issueISO && item.min_issue_date && issueISO < item.min_issue_date
+      ? `이 사업은 ${item.min_issue_date.replaceAll('-', '.')} 이후 발급 서류만 인정합니다. 새로 발급받아 올려 주세요.`
+      : ''
 
   return (
     <li
@@ -284,6 +292,8 @@ function SlotCard({
         )}
       </div>
 
+      <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
+
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
       {!doc && (
         <div className="dslot__action">
@@ -304,6 +314,7 @@ function SlotCard({
               <DateTriple value={declared} onChange={onDeclaredChange} ariaPrefix={item.label} />
             </label>
           )}
+          {dateWarning && <p className="dslot__date-warning" role="status">{dateWarning}</p>}
           <button
             type="button"
             className="btn btn--primary dslot__upload"

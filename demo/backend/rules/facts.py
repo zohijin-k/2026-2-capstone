@@ -9,6 +9,7 @@
 """
 
 from datetime import date
+import json
 from typing import Any
 
 from .doc_types import DocType
@@ -40,7 +41,11 @@ def parse_int(value: Any) -> int | None:
         return value
     if not isinstance(value, str):
         return None
-    digits = "".join(c for c in value if c.isdigit())
+    compact = value.replace(",", "").replace("원", "").replace(" ", "").replace("−", "-")
+    if compact.startswith("-"):
+        digits = "".join(c for c in compact[1:] if c.isdigit())
+        return -int(digits) if digits else None
+    digits = "".join(c for c in compact if c.isdigit())
     return int(digits) if digits else None
 
 
@@ -95,7 +100,7 @@ def _source(doc: DocFact | None, doc_type: DocType, bbox_key: str, origin: str) 
     )
 
 
-def build_facts(form1: dict[str, Any], documents: list[DocFact]) -> ScoringFacts:
+def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months: list[str] | None = None) -> ScoringFacts:
     """서식1 입력값과 서류 판독 결과에서 채점에 쓸 사실값만 뽑는다."""
     payment = _find(documents, DocType.NHIS_PAYMENT)
     qualification = _find(documents, DocType.NHIS_QUALIFICATION)
@@ -109,6 +114,14 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact]) -> ScoringFacts
         household = parse_int(form1.get("householdSize"))
         household_origin = "신청서 입력값(가구원 수)"
     premium = parse_int(_field(payment, "건강보험료"))
+    monthly_raw = _field(payment, "월별고지금액")
+    if monthly_raw and payment_months:
+        try:
+            monthly = json.loads(monthly_raw)
+            values = [parse_int(monthly.get(month)) for month in payment_months]
+            premium = (sum(values) * 2 + len(values)) // (2 * len(values)) if values and all(v is not None for v in values) else None
+        except (ValueError, TypeError):
+            premium = None
     insurance_type = (
         _field(qualification, "가입구분") or _field(payment, "가입구분") or "직장"
     )

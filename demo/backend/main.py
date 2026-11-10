@@ -13,7 +13,7 @@ from dataclasses import asdict
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import applications, documents, files, forms, officer, review, subsidy
+from .api import applications, criteria, documents, files, forms, officer, review, subsidy
 from .engine_adapter import apply_runtime_overrides
 from .models import init_db
 from .rules.programs import PROGRAMS, get_program
@@ -46,6 +46,8 @@ app.add_middleware(
 
 
 app.include_router(applications.router)
+app.include_router(criteria.public_router)
+app.include_router(criteria.officer_router)
 app.include_router(documents.router)
 # 취업지원패키지 지원 항목 선택 + 실비 계산(P5). 사업이 두 개가 되는 지점이다.
 app.include_router(subsidy.router)
@@ -80,6 +82,16 @@ def get_program_detail(code: str) -> dict:
 def _serialize(code: str) -> dict:
     program = get_program(code)
     data = asdict(program)
+    from .rules.criteria import latest
+
+    current = latest(code).criteria_json
+    data["announcement_date"] = current["announcement_date"]
+    default_rule = current.get("document_issue_fallback", {"mode": "none"})
+    data["document_cutoff"] = (
+        default_rule.get("date") if default_rule.get("mode") == "after_date"
+        else current["announcement_date"] if default_rule.get("mode") == "after_notice"
+        else ""
+    )
     data["allows_supplement"] = program.allows_supplement
     data["is_first_come"] = program.is_first_come
     data["quota_total"] = program.quota_total

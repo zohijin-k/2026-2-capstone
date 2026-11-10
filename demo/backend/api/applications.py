@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from ..models import STATUS_DRAFT, Application, Consent, get_session
+from ..rules.criteria import latest as latest_criteria
 from ..rules.programs import get_program
 from ..rules.self_check import evaluate
 
@@ -135,6 +136,7 @@ def create(body: CreateRequest) -> dict[str, Any]:
     app = Application(
         application_no=_next_application_no(body.program_code),
         program_code=body.program_code,
+        criteria_version=latest_criteria(body.program_code).version,
     )
     with get_session() as s:
         s.add(app)

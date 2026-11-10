@@ -1,6 +1,7 @@
 """건강보험 추출기 테스트. 모든 이름·숫자·좌표는 가상 값이다."""
 
 from datetime import date
+import json
 
 from ..extractors import nhis_acquisition_loss, nhis_payment
 from ..pipeline.ocr import OcrResult, OcrWord
@@ -49,6 +50,34 @@ def payment_pages(*, missing: set[str] = set(), separate_care: bool = False,
             words.extend([wd(50, y, f"{billed:,}"), wd(83, y, f"{paid if paid_diff else billed:,}")])
         y += 2.2
     words.extend([wd(10, y, "합계"), wd(50, y, "330,000")])
+    return [page(words)]
+
+
+def month_only_payment_pages(start: tuple[int, int], labels: list[int], *, mismatch=False,
+                             negative_month: int | None = None, issue_label=True):
+    words = person_header("가입자 건강·장기요양보험료 납부확인서")
+    if not issue_label:
+        words = [w for w in words if w.text not in {"발급일", "2026.11.10"}]
+    end_year, end_month = start[0], start[1] + len(labels) - 1
+    while end_month > 12:
+        end_month -= 12
+        end_year += 1
+    words.extend([wd(10, 24, f"{start[0]}년 {start[1]:02}월 ~ {end_year}년 {end_month:02}월 납부내역", 60),
+                  wd(10, 30, "월별"), wd(35, 30, "고지금액"), wd(80, 30, "납부금액"),
+                  wd(50, 32, "건강보험료"), wd(90, 32, "건강보험료")])
+    year, month = start
+    for index, label in enumerate(labels):
+        if index and label < labels[index - 1]:
+            year += 1
+        amount = -25150 if label == negative_month else 10000 + index
+        y = 35 + index * 1.5
+        words.extend([wd(10, y, f"{label}월"), wd(50, y, f"{amount:,}"), wd(90, y, f"{9000 + index:,}")])
+    total = sum((-25150 if label == negative_month else 10000 + i) for i, label in enumerate(labels))
+    if mismatch:
+        total += 1
+    words.extend([wd(10, 58, "합계"), wd(50, 58, f"{total:,}"),
+                  wd(10, 63, "위와 같이 보험료를 납부하였음을 확인합니다"),
+                  wd(40, 65, "2026 년 11 월 10 일"), wd(40, 68, "국민건강보험공단 이사장")])
     return [page(words)]
 
 
@@ -133,6 +162,23 @@ def test_payment_separates_long_term_care_amount():
     assert result.fields["장기요양보험료"].value == "22000"
 
 
+def test_payment_keeps_outside_income_health_column_separate():
+    words = person_header("가입자 건강·장기요양보험료 납부확인서")
+    words.extend([wd(10, 30, "월별"), wd(35, 30, "고지금액"), wd(100, 30, "납부금액"),
+                  wd(40, 32, "건강보험료"), wd(55, 32, "장기요양보험료"),
+                  wd(72, 32, "보수외소득월액(건강)"), wd(105, 32, "건강보험료"),
+                  wd(120, 32, "장기요양보험료")])
+    for i, month in enumerate((10, 11, 12)):
+        y = 35 + i * 2
+        words.extend([wd(10, y, f"2025.{month}"), wd(40, y, str(100 + 10 * i)),
+                      wd(55, y, str(10 + i)), wd(75, y, str(30 + 10 * i)),
+                      wd(105, y, str(90 + 10 * i)), wd(120, y, str(9 + i))])
+    result = nhis_payment.extract([page(words)])
+    assert result.fields["건강보험료"].value == "110"
+    assert result.fields["장기요양보험료"].value == "11"
+    assert result.fields["보수외소득월액_건강"].value == "40"
+
+
 def test_payment_ambiguous_combined_total_is_not_used():
     words = person_header("건강보험료 납부확인서") + [wd(10, 30, "년월"), wd(40, 30, "장기요양보험료 합계"),
         wd(50, 34, "2025.10"), wd(70, 34, "120,000"), wd(50, 36, "2025.11"), wd(70, 36, "132,000"),
@@ -142,14 +188,63 @@ def test_payment_ambiguous_combined_total_is_not_used():
     assert any("합계만" in warning for warning in result.warnings)
 
 
-def test_payment_rejects_zero_or_negative_amounts():
+def test_payment_keeps_zero_amount_and_warns_for_negative_amounts():
     pages = payment_pages()
     for word in pages[0][1].words:
         if word.text == "100,000":
             word.text = "0"
     result = nhis_payment.extract(pages)
-    assert "건강보험료" not in result.fields
-    assert any("0 또는 음수" in warning for warning in result.warnings)
+    assert result.fields["건강보험료"].value == "76667"
+    assert not any("음수" in warning for warning in result.warnings)
+
+    pages = payment_pages()
+    for word in pages[0][1].words:
+        if word.text == "100,000":
+            word.text = "-25,150"
+            break
+    result = nhis_payment.extract(pages)
+    assert result.fields["월별고지금액"].value
+    assert any("음수" in warning for warning in result.warnings)
+
+
+def test_payment_reads_calendar_year_rows_and_label_free_issue_date():
+    months = list(range(1, 13))
+    result = nhis_payment.extract(month_only_payment_pages((2025, 1), months, issue_label=False))
+    monthly = json.loads(result.fields["월별고지금액"].value)
+    assert len(monthly) == 12
+    assert monthly["2025-01"] == "10000"
+    assert monthly["2025-12"] == "10011"
+    assert result.fields["발급일"].value == "2026-11-10"
+
+
+def test_payment_reads_2026_only_period_without_2025_assumption():
+    result = nhis_payment.extract(month_only_payment_pages((2026, 1), list(range(1, 13))))
+    monthly = json.loads(result.fields["월별고지금액"].value)
+    assert len(monthly) == 12
+    assert all(key.startswith("2026-") for key in monthly)
+
+
+def test_payment_period_rollover_negative_amount_and_total_check():
+    labels = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]
+    result = nhis_payment.extract(month_only_payment_pages((2025, 7), labels, negative_month=11))
+    monthly = json.loads(result.fields["월별고지금액"].value)
+    assert monthly["2025-11"] == "-25150"
+    assert monthly["2026-01"] == "10006"
+    assert any("음수" in warning for warning in result.warnings)
+    assert next(v for v in result.validations if v.name == "monthly_total_matches").passed
+    mismatch = nhis_payment.extract(month_only_payment_pages((2025, 7), labels, mismatch=True))
+    assert not next(v for v in mismatch.validations if v.name == "monthly_total_matches").passed
+
+
+def test_payment_includes_year_end_settlement_in_total_validation():
+    pages = month_only_payment_pages((2025, 1), list(range(1, 13)))
+    page_image, ocr = pages[0]
+    ocr.words.extend([wd(10, 56, "연말정산"), wd(50, 56, "50")])
+    for word in ocr.words:
+        if word.text == "120,066":
+            word.text = "120,116"
+    result = nhis_payment.extract([(page_image, ocr)])
+    assert next(v for v in result.validations if v.name == "monthly_total_matches").passed
 
 
 def test_payment_does_not_guess_when_paid_column_heading_is_missing():

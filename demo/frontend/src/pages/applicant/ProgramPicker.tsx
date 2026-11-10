@@ -17,10 +17,13 @@ import { useEffect, useState } from 'react'
 
 import {
   fetchPrograms,
+  fetchProgramCriteria,
+  type CriteriaData,
   type PackageDetail,
   type Program,
   type ProgramDetail,
 } from '../../api.ts'
+import CriteriaEditor from '../../components/CriteriaEditor.tsx'
 import './program-picker.css'
 
 const dash = (value: string) => value.replaceAll('-', '. ')
@@ -451,10 +454,16 @@ export default function ProgramPicker({
 }) {
   const [programs, setPrograms] = useState<Program[] | null>(null)
   const [error, setError] = useState('')
+  const [criteria, setCriteria] = useState<Record<string, CriteriaData>>({})
+  const [editing, setEditing] = useState<string | null>(null)
 
   useEffect(() => {
     fetchPrograms()
-      .then(setPrograms)
+      .then(async (rows) => {
+        setPrograms(rows)
+        const pairs = await Promise.all(rows.map(async (p) => [p.code, await fetchProgramCriteria(p.code)] as const))
+        setCriteria(Object.fromEntries(pairs))
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
@@ -468,11 +477,35 @@ export default function ProgramPicker({
         이후 화면은 고른 사업의 기준에 맞춰 자동으로 바뀝니다.
       </p>
 
+      {editing && <div className="criteria-editor__backdrop" role="presentation">
+        <CriteriaEditor code={editing} applicantDemo onClose={() => {
+          setEditing(null)
+          void Promise.all(programs.map(async (p) => [p.code, await fetchProgramCriteria(p.code)] as const)).then((pairs) => setCriteria(Object.fromEntries(pairs)))
+        }} />
+      </div>}
+
       <ul className="ppick__list">
         {programs.map((p) => (
           <li key={p.code} className="pcard">
+            {(() => {
+              const activeCriteria = criteria[p.code]
+              const configured = activeCriteria ? {
+                ...p,
+                announcement_date: activeCriteria.announcement_date,
+                apply_period: activeCriteria.application_period as [string, string],
+                apply_period_2: activeCriteria.application_period_2 as [string, string] | null,
+              } : p
+              return <>
+            {activeCriteria && <aside className="pcard__criteria">
+              <strong>심사 기준 v{activeCriteria.version}</strong>
+              <span>신청 기간: {activeCriteria.application_period.join(' ~ ')}{activeCriteria.application_period_2 ? ` / 2차 ${activeCriteria.application_period_2.join(' ~ ')}` : ''}</span>
+              <span>서류 발급일: {Object.values(activeCriteria.document_issue_rules).some((r) => r.mode === 'after_notice') ? `공고일 ${activeCriteria.announcement_date} 이후` : Object.values(activeCriteria.document_issue_rules).find((r) => r.mode === 'after_date')?.date ?? '서류별 기준'}</span>
+              <span>납부확인서: {activeCriteria.nhis_payment_months.join(', ')}</span>
+              <span>자격득실확인서: 최근 {activeCriteria.nhis_acquisition_loss_years}년</span>
+              <button type="button" className="btn btn--quiet" onClick={() => setEditing(p.code)}>기준 설정 (관리자)</button>
+            </aside>}
             <div className="pcard__head">
-              <h2>{p.name}</h2>
+              <h2>{configured.name}</h2>
               {!p.detail && (
                 <span
                   className={
@@ -488,11 +521,11 @@ export default function ProgramPicker({
             </div>
 
             {p.detail ? (
-              <DetailBody p={p} d={p.detail} />
+              <DetailBody p={configured} d={p.detail} />
             ) : p.package_detail ? (
-              <PackageBody p={p} d={p.package_detail} />
+              <PackageBody p={configured} d={p.package_detail} />
             ) : (
-              <SummaryBody p={p} />
+              <SummaryBody p={configured} />
             )}
 
             <button
@@ -500,8 +533,10 @@ export default function ProgramPicker({
               className="btn btn--primary pcard__go"
               onClick={() => onPick(p)}
             >
-              {p.name} 신청하기
+              {configured.name} 신청하기
             </button>
+              </>
+            })()}
           </li>
         ))}
       </ul>

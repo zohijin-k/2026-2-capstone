@@ -22,6 +22,7 @@ from ..rules.identity import identity_of
 from ..ocr.base import OcrResult
 from ..rules.doc_check import THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
+from ..rules.criteria import for_application
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ACCEPTED_FORMATS,
@@ -79,6 +80,8 @@ def _requirement_dict(req: DocRequirement, uploaded: list[Document]) -> dict[str
         "requires_signature": req.requires_signature,
         "check_declared_date": req.check_declared_date,
         "min_issue_date": req.min_issue_date.isoformat() if req.min_issue_date else None,
+        "max_issue_date": req.max_issue_date.isoformat() if req.max_issue_date else None,
+        "issue_rule_label": next((n for n in req.notes if "발급" in n), "발급일 기준 없음"),
         "issuer": req.issuer,
         "issuer_url": req.issuer_url,
         "notes": req.notes,
@@ -92,6 +95,8 @@ def _requirement_dict(req: DocRequirement, uploaded: list[Document]) -> dict[str
 def _checklist_response(app: Application) -> dict[str, Any]:
     checklist = _checklist(app)
     program = get_program(app.program_code)
+    criteria_version = for_application(app)
+    criteria = criteria_version.criteria_json
     uploaded = _list_documents(app.id or 0)
     items = [_requirement_dict(r, uploaded) for r in checklist]
     upload_items = [i for i in items if i["upload"]]
@@ -108,7 +113,12 @@ def _checklist_response(app: Application) -> dict[str, Any]:
             "selection": program.selection,
             "allows_supplement": program.allows_supplement,
             "supplement_days": program.supplement_days,
-            "document_cutoff": program.document_cutoff.isoformat(),
+            "announcement_date": criteria["announcement_date"],
+            "application_period": criteria["application_period"],
+            "application_period_2": criteria.get("application_period_2"),
+            "criteria_version": criteria_version.version,
+            "nhis_payment_months": criteria["nhis_payment_months"],
+            "nhis_acquisition_loss_years": criteria["nhis_acquisition_loss_years"],
             #: 근로확인서류가 있는 사업에서만 근로유형을 묻는다.
             "asks_work_category": program.has_work_requirement,
             #: 지원 항목을 먼저 골라야 추가서류가 생기는 사업인가.

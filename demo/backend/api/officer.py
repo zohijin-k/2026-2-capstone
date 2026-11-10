@@ -433,6 +433,7 @@ def _row(
     return {
         "application_id": app.id,
         "application_no": app.application_no,
+        "criteria_version": app.criteria_version,
         "name": entry.name,
         "region": entry.region,
         "town": entry.town,
@@ -861,6 +862,7 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
     return {
         "application_id": app.id,
         "application_no": app.application_no,
+        "criteria_version": app.criteria_version,
         "name": entry.name,
         # 본인인증 여부. 연락처 등 원문은 내보내지 않는다.
         "identity": {

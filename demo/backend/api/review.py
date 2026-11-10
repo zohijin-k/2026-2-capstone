@@ -37,6 +37,7 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
+from ..rules.criteria import for_application
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
 from ..rules.scoring import ScoreSheet, score_application
@@ -171,6 +172,8 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
 
     checklist = checklist_for(app)
     documents = list_documents(app.id or 0)
+    criteria_version = for_application(app)
+    criteria = criteria_version.criteria_json
     by_slot = {d.slot_key: d for d in documents}
 
     for req in upload_slots(checklist):
@@ -408,6 +411,8 @@ def _run_review(app: Application) -> Review:
     program = get_program(app.program_code)
     form1 = app.form1_json or {}
     documents = list_documents(app.id or 0)
+    criteria_version = for_application(app)
+    criteria = criteria_version.criteria_json
 
     # 병합 PDF의 미배정 페이지는 심사 대상이 아니다. 담당자 확인용으로만 남는다.
     rows = [document_fact(d) for d in documents if d.slot_key != UNASSIGNED_SLOT]
@@ -428,12 +433,12 @@ def _run_review(app: Application) -> Review:
     #
     # 점수제 사업만 채점한다. 취업패키지는 **선착순**이라 심사표 자체가 없고,
     # 억지로 0점짜리 심사표를 만들면 담당자 목록에서 최하위로 줄을 서게 된다.
-    facts = build_facts(form1, rows)
+    facts = build_facts(form1, rows, criteria.get("nhis_payment_months"))
     sheet: ScoreSheet | None = None
     if program.selection == "scored":
         sheet = score_application(
             facts,
-            announcement_date=program.announcement_date,
+            announcement_date=datetime.fromisoformat(criteria["announcement_date"]).date(),
             age_basis_date=program.age_basis_date,
         )
 
@@ -450,7 +455,7 @@ def _run_review(app: Application) -> Review:
         # 검사를 건너뛴다.
         income_percent=sheet.income_percent if sheet else None,
     )
-    result = run_pipeline(applicant, to_engine_documents(rows))
+    result = run_pipeline(applicant, to_engine_documents(rows), checklist_for(app))
     payload = inject_file_refs(result.review_payload, rows)
 
     if payload is None:

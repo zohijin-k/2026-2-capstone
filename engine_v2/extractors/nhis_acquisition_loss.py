@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import json
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -172,6 +173,15 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         warnings.append("쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못했습니다.")
 
     rows = _parse_history(pages)
+    period, period_words = _query_period(pages)
+    history_data = {
+        "period": [value.isoformat() for value in period] if period else None,
+        "rows": [{"category": row.category, "acquired": row.acquired.isoformat() if row.acquired else None,
+                  "lost": row.lost.isoformat() if row.lost else None} for row in rows],
+    }
+    history_text = json.dumps(history_data, ensure_ascii=False, separators=(",", ":"))
+    fields["자격이력자료"] = common.make_field(history_text, history_text,
+        [word for row in rows for word in row.words], page_map, 0.9, sources)
     dates_read = bool(rows) and all(row.acquired is not None for row in rows)
     order_ok = all(row.acquired <= row.lost for row in rows if row.acquired and row.lost)
     validations.extend((common.Validation("history_dates_read", dates_read),

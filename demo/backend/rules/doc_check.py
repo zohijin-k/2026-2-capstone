@@ -11,6 +11,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date
+import json
 
 from ..engine_adapter import engine_check_single_document, engine_config, engine_models
 from ..ocr.base import OcrResult
@@ -42,6 +43,7 @@ CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
 CODE_IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
 #: 위와 같으나 판독이 불확실 → 오독일 수 있어 담당자 확인
 CODE_IDENTITY_UNCERTAIN = "IDENTITY_UNCERTAIN"
+CODE_MISSING_BILLING_MONTHS = "MISSING_BILLING_MONTHS"
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -49,6 +51,7 @@ HOW_TO_FIX: dict[str, str] = {
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
+    CODE_MISSING_BILLING_MONTHS: "조회기간에 {months}월이 포함되도록 다시 발급해 주세요.",
     "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
     "LOW_IMAGE_QUALITY": "글자가 또렷하게 보이도록 스캔본이나 밝은 곳에서 찍은 사진으로 다시 올려 주세요. pdf 파일을 권장합니다.",
@@ -112,6 +115,7 @@ def to_engine_spec(req: DocRequirement):
         required=req.required,
         requires_signature=req.requires_signature,
         min_issue_date=req.min_issue_date,
+        max_issue_date=req.max_issue_date,
         check_declared_date=req.check_declared_date,
     )
 
@@ -232,6 +236,49 @@ def check_document(
                         field=name,
                     )
                 )
+
+    if req.slot_key == "nhis_payment" and req.premium_months and ocr.fields.get("월별고지금액"):
+        try:
+            found = json.loads(ocr.fields["월별고지금액"])
+            missing = [month for month in req.premium_months if month not in found]
+        except (ValueError, TypeError):
+            missing = list(req.premium_months)
+        if missing:
+            rendered = ", ".join(missing)
+            findings.append(_finding(
+                CODE_MISSING_BILLING_MONTHS,
+                f"납부확인서에 심사 대상 고지월 {rendered}이(가) 없어 평균 보험료를 계산할 수 없습니다.",
+                req, months=rendered,
+            ))
+
+    if req.slot_key == "nhis_acquisition_loss" and req.recent_years and ocr.fields.get("자격이력자료"):
+        try:
+            data = json.loads(ocr.fields["자격이력자료"])
+            issue = ocr.issue_date
+            if issue is None:
+                issue = date.fromisoformat(ocr.fields.get("발급일", ""))
+            cutoff = issue.replace(year=issue.year - req.recent_years)
+            if cutoff.month == 2 and cutoff.day == 29:
+                cutoff = cutoff.replace(day=28)
+            period = data.get("period")
+            covered = bool(period and date.fromisoformat(period[0]) <= cutoff and date.fromisoformat(period[1]) >= issue)
+            if not covered:
+                covered = any(
+                    row.get("acquired") and date.fromisoformat(row["acquired"]) <= cutoff and
+                    (not row.get("lost") or date.fromisoformat(row["lost"]) >= issue)
+                    for row in data.get("rows", [])
+                )
+            if not covered:
+                findings.append(_finding(
+                    "NHIS_HISTORY_PERIOD_MISSING",
+                    f"자격득실확인서에 최근 {req.recent_years}년 변동내역이 포함되지 않았습니다.",
+                    req,
+                ))
+        except (ValueError, TypeError, KeyError):
+            findings.append(_finding(
+                "NHIS_HISTORY_PERIOD_UNREADABLE",
+                "자격득실확인서의 조회 기간을 확인하지 못했습니다. 담당자가 확인합니다.", req,
+            ))
 
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
