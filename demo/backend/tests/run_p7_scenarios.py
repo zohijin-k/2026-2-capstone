@@ -24,11 +24,14 @@ pytest 없이 돌아간다. DB와 저장소는 임시 경로에 만들고 끝나
 가짜다 (R7.1).
 """
 
+import argparse
 import json
 import shutil
 import tempfile
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from sqlmodel import create_engine
 
@@ -91,6 +94,9 @@ P7_FORM1: dict[str, Any] = {
     "accountHolder": "홍길동",
     # 원본이 줄바꿈으로 'SNS'에서 끊긴 보기까지 일부러 고른다.
     "referralPaths": ["홈페이지(도, 시군, 청년센터 등)", "SNS(인스타그램)", "지인소개"],
+    "writtenMonth": "11",
+    "writtenDay": "30",
+    "consent.form3.year": "1999",
 }
 
 P7_FORM5 = {
@@ -98,7 +104,10 @@ P7_FORM5 = {
     "name": "홍길동",
     "birth": {"y": "1998", "m": "6", "d": "15"},
     "phone": "010-0000-0000",
-    "writtenOn": {"y": "2026", "m": "3", "d": "4"},
+    # 작성일은 서버 값이어야 한다. 아래 값은 의도적으로 시계와 다르게 둔다.
+    "writtenMonth": "12",
+    "writtenDay": "31",
+    "writtenOn": {"y": "1999", "m": "8", "d": "9"},
 }
 
 #: 서식1에서 체크되어야 할 보기 전부. 거주기간·근로기간은 날짜에서 자동으로 나온다
@@ -146,8 +155,6 @@ EXPECTED_TEXTS_FORM5 = [
     ("name", "홍길동"),
     ("birth", "1998. 6. 15."),
     ("phone", "010-0000-0000"),
-    ("writtenMonth", "3"),
-    ("writtenDay", "4"),
 ]
 
 
@@ -452,10 +459,40 @@ def test_form1_roundtrip(client, ds_id: int) -> None:
     roundtrip("서식1", body, EXPECTED_TEXTS_FORM1, EXPECTED_CHECKS_FORM1)
 
 
-def test_form5_roundtrip(client, ds_id: int) -> None:
+def test_form5_roundtrip(client, ds_id: int, clock_day: date) -> None:
     print("\n[4] 서식5 왕복 — 값·동의 체크")
     _, body = export(client, ds_id, "서식5")
-    roundtrip("서식5", body, EXPECTED_TEXTS_FORM5, {0: {"agree.동의함"}})
+    expected = [
+        *EXPECTED_TEXTS_FORM5[:3],
+        ("writtenMonth", str(clock_day.month)),
+        ("writtenDay", str(clock_day.day)),
+    ]
+    roundtrip("서식5", body, expected, {0: {"agree.동의함"}})
+
+
+def test_submitted_date_fixed(client, ds_id: int, clock_day: date) -> None:
+    print("\n[4-1] 작성일 시계 주입·제출 뒤 고정")
+    app_path = f"/api/applications/{ds_id}"
+    with patch("demo.backend.forms.values.today", return_value=clock_day):
+        draft_layout = client.get(f"{app_path}/forms/layouts/서식5").json()
+        check("작성 중 화면 API 날짜", draft_layout["auto_date"], clock_day.isoformat())
+        _submit(client, ds_id, DS_UPLOADS)
+
+    stored = client.get(app_path).json()
+    date_keys = {"writtenMonth", "writtenDay", "writtenOn", "consent.form3.year"}
+    check_true(
+        "클라이언트 작성일 값은 신청서에 저장되지 않음",
+        not (date_keys & set(stored.get("form1_json") or {}))
+        and not (date_keys & set(stored.get("form5_json") or {})),
+    )
+
+    later_day = clock_day + timedelta(days=19)
+    with patch("demo.backend.forms.values.today", return_value=later_day):
+        layout = client.get(f"{app_path}/forms/layouts/서식5").json()
+        check("제출 뒤 화면 API 작성일 고정", layout["auto_date"], clock_day.isoformat())
+        _, body = export(client, ds_id, "서식5")
+        expected = [("writtenMonth", str(clock_day.month)), ("writtenDay", str(clock_day.day))]
+        roundtrip("서식5", body, expected, {0: {"agree.동의함"}})
 
 
 # ---------------------------------------------------------------- 4. 전자서명
@@ -710,12 +747,13 @@ def _submit(client, application_id: int, uploads: dict[str, str]) -> None:
     check(f"제출 {application_id}", res.status_code, 200)
 
 
-def main() -> int:
+def main(clock_day: date | None = None) -> int:
     from fastapi.testclient import TestClient
 
     from ..main import app
 
     tmp = Path(tempfile.mkdtemp(prefix="p7-scenarios-"))
+    clock_day = clock_day or date(2026, 3, 4)
     _isolate(tmp)
     form_coords.load.cache_clear()
 
@@ -725,10 +763,10 @@ def main() -> int:
             ds_id, jp_id = seed(client, tmp)
             test_export_headers(client, ds_id, jp_id)
             test_form1_roundtrip(client, ds_id)
-            test_form5_roundtrip(client, ds_id)
+            test_form5_roundtrip(client, ds_id, clock_day)
             test_signature(client, ds_id)
             test_without_signature(client)
-            _submit(client, ds_id, DS_UPLOADS)
+            test_submitted_date_fixed(client, ds_id, clock_day)
             test_layout_and_interview_form(client, jp_id, tmp)
             test_submitted_forms_locked(client, ds_id)
             test_officer_tab(client, ds_id, jp_id)
@@ -744,4 +782,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--today", type=date.fromisoformat, default=date(2026, 3, 4))
+    args = parser.parse_args()
+    with patch("demo.backend.forms.values.today", return_value=args.today):
+        raise SystemExit(main(args.today))

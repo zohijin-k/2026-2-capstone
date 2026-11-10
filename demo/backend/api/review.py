@@ -26,6 +26,7 @@ from ..engine_adapter import (
     to_engine_applicant,
     to_engine_documents,
 )
+from ..forms import values as form_values
 from ..models import (
     STATUS_DECIDED,
     STATUS_DRAFT,
@@ -685,7 +686,7 @@ def submit(application_id: int) -> dict[str, Any]:
         if row is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
         row.status = STATUS_SUBMITTED
-        row.submitted_at = datetime.now()
+        row.submitted_at = form_values.submission_timestamp()
         row.updated_at = row.submitted_at
         s.add(row)
         # 데모는 재제출 시나리오를 다루지 않는다. 기존 심사 결과는 지우고 다시 쓴다.

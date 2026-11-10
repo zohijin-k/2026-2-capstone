@@ -18,6 +18,7 @@ from ..rules.scoring import RESIDENCE_BANDS, WORK_BANDS, elapsed_years_months
 
 #: 두배적금 납입금액은 보기가 하나뿐이다(월 10만원). 신청 자체가 곧 선택이다.
 MONTHLY_DEPOSIT = "월 10만원"
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 @dataclass
@@ -39,10 +40,28 @@ def format_date(value: Any) -> str:
     return f"{parsed.year}. {parsed.month}. {parsed.day}." if parsed else ""
 
 
+def _now_seoul() -> datetime:
+    return datetime.now(SEOUL)
+
+
+def today() -> date:
+    """Application form date source, in the service's Korean calendar day."""
+    return _now_seoul().date()
+
+
+def submission_timestamp() -> datetime:
+    """Record the real submission time using the same injectable calendar day."""
+    current = _now_seoul()
+    return datetime.combine(today(), current.time().replace(tzinfo=None))
+
+
 def form_date(app: Application) -> date:
     """Draft forms use today's date; once submitted, they retain the submission date."""
-    seoul = ZoneInfo("Asia/Seoul")
-    return app.submitted_at.astimezone(seoul).date() if app.submitted_at else datetime.now(seoul).date()
+    if app.submitted_at is None:
+        return today()
+    if app.submitted_at.tzinfo is None:
+        return app.submitted_at.date()
+    return app.submitted_at.astimezone(SEOUL).date()
 
 
 def _band(start: Any, basis: date, bands: list[tuple[int, str]]) -> str | None:
