@@ -29,7 +29,7 @@ class FilledForm:
     #: 체크할 필드 키 (`gender.남` 처럼 묶음.보기)
     checks: list[str] = field(default_factory=list)
     #: 필드 키 → 이미지 파일 경로 (서식5 전자서명)
-    images: dict[str, str] = field(default_factory=dict)
+    images: dict[str, str | bytes] = field(default_factory=dict)
 
 
 def format_date(value: Any) -> str:
@@ -155,6 +155,15 @@ def build_consent_form(form_no: str, app: Application, consents: list[Consent], 
         consent = records.get(consent_type)
         if consent is not None:
             _check(filled.checks, f"consent.{field_key}", "동의함" if consent.agreed else "동의하지 않음")
+    if form_no == "job_consent":
+        signature = (app.form1_json or {}).get("consent.job.signature")
+        if isinstance(signature, str) and signature.startswith("data:image/png;base64,"):
+            import base64
+
+            try:
+                filled.images["consent.job.signature"] = base64.b64decode(signature.split(",", 1)[1])
+            except ValueError:
+                pass
     return filled
 
 
@@ -174,8 +183,14 @@ def build_job_application(
     year, month, day = _written_values(app.submitted_at or app.updated_at or datetime.now())
     for key, value in (("job.applicationYear", year), ("job.applicationMonth", month), ("job.applicationDay", day)):
         _put(filled.texts, key, value)
-    if form1.get("job.signature_path"):
-        filled.images["job.signature"] = str(form1["job.signature_path"])
+    signature = form1.get("job.signature")
+    if isinstance(signature, str) and signature.startswith("data:image/png;base64,"):
+        import base64
+
+        try:
+            filled.images["job.signature"] = base64.b64decode(signature.split(",", 1)[1])
+        except ValueError:
+            pass
     labels = {
         "interview": "면접비", "suit": "면접정장비",
         "photo": "면접사진촬영비", "certificate": "자격증 응시료",
@@ -184,6 +199,27 @@ def build_job_application(
         label = labels.get(item.item_type)
         if label:
             _check(filled.checks, f"subsidy.{item.item_type}", label)
+    has_interview = any(item.item_type == "interview" for item in subsidy_items or [])
+    if has_interview:
+        for item in subsidy_items or []:
+            if item.item_type != "suit" or item.linked_interview_index is None:
+                continue
+            for field_name in ("company", "location", "date"):
+                source_key = f"job.interview.{item.linked_interview_index}.{field_name}"
+                target_key = f"job.suit.{item.count_index}.{field_name}"
+                _put(filled.texts, target_key, form1.get(source_key))
+    return filled
+
+
+def build_interview_confirmation(app: Application, **_: Any) -> FilledForm:
+    """회사 작성 면접확인서의 신청자 칸만 채운다."""
+    form1: dict[str, Any] = app.form1_json or {}
+    identity = app.identity_json or {}
+    filled = FilledForm(form_no="job_interview_confirmation")
+    _put(filled.texts, "name", identity.get("name") or form1.get("name"))
+    _put(filled.texts, "birth", format_date(identity.get("birth") or form1.get("birth")))
+    for key in ("address", "mobile", "email"):
+        _put(filled.texts, key, form1.get(key))
     return filled
 
 
@@ -244,4 +280,5 @@ BUILDERS = {
     "서식5": build_form5,
     "job_application": build_job_application,
     "job_consent": lambda app, consents=(), **kw: build_consent_form("job_consent", app, list(consents), **kw),
+    "job_interview_confirmation": build_interview_confirmation,
 }

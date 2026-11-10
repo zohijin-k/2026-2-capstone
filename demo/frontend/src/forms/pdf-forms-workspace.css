@@ -1,0 +1,47 @@
+.pdf-forms { display: grid; gap: 16px; }
+.pdf-forms__intro h2 { margin: 0 0 4px; font-size: 20px; }
+.pdf-forms__intro p { margin: 0; color: var(--muted); }
+.pdf-forms__list { display: grid; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.pdf-form-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
+.pdf-form-row--done { border-left: 4px solid var(--success, #278451); }
+.pdf-form-row--draft { border-left: 4px solid var(--warning, #bb7b16); }
+.pdf-form-row--empty { border-left: 4px solid var(--border-strong); }
+.pdf-form-row__info { display: flex; flex-direction: column; gap: 4px; }
+.pdf-form-row__info span { color: var(--muted); font-size: 12px; }
+.pdf-form-row__actions { display: flex; gap: 8px; }
+.pdf-forms__selfcheck { display: grid; gap: 12px; }
+.pdf-forms__selfcheck h3 { margin: 0; }
+.pdf-forms__selfcheck fieldset { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; }
+.pdf-forms__selfcheck legend { font-weight: 600; }
+.pdf-forms__selfcheck label { margin-right: 18px; }
+.pdf-forms__error { color: #a22; background: #fff4f2; border: 1px solid #e8b6b1; padding: 10px 12px; border-radius: 8px; }
+.pdf-form__toolbar { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px; background: var(--surface-subtle); }
+.pdf-form__hint { margin-left: 16px; color: var(--muted); font-size: 12px; }
+.pdf-form__scroll { height: 100%; overflow: auto; display: flex; justify-content: center; padding: 14px; background: #e9eaed; }
+.pdf-form__page { position: relative; flex: 0 0 auto; background: #fff; box-shadow: 0 3px 16px rgb(0 0 0 / 18%); }
+.pdf-form__page > .pdfpages { position: absolute; inset: 0; }
+.pdf-form__overlay { position: absolute; inset: 0; pointer-events: none; }
+.pdf-form__text, .pdf-form__check, .pdf-form__sign { position: absolute; box-sizing: border-box; pointer-events: auto; }
+.pdf-form__text { padding: 0 2px; border: 1px solid rgb(51 83 147 / 25%); border-radius: 2px; background: rgb(242 247 255 / 72%); color: #101d42; line-height: 1.1; z-index: 2; }
+.pdf-form__text:focus { outline: 2px solid var(--brand); z-index: 3; }
+.pdf-form__text[readonly] { background: rgb(239 242 246 / 65%); }
+.pdf-form__text.is-missing, .pdf-form__check.is-missing, .pdf-form__sign.is-missing { outline: 2px solid #c33; outline-offset: 1px; }
+.pdf-form__check { display: grid; place-items: center; z-index: 4; }
+.pdf-form__check input { appearance: none; width: 100%; height: 100%; margin: 0; cursor: pointer; border: 1px solid transparent; }
+.pdf-form__check input:checked::after { content: '✓'; display: block; color: #112861; font-weight: 800; font-size: min(16px, 2.4vw); text-align: center; line-height: 1; }
+.pdf-form__check input:focus-visible { outline: 2px solid var(--brand); }
+.pdf-form__sign { display: grid; place-items: center; padding: 0; border: 1px dashed rgb(50 70 120 / 38%); background: rgb(238 244 255 / 36%); cursor: pointer; z-index: 4; }
+.pdf-form__sign img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.pdf-form__sign span { font-size: 11px; color: #384a73; }
+.pdf-form__signature-mode { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 12px 16px; border-top: 1px solid var(--border); }
+.pdf-form__signature-mode span { color: var(--muted); font-size: 12px; }
+.pdf-form__extra { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 18px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.pdf-form__extra label { display: flex; align-items: center; gap: 8px; }
+.pdf-form__extra input { font: inherit; padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 6px; }
+.pdf-form__extra span { width: 100%; color: var(--muted); font-size: 12px; }
+.pdf-form__sign-pad { padding: 14px 18px; border-top: 1px solid var(--border); }
+.pdf-form__sign-pad h4 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; }
+.pdf-form__missing { padding: 12px 18px; background: #fff8f5; border-top: 1px solid #eed0ca; }
+.pdf-form__missing ul { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-left: 18px; margin: 6px 0 0; }
+.pdf-form__missing button { border: 0; padding: 0; color: #a22; text-decoration: underline; background: transparent; cursor: pointer; }
+@media (max-width: 900px) { .pdf-form-row { align-items: flex-start; flex-direction: column; } .pdf-form-row__actions { flex-wrap: wrap; } }

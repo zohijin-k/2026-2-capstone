@@ -181,47 +181,6 @@
   font-weight: 700;
 }
 
-/* 서식1 절 단위 스텝 */
-.flow__steps {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 14px;
-}
-
-.step {
-  font: inherit;
-  font-size: 13px;
-  border: 1px solid #c3cad5;
-  border-radius: 999px;
-  background: var(--surface);
-  color: #4a5160;
-  padding: 5px 14px;
-  cursor: pointer;
-  transition: border-color var(--ease), color var(--ease), background var(--ease);
-}
-
-.step:hover {
-  border-color: var(--brand);
-  color: var(--brand);
-}
-
-.step.is-current {
-  border-color: var(--brand);
-  background: var(--brand-tint);
-  color: var(--brand);
-  font-weight: 700;
-}
-
-.flow__whole {
-  margin-left: auto;
-  font-size: 12.5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
 .flow__gap {
   height: 28px;
 }

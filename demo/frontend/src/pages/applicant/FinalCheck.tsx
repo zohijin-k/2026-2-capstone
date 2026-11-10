@@ -26,12 +26,17 @@ import StatusBadge from '../../components/StatusBadge.tsx'
 import './final-check.css'
 
 /** 남은 항목을 어느 화면에서 고치는지 기준으로 묶는다. 순서는 신청 순서대로. */
-const BLOCKER_GROUPS: { goto: Blocker['goto']; title: string; action: string }[] = [
-  { goto: 'form1', title: '신청서', action: '신청서 작성으로' },
-  { goto: 'consent', title: '동의', action: '동의로' },
+type ApplicantStage = 'forms' | 'subsidy' | 'upload'
+
+const BLOCKER_GROUPS: { goto: ApplicantStage; title: string; action: string }[] = [
+  { goto: 'forms', title: '신청 서식', action: '서식 작성으로' },
   { goto: 'subsidy', title: '지원 항목', action: '지원 항목으로' },
   { goto: 'upload', title: '서류', action: '서류 업로드로' },
 ]
+
+function applicantStage(goto: Blocker['goto']): ApplicantStage {
+  return goto === 'form1' || goto === 'consent' ? 'forms' : goto
+}
 
 export default function FinalCheck({
   applicationId,
@@ -43,7 +48,7 @@ export default function FinalCheck({
   onSubmitted: (result: SubmitResult) => void
   onBack: () => void
   /** 남은 항목을 고치러 해당 단계로 간다 */
-  onGoto: (stage: Blocker['goto']) => void
+  onGoto: (stage: ApplicantStage) => void
 }) {
   const [data, setData] = useState<FinalCheckData | null>(null)
   const [busy, setBusy] = useState(false)
@@ -97,7 +102,7 @@ export default function FinalCheck({
           </h3>
           <ul>
             {BLOCKER_GROUPS.map((g) => {
-              const items = data.blockers.filter((b) => b.goto === g.goto)
+              const items = data.blockers.filter((b) => applicantStage(b.goto) === g.goto)
               if (items.length === 0) return null
               return (
                 <li key={g.goto}>

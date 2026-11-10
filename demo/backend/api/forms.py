@@ -55,6 +55,46 @@ def list_forms(application_id: int) -> list[dict[str, Any]]:
     return form_links(application_id)
 
 
+@router.get("/{application_id}/forms/layouts/{form_no}")
+def form_layout(application_id: int, form_no: str) -> dict[str, Any]:
+    app = load_application(application_id)
+    if form_no not in available_forms(app) and not (
+        app.program_code != "double_savings" and form_no == "job_interview_confirmation"
+    ):
+        raise HTTPException(404, "이 신청 건의 서식이 아닙니다.")
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, f"{form_no} 좌표 맵을 사용할 수 없습니다.")
+    import fitz
+
+    with fitz.open(spec.template) as doc:
+        sizes = [{"width": page.rect.width, "height": page.rect.height} for page in doc]
+    return {
+        "form_no": spec.form_no,
+        "title": spec.title,
+        "public_form": spec.public_form,
+        "page_sizes": sizes,
+        "fields": spec.fields,
+    }
+
+
+@router.get("/{application_id}/forms/templates/{form_no}.pdf")
+def form_template(application_id: int, form_no: str) -> Response:
+    app = load_application(application_id)
+    if form_no not in available_forms(app) and not (
+        app.program_code != "double_savings" and form_no == "job_interview_confirmation"
+    ):
+        raise HTTPException(404, "이 신청 건의 서식이 아닙니다.")
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, f"{form_no} 템플릿을 사용할 수 없습니다.")
+    return Response(
+        content=spec.template.read_bytes(),
+        media_type="application/pdf",
+        headers={"Content-Disposition": DISPOSITION, "Cache-Control": "no-store"},
+    )
+
+
 @router.get("/{application_id}/forms/{form_no}.pdf")
 def export_form(application_id: int, form_no: str) -> Response:
     """작성된 서식을 원본과 같은 모양의 PDF로 만들어 인라인으로 흘린다."""
@@ -77,7 +117,6 @@ def export_form(application_id: int, form_no: str) -> Response:
         storage_root=STORAGE,
         subsidy_items=subsidy_rows(application_id),
     )
-
     pdf = render(spec, filled)
     name = quote(f"{app.application_no}_{form_no}.pdf")
     return Response(
@@ -88,4 +127,22 @@ def export_form(application_id: int, form_no: str) -> Response:
             # 신청서를 고친 뒤 다시 열었는데 예전 값이 보이면 심사가 틀어진다.
             "Cache-Control": "no-store",
         },
+    )
+
+
+@router.get("/{application_id}/forms/interview-confirmation/filled.pdf")
+def interview_confirmation(application_id: int) -> Response:
+    """신청자 정보만 들어간 회사 작성용 면접확인서 미리보기."""
+    app = load_application(application_id)
+    if app.program_code == "double_savings":
+        raise HTTPException(404, "취업지원패키지 서식입니다.")
+    form_no = "job_interview_confirmation"
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, "면접확인서 양식을 사용할 수 없습니다.")
+    pdf = render(spec, BUILDERS[form_no](app))
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": DISPOSITION, "Cache-Control": "no-store"},
     )

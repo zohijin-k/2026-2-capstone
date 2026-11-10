@@ -19,7 +19,7 @@ export default function Modal({
   children: ReactNode
   footer?: ReactNode
   /** viewer: 파일 크게 보기용 넓은 팝업 */
-  variant?: 'default' | 'viewer'
+  variant?: 'default' | 'viewer' | 'printable-viewer'
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -36,9 +36,9 @@ export default function Modal({
   }, [onClose])
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={variant === 'printable-viewer' ? 'modal-overlay modal-overlay--printable' : 'modal-overlay'} onClick={onClose}>
       <div
-        className={variant === 'viewer' ? 'modal modal--viewer' : 'modal'}
+        className={variant === 'default' ? 'modal' : 'modal modal--viewer'}
         role="dialog"
         aria-modal="true"
         aria-label={title}
