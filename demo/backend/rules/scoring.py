@@ -22,8 +22,9 @@ MAX_TOTAL = 100
 #: 미확정 가정값 라벨. 코드와 화면 양쪽에 같은 문자열을 쓴다.
 ESTIMATE_LABEL = "(데모 추정치)"
 
-#: 중위소득 140% 판정 기준표 — 2025년, 노인장기요양보험료 제외 (공고문 제2026-443호).
-#: 가구원수 → 가입구분별 월 건강보험료 상한.
+#: 중위소득 140% 판정 상한 — 노인장기요양보험료 제외.
+#: 1~7인 값은 공고문 제2026-443호, 8~10인 값은 보건복지부 소득판정기준표(2025.1.1. 고시).
+#: 8~10인 값은 공고문 표 범위(최대 7인) 밖의 참고값이며 담당자 확인을 표시한다.
 MEDIAN_INCOME_140: dict[int, dict[str, int]] = {
     1: {"직장": 118_821, "지역": 46_072},
     2: {"직장": 196_177, "지역": 133_680, "혼합": 198_905},
@@ -37,8 +38,9 @@ MEDIAN_INCOME_140: dict[int, dict[str, int]] = {
     10: {"직장": 599_810, "지역": 591_277, "혼합": 673_463},
 }
 
-#: 표에 있는 최대 가구원수. 그 이상은 이 값을 적용하고 담당자 확인 사유를 남긴다.
-MAX_TABLE_HOUSEHOLD = max(MEDIAN_INCOME_140)
+#: 코드가 지원하는 최대 가구원수. 11인 이상은 10인 값을 적용하고 담당자 확인을 남긴다.
+MAX_SUPPORTED_HOUSEHOLD = max(MEDIAN_INCOME_140)
+OFFICIAL_NOTICE_MAX_HOUSEHOLD = 7
 
 #: 신청 자격 상한. 이 값을 넘으면 점수와 무관하게 부적합이다.
 INCOME_LIMIT_PERCENT = 140.0
@@ -124,6 +126,10 @@ class ScoringFacts:
     transfer_in_date: date | None = None
     employment_date: date | None = None
     birth_date: date | None = None
+    #: 소득 가구원수 판독 실패 또는 자격확인서 내부 표기 불일치 사유.
+    household_size_issue: str | None = None
+    #: (신청서 입력값, 건강보험 자격확인서 값). 계산에는 자격확인서만 사용한다.
+    household_size_form_mismatch: tuple[int, int] | None = None
     residence_history_incomplete_suspected: bool = False
     sources: dict[str, FactSource] = field(default_factory=dict)
 
@@ -224,11 +230,17 @@ def premium_limit_140(household_size: int, insurance_type: str) -> tuple[int, st
     """가구원수·가입구분별 140% 건보료 상한과 주석."""
     note = ""
     size = household_size
-    if size > MAX_TABLE_HOUSEHOLD:
-        size = MAX_TABLE_HOUSEHOLD
+    if size > MAX_SUPPORTED_HOUSEHOLD:
+        size = MAX_SUPPORTED_HOUSEHOLD
         note = (
-            f"{ESTIMATE_LABEL} 공고문 기준표는 10인까지만 제공되어 "
-            f"{household_size}인 가구에 10인 기준을 적용했습니다. 담당자 확인이 필요합니다."
+            f"{ESTIMATE_LABEL} 공고문 표는 {OFFICIAL_NOTICE_MAX_HOUSEHOLD}인까지만 제공되어 "
+            f"{household_size}인 가구에 보건복지부 소득판정기준표(2025.1.1. 고시)의 "
+            "10인 기준을 적용했습니다. 담당자 확인이 필요합니다."
+        )
+    elif size > OFFICIAL_NOTICE_MAX_HOUSEHOLD:
+        note = (
+            f"{ESTIMATE_LABEL} 보건복지부 소득판정기준표(2025.1.1. 고시) 값을 적용했습니다. "
+            f"이 값은 공고문 표({OFFICIAL_NOTICE_MAX_HOUSEHOLD}인까지) 밖의 값이므로 담당자 확인이 필요합니다."
         )
     size = max(1, size)
     row = MEDIAN_INCOME_140[size]
@@ -277,11 +289,18 @@ def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, li
     """1. 중위소득 (40점). 가구원수 + '25.10~12월 고지금액 평균으로 판정한다."""
     source = facts.source("income")
     if not facts.household_size or not facts.monthly_premium:
+        missing = _missing(
+            "income", "중위소득(가구소득)", 40,
+            "건강보험 자격확인서 가구원 수" if facts.household_size_issue else "가구원수 또는 건강보험료 고지금액",
+            source,
+        )
+        if facts.household_size_issue:
+            missing.basis = facts.household_size_issue + " 담당자 재검토가 필요합니다."
         return (
-            _missing("income", "중위소득(가구소득)", 40, "가구원수 또는 건강보험료 고지금액", source),
+            missing,
             None,
             False,
-            [],
+            [facts.household_size_issue] if facts.household_size_issue else [],
         )
 
     insurance_type = facts.insurance_type if facts.insurance_type in INSURANCE_TYPES else "직장"
@@ -305,6 +324,12 @@ def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, li
     ]
     if note:
         notes.append(note)
+    if facts.household_size_form_mismatch:
+        form_count, certificate_count = facts.household_size_form_mismatch
+        notes.append(
+            f"신청서 입력 가구원수 {form_count}명과 건강보험 자격확인서 "
+            f"가구원수 {certificate_count}명이 다릅니다. 판정에는 자격확인서 값을 사용했습니다."
+        )
     return (
         ScoreItem(
             key="income",

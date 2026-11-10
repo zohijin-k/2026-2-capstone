@@ -312,7 +312,7 @@ def run_jbai_ocr(png: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
     if not key:
         raise JBAIConfigurationError("JBAI_API_KEY가 설정되지 않았습니다.")
     base_url = os.environ.get("JBAI_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
-    url = base_url + "/ocr"
+    url = base_url + "/ocr/chat/completions"
     data_url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
     payload = {
         "model": MODEL,

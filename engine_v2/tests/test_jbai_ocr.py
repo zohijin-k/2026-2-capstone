@@ -47,12 +47,26 @@ def test_three_page_pdf_calls_backend_in_page_order(tmp_path: Path, monkeypatch)
     assert [page.page for page in result.pages] == [0, 1, 2]
     assert [page.text_lines for page in result.pages] == [["page 0"], ["page 1"], ["page 2"]]
     assert all(method == "POST" and timeout == 600 for _, method, timeout, _ in requests)
-    assert all(url.endswith("/ocr") for url, _, _, _ in requests)
+    assert all(url.endswith("/ocr/chat/completions") for url, _, _, _ in requests)
     first_payload = requests[0][3]
     assert first_payload["model"] == jbai_ocr.MODEL
     message = first_payload["messages"][0]
     assert message["content"][0] == {"type": "text", "text": "OCR:"}
     assert message["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_base_url_trailing_slash_keeps_endpoint_path(monkeypatch):
+    configure(monkeypatch)
+    monkeypatch.setenv("JBAI_BASE_URL", "https://ocr.example.invalid/open-api/v1/")
+    requests = []
+    monkeypatch.setattr(
+        jbai_ocr, "_http_post",
+        lambda request, timeout: (requests.append(request.full_url) or openai_response("ok")),
+    )
+
+    jbai_ocr.run_jbai_ocr(b"fake png", (10, 10))
+
+    assert requests == ["https://ocr.example.invalid/open-api/v1/ocr/chat/completions"]
 
 
 def test_429_retries_then_succeeds(monkeypatch):
