@@ -16,7 +16,6 @@
     "S10_주민등록초본_취업패키지.pdf",
     "S10_면접확인서_1회차.pdf",
     "S10_면접확인서_2회차.pdf",
-    "S10_면접확인서_정장.pdf",
     "S10_결제영수증_정장70000.pdf",
     "S10_응시확인서_응시일없음.pdf",
     "S10_응시확인서_적합.pdf",
@@ -25,12 +24,11 @@
   "expect": {
     "application_no": "JP-2026-000005",
     "self_check_items": 2,
-    "upload_slots": 7,
+    "upload_slots": 6,
     "upload_slot_keys": [
       "resident_abstract",
       "interview_1_confirmation",
       "interview_2_confirmation",
-      "suit_1_confirmation",
       "suit_1_receipt",
       "certificate_1_exam",
       "certificate_1_receipt"

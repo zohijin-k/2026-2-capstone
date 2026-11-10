@@ -84,6 +84,7 @@ class DocRequirement:
     required: bool = True
     requires_signature: bool = False
     check_declared_date: bool = True
+    date_basis: str = "issue_date"
     min_issue_date: date | None = None
     max_issue_date: date | None = None
     premium_months: list[str] = field(default_factory=list)
@@ -133,6 +134,7 @@ def _make(
     alternatives: list[str] | None = None,
     requires_signature: bool = False,
     check_declared_date: bool = True,
+    date_basis: str = "issue_date",
     min_issue_date: date | None = None,
     max_issue_date: date | None = None,
     accepted_doc_types: list[DocType] | None = None,
@@ -147,6 +149,7 @@ def _make(
         required_fields=required_fields or [],
         requires_signature=requires_signature,
         check_declared_date=check_declared_date,
+        date_basis=date_basis,
         min_issue_date=min_issue_date,
         max_issue_date=max_issue_date,
         issuer=issuer,
@@ -248,16 +251,18 @@ def _resident_abstract(program: ProgramConfig) -> DocRequirement:
 
 
 def build_checklist(
-    program: ProgramConfig, applicant: ApplicantDocInput
+    program: ProgramConfig, applicant: ApplicantDocInput,
+    subsidy_catalog: list[dict[str, object]] | None = None,
 ) -> list[DocRequirement]:
     """근로유형·선택항목에 따라 실제로 올려야 할 서류만 반환한다."""
     if program.has_subsidy_items:
-        return _job_package_checklist(program, applicant)
+        return _job_package_checklist(program, applicant, subsidy_catalog)
     return _double_savings_checklist(program, applicant)
 
 
 def _job_package_checklist(
-    program: ProgramConfig, applicant: ApplicantDocInput
+    program: ProgramConfig, applicant: ApplicantDocInput,
+    subsidy_catalog: list[dict[str, object]] | None = None,
 ) -> list[DocRequirement]:
     """취업지원패키지 — 공통서류 3종 + 고른 항목별 추가서류.
 
@@ -295,24 +300,38 @@ def _job_package_checklist(
         ),
     ]
 
+    seen_slots = {item.slot_key for item in items}
     for selection in applicant.subsidy_selections:
-        limit = get_limit(selection.item_type)
-        count = clamp_count(selection.item_type, selection.count)
+        limit = get_limit(selection.item_type, subsidy_catalog)
+        count = clamp_count(selection.item_type, selection.count, subsidy_catalog)
         for index in range(1, count + 1):
             for extra in limit.extra_docs:
+                extra_slot = f"{limit.key}_{index}_{extra.suffix}"
+                label_index = index
+                if str(selection.item_type) == "suit" and extra.suffix == "confirmation":
+                    linked = (selection.linked_interview_indices[index - 1]
+                              if index <= len(selection.linked_interview_indices) else index)
+                    if linked is None:
+                        linked = index
+                    extra_slot = f"interview_{linked}_confirmation"
+                    label_index = int(linked)
+                if extra_slot in seen_slots:
+                    continue
+                seen_slots.add(extra_slot)
                 items.append(
                     _make(
-                        f"{limit.key}_{index}_{extra.suffix}",
+                        extra_slot,
                         extra.doc_type,
                         label=(
                             f"{extra.label} — {limit.label}"
-                            + (f" {index}회차" if limit.max_count > 1 else "")
+                            + (f" {label_index}회차" if limit.max_count > 1 else "")
                         ),
                         accepted_doc_types=list(extra.accepted),
                         required_fields=list(extra.required_fields),
                         notes=list(extra.notes),
                         warnings=list(extra.warnings),
                         min_issue_date=program.document_cutoff,
+                        date_basis=extra.date_basis,
                         # 영수증·확인서는 발급일 직접 입력을 받지 않는다. 신청자가
                         # 회차마다 날짜를 다시 적게 하면 이탈이 늘고, 인정 기준일
                         # 검사는 판독된 날짜만으로 충분하다.

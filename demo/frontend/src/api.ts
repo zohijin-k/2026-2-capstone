@@ -117,6 +117,9 @@ export interface SubsidyCatalogItem {
   description: string
   unit_cap: number
   max_count: number
+  count_scope: 'application' | 'year' | 'lifetime'
+  used_count?: number
+  remaining_count?: number
   /** true면 실비(영수증 금액과 한도 중 작은 값), false면 정액. */
   actual_cost: boolean
   needs_receipt: boolean
@@ -132,6 +135,7 @@ export interface SubsidySelection {
   item_type: string
   count: number
   receipts: (number | null)[]
+  linked_interview_indices: (number | null)[]
 }
 
 /** 지급 계산 한 줄. `calculation`이 "왜 이 금액인가"의 답이다. */
@@ -144,6 +148,7 @@ export interface SubsidyLine {
   receipt_amount: number | null
   granted_amount: number
   calculation: string
+  linked_interview_index: number | null
   pending: boolean
 }
 
@@ -256,6 +261,8 @@ export interface DocRequirementRow {
   fulfilled_by: string
   requires_signature: boolean
   check_declared_date: boolean
+  date_basis: 'issue_date' | 'payment_date' | 'interview_date' | 'exam_date' | 'none'
+  date_basis_label: string
   min_issue_date: string | null
   max_issue_date: string | null
   issue_rule_label: string
@@ -400,6 +407,15 @@ async function form<T>(path: string, body: FormData): Promise<T> {
 export const fetchPrograms = () => json<Program[]>('/api/programs')
 
 export type IssueRule = { mode: 'after_date' | 'after_notice' | 'within_days' | 'none'; date?: string; days?: number }
+export type CriteriaSubsidyDoc = {
+  suffix: string; doc_type: string; label: string; accepted: string[]; required_fields: string[];
+  notes: string[]; warnings: string[]; date_basis: 'issue_date' | 'payment_date' | 'interview_date' | 'exam_date' | 'none'
+}
+export type CriteriaSubsidyItem = {
+  item_type: string; label: string; description: string; unit_cap: number; max_count: number;
+  count_scope: 'application' | 'year' | 'lifetime'
+  actual_cost: boolean; note: string; extra_docs: CriteriaSubsidyDoc[]
+}
 export interface CriteriaData {
   version: number
   announcement_date: string
@@ -407,8 +423,11 @@ export interface CriteriaData {
   application_period_2: string[] | null
   document_issue_rules: Record<string, IssueRule>
   document_issue_fallback: IssueRule
+  document_date_bases: Record<string, 'issue_date' | 'payment_date' | 'interview_date' | 'exam_date' | 'none'>
   nhis_payment_months: string[]
   nhis_acquisition_loss_years: number
+  supplement: { allowed: boolean; days: number | null }
+  subsidy_catalog: CriteriaSubsidyItem[]
 }
 export interface CriteriaVersion extends CriteriaData { changed_at?: string; changed_role?: string }
 export interface CriteriaHistory { current: CriteriaVersion; history: CriteriaVersion[] }

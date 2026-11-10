@@ -16,11 +16,11 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlmodel import select
 
-from ..models import UNASSIGNED_SLOT, Application, Document, get_session
+from ..models import UNASSIGNED_SLOT, Application, Document, SubsidyItem, get_session
 from ..ocr import read_document, split_pdf_pages
 from ..rules.identity import identity_of
-from ..ocr.base import OcrResult
-from ..rules.doc_check import THRESHOLD_NOTES, check_document
+from ..ocr.base import BBox, OcrResult
+from ..rules.doc_check import CheckFinding, THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria
 from ..rules.programs import get_program
@@ -79,9 +79,11 @@ def _requirement_dict(req: DocRequirement, uploaded: list[Document]) -> dict[str
         "fulfilled_by": req.fulfilled_by,
         "requires_signature": req.requires_signature,
         "check_declared_date": req.check_declared_date,
+        "date_basis": req.date_basis,
+        "date_basis_label": {"issue_date": "발급일", "payment_date": "결제일", "interview_date": "면접일", "exam_date": "응시일", "none": "없음"}.get(req.date_basis, "발급일"),
         "min_issue_date": req.min_issue_date.isoformat() if req.min_issue_date else None,
         "max_issue_date": req.max_issue_date.isoformat() if req.max_issue_date else None,
-        "issue_rule_label": next((n for n in req.notes if "발급" in n), "발급일 기준 없음"),
+        "issue_rule_label": req.notes[0] if req.notes else "날짜 기준 없음",
         "issuer": req.issuer,
         "issuer_url": req.issuer_url,
         "notes": req.notes,
@@ -111,8 +113,8 @@ def _checklist_response(app: Application) -> dict[str, Any]:
             "code": program.code,
             "name": program.name,
             "selection": program.selection,
-            "allows_supplement": program.allows_supplement,
-            "supplement_days": program.supplement_days,
+            "allows_supplement": criteria["supplement"]["allowed"],
+            "supplement_days": criteria["supplement"]["days"],
             "announcement_date": criteria["announcement_date"],
             "application_period": criteria["application_period"],
             "application_period_2": criteria.get("application_period_2"),
@@ -224,6 +226,59 @@ def _save_row(
         return row
 
 
+def _refresh_nhis_identity(application_id: int, app: Application, checklist: list[DocRequirement]) -> None:
+    """건강보험 납부·자격확인서는 짝 서류가 도착할 때마다 함께 다시 대조한다."""
+    nhis_types = {str(DocType.NHIS_PAYMENT), str(DocType.NHIS_QUALIFICATION)}
+    rows = [d for d in _list_documents(application_id) if d.doc_type in nhis_types]
+    if not rows:
+        return
+    identity = identity_of(app.identity_json)
+    related = [(d.doc_type or "", (d.ocr_json or {}).get("fields") or {}) for d in rows]
+    for row in rows:
+        req = find_slot(checklist, row.slot_key)
+        if req is None:
+            continue
+        raw = row.ocr_json or {}
+        issue_text = raw.get("issue_date")
+        try:
+            issue_date = date.fromisoformat(issue_text) if issue_text else None
+        except ValueError:
+            issue_date = None
+        bbox_values = raw.get("bboxes") or {}
+        bboxes = {
+            key: BBox(**value)
+            for key, value in bbox_values.items()
+            if isinstance(value, dict) and {"page", "x0", "y0", "x1", "y1"} <= value.keys()
+        }
+        try:
+            detected = DocType(row.doc_type or "")
+        except ValueError:
+            detected = None
+        ocr = OcrResult(
+            detected_doc_type=detected,
+            confidence=float(raw.get("confidence") or 0.0),
+            image_quality=float(raw.get("image_quality") or 0.0),
+            issue_date=issue_date,
+            fields=dict(raw.get("fields") or {}),
+            bboxes=bboxes,
+            is_encrypted=bool(raw.get("is_encrypted")),
+            is_screen_capture=bool(raw.get("is_screen_capture")),
+            page_count=int(raw.get("page_count") or 1),
+            tier=str(raw.get("tier") or "none"),
+        )
+        result = check_document(
+            req, ocr, row.declared_issue_date, row.file_format, identity,
+            related_nhis_docs=related,
+        )
+        with get_session() as session:
+            saved = session.get(Document, row.id)
+            if saved is not None:
+                saved.stage1_status = result.status
+                saved.findings_json = [finding.as_dict() for finding in result.findings]
+                session.add(saved)
+                session.commit()
+
+
 def _replace_existing(application_id: int, slot_key: str) -> None:
     """같은 슬롯에 다시 올리면 이전 것을 지운다. 재업로드가 기본 동선이다."""
     with get_session() as s:
@@ -276,6 +331,49 @@ async def upload_document(
     result = check_document(
         req, ocr, declared, path.suffix.lstrip(".").lower(), identity_of(app.identity_json)
     )
+    if req.slot_key.endswith("_receipt") and ocr.tier == "none" and not ocr.is_encrypted:
+        # 판독 계층이 하나도 결과를 내지 못했을 때 낮은 기본 화질 점수로
+        # 실비 영수증을 자동 부적합 처리하지 않고 담당자 확인으로 보낸다.
+        result.findings[:] = [CheckFinding(
+            code="RECEIPT_OCR_UNAVAILABLE",
+            message="영수증을 자동 판독하지 못했습니다. 담당자가 원본을 확인합니다.",
+            how_to_fix="영수증 원본을 확인할 수 있도록 담당자에게 제출해 주세요.",
+            severity="NEEDS_REVIEW",
+        )]
+        result.status = "NEEDS_REVIEW"
+    if req.slot_key.endswith("_receipt") and req.accepts(ocr.detected_doc_type):
+        parts = req.slot_key.split("_")
+        try:
+            item_type, index = parts[0], int(parts[1])
+        except (IndexError, ValueError):
+            item_type, index = "", 0
+        with get_session() as session:
+            item = session.exec(select(SubsidyItem)
+                                .where(SubsidyItem.application_id == application_id)
+                                .where(SubsidyItem.item_type == item_type)
+                                .where(SubsidyItem.count_index == index)).first()
+        raw_amount = str(ocr.fields.get("결제금액") or "")
+        digits = re.sub(r"[^0-9]", "", raw_amount)
+        read_amount = int(digits) if digits else None
+        if read_amount is None and not any(f.code == "RECEIPT_AMOUNT_UNREADABLE" for f in result.findings):
+            result.findings.append(CheckFinding(
+                code="RECEIPT_AMOUNT_UNREADABLE",
+                message="영수증 결제금액을 자동으로 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                how_to_fix="영수증에 표시된 결제금액을 확인할 수 있도록 담당자에게 원본을 제출해 주세요.",
+                severity="NEEDS_REVIEW",
+            ))
+            if result.status == "PASS":
+                result.status = "NEEDS_REVIEW"
+        elif item is not None and item.receipt_amount is not None and item.receipt_amount != read_amount:
+            result.findings.append(CheckFinding(
+                code="RECEIPT_AMOUNT_MISMATCH",
+                message=(f"입력한 금액은 {item.receipt_amount:,}원이고, 영수증 판독 금액은 "
+                         f"{read_amount:,}원입니다. 금액을 확인해 주세요."),
+                how_to_fix="입력 금액을 영수증에 적힌 결제금액과 맞춰 주세요.",
+                severity="NEEDS_REVIEW",
+            ))
+            if result.status == "PASS":
+                result.status = "NEEDS_REVIEW"
 
     _replace_existing(application_id, req.slot_key)
     row = _save_row(

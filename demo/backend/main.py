@@ -92,11 +92,13 @@ def _serialize(code: str) -> dict:
         else current["announcement_date"] if default_rule.get("mode") == "after_notice"
         else ""
     )
-    data["allows_supplement"] = program.allows_supplement
+    supplement = current["supplement"]
+    data["allows_supplement"] = supplement["allowed"]
+    data["supplement_days"] = supplement["days"]
     data["is_first_come"] = program.is_first_come
     data["quota_total"] = program.quota_total
     #: 화면이 몇 문항을 물어야 하는지. 두배적금 8문항 / 취업패키지 2문항.
     data["self_check_items"] = item_numbers(code)
     #: 지원 항목 목록. 금액·횟수·추가서류가 전부 여기서 나간다.
-    data["subsidy_catalog"] = catalog() if program.has_subsidy_items else None
+    data["subsidy_catalog"] = catalog(current["subsidy_catalog"]) if program.has_subsidy_items else None
     return data

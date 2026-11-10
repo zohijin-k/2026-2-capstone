@@ -13,6 +13,7 @@ from sqlmodel import select
 from ..models import ProgramCriteriaVersion, get_session
 from ..rules.criteria import (
     CRITERIA_SCHEMA_VERSION,
+    default_criteria,
     history,
     latest,
     officer_criteria,
@@ -31,8 +32,11 @@ class CriteriaUpdate(BaseModel):
     application_period_2: list[str] | None = None
     document_issue_rules: dict[str, dict[str, Any]] = PydanticField(default_factory=dict)
     document_issue_fallback: dict[str, Any] = PydanticField(default_factory=lambda: {"mode": "none"})
+    document_date_bases: dict[str, str] = PydanticField(default_factory=dict)
     nhis_payment_months: list[str]
     nhis_acquisition_loss_years: int
+    supplement: dict[str, Any] | None = None
+    subsidy_catalog: list[dict[str, Any]] | None = None
 
 
 def _program(code: str) -> None:
@@ -49,7 +53,7 @@ def _date(value: str, label: str) -> date:
         raise HTTPException(400, f"{label} 날짜가 올바르지 않습니다.") from None
 
 
-def _validated(body: CriteriaUpdate) -> dict[str, Any]:
+def _validated(body: CriteriaUpdate, code: str) -> dict[str, Any]:
     _date(body.announcement_date, "기준일")
     if len(body.application_period) != 2:
         raise HTTPException(400, "신청 기간은 시작일과 종료일을 입력해 주세요.")
@@ -77,6 +81,9 @@ def _validated(body: CriteriaUpdate) -> dict[str, Any]:
             days = rule.get("days")
             if not isinstance(days, int) or not 1 <= days <= 3650:
                 raise HTTPException(400, f"{key}의 인정 일수는 1~3650일이어야 합니다.")
+    valid_date_bases = {"issue_date", "payment_date", "interview_date", "exam_date", "none"}
+    if any(value not in valid_date_bases for value in body.document_date_bases.values()):
+        raise HTTPException(400, "서류 기준 날짜 종류가 올바르지 않습니다.")
     if not body.nhis_payment_months:
         raise HTTPException(400, "고지월은 1개 이상 지정해야 합니다.")
     months: list[str] = []
@@ -90,8 +97,45 @@ def _validated(body: CriteriaUpdate) -> dict[str, Any]:
             raise HTTPException(400, "고지월에 미래 달은 지정할 수 없습니다.")
         if value not in months:
             months.append(value)
+    months.sort()
     if not 1 <= body.nhis_acquisition_loss_years <= 10:
         raise HTTPException(400, "자격득실 포함 기간은 1~10년이어야 합니다.")
+    supplement = body.supplement or default_criteria(code)["supplement"]
+    allowed = supplement.get("allowed")
+    days = supplement.get("days")
+    if not isinstance(allowed, bool):
+        raise HTTPException(400, "서류 보완 허용 여부가 올바르지 않습니다.")
+    if allowed and (not isinstance(days, int) or not 1 <= days <= 365):
+        raise HTTPException(400, "보완 기간은 1~365일이어야 합니다.")
+    if not allowed:
+        days = None
+    catalog = body.subsidy_catalog
+    if code == "job_package":
+        if not catalog:
+            catalog = default_criteria(code)["subsidy_catalog"]
+        if len(catalog) != 4:
+            raise HTTPException(400, "지원 항목은 네 종류를 모두 설정해야 합니다.")
+        seen: set[str] = set()
+        for item in catalog:
+            key = item.get("item_type")
+            if key not in {"interview", "suit", "photo", "certificate"} or key in seen:
+                raise HTTPException(400, "지원 항목 종류가 중복되거나 올바르지 않습니다.")
+            seen.add(str(key))
+            if not str(item.get("label", "")).strip():
+                raise HTTPException(400, "지원 항목 이름을 입력해 주세요.")
+            if not isinstance(item.get("unit_cap"), int) or int(item["unit_cap"]) <= 0:
+                raise HTTPException(400, "지원 한도는 1원 이상이어야 합니다.")
+            if not isinstance(item.get("max_count"), int) or not 1 <= int(item["max_count"]) <= 20:
+                raise HTTPException(400, "지원 횟수는 1~20회여야 합니다.")
+            if not isinstance(item.get("actual_cost"), bool):
+                raise HTTPException(400, "정액/실비 방식을 선택해 주세요.")
+            if item.get("count_scope", "year") not in {"application", "year", "lifetime"}:
+                raise HTTPException(400, "지원 횟수 범위가 올바르지 않습니다.")
+            for doc in item.get("extra_docs", []):
+                if doc.get("date_basis") not in {"issue_date", "payment_date", "interview_date", "exam_date", "none"}:
+                    raise HTTPException(400, "서류 기준 날짜 종류가 올바르지 않습니다.")
+    else:
+        catalog = []
     return {
         "schema_version": CRITERIA_SCHEMA_VERSION,
         "announcement_date": body.announcement_date,
@@ -99,8 +143,11 @@ def _validated(body: CriteriaUpdate) -> dict[str, Any]:
         "application_period_2": [value.isoformat() for value in period_2] if period_2 else None,
         "document_issue_rules": body.document_issue_rules,
         "document_issue_fallback": body.document_issue_fallback,
+        "document_date_bases": body.document_date_bases,
         "nhis_payment_months": months,
         "nhis_acquisition_loss_years": body.nhis_acquisition_loss_years,
+        "supplement": {"allowed": allowed, "days": days},
+        "subsidy_catalog": catalog,
     }
 
 
@@ -129,7 +176,7 @@ def update_criteria(code: str, body: CriteriaUpdate, role: str = Query(...)) -> 
     _program(code)
     if role != ROLE_PROVINCE:
         raise HTTPException(403, "시·도 담당자만 심사 기준을 변경할 수 있습니다.")
-    criteria = _validated(body)
+    criteria = _validated(body, code)
     current = latest(code)
     row = ProgramCriteriaVersion(
         program_code=code,

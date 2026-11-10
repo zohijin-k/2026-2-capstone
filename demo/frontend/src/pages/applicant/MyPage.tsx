@@ -12,15 +12,10 @@
 
 import { useEffect, useState } from 'react'
 
-import { fetchStatus, type ApplicationStatus, type DocStatus } from '../../api.ts'
+import { fetchStatus, type ApplicationStatus } from '../../api.ts'
 import FileLink from '../../components/FileLink.tsx'
+import StatusBadge from '../../components/StatusBadge.tsx'
 import './my-page.css'
-
-const STATUS_LABEL: Record<DocStatus, string> = {
-  PASS: '적합',
-  FAIL: '부적합',
-  NEEDS_REVIEW: '확인필요',
-}
 
 export default function MyPage({ applicationId }: { applicationId: number }) {
   const [data, setData] = useState<ApplicationStatus | null>(null)
@@ -120,7 +115,7 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
             <tbody>
               {data.subsidy.lines.map((line) => (
                 <tr key={`${line.item_type}-${line.index}`}>
-                  <td>{line.label}</td>
+                  <td>{line.label}{line.linked_interview_index && <small className="subsidy__link-note">면접 {line.linked_interview_index}회차와 연결</small>}</td>
                   <td>
                     {line.actual_cost
                       ? line.receipt_amount === null
@@ -166,9 +161,7 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
                   </td>
                   <td>{d.detected_doc_type ?? '미판별'}</td>
                   <td>
-                    <span className={`dstatus dstatus--${status.toLowerCase()}`}>
-                      {STATUS_LABEL[status]}
-                    </span>
+                    <StatusBadge status={status} audience="applicant" />
                   </td>
                   <td className="mypage__extract">
                     {Object.entries(d.extracted)

@@ -7,7 +7,7 @@ from datetime import date
 from pathlib import Path
 
 from . import run_p4_scenarios as p4
-from ..rules.criteria import for_application, issue_bounds, read_criteria
+from ..rules.criteria import CRITERIA_SCHEMA_VERSION, for_application, issue_bounds, read_criteria
 from ..rules.facts import build_facts
 from ..models import Application, ProgramCriteriaVersion, get_session
 from sqlmodel import select
@@ -97,7 +97,7 @@ def run(client) -> None:
     legacy_public = client.get(f"/api/programs/{code}/criteria")
     check("구형 기준 신청자 조회", legacy_public.status_code, 200)
     check("구형 기준 신청 기간 기본값 보정", len(legacy_public.json().get("application_period", [])), 2)
-    check("구형 기준 스키마 보정", legacy_public.json().get("schema_version"), 2)
+    check("구형 기준 스키마 보정", legacy_public.json().get("schema_version"), CRITERIA_SCHEMA_VERSION)
     legacy_officer = client.get(path, params={"role": "province"})
     check("구형 기준 담당자 조회", legacy_officer.status_code, 200)
     check("구형 기준 이력도 보정", legacy_officer.json()["current"].get("nhis_payment_months"),
@@ -117,6 +117,48 @@ def run(client) -> None:
             ProgramCriteriaVersion.version == legacy_version,
         )).first()
     check("읽기 보정 시 구형 기록 보존", saved_legacy.criteria_json, legacy_raw)
+
+    # 지원 항목 카탈로그 역시 신청서가 생성된 시점의 버전에 고정된다.
+    job_old = client.post("/api/applications", json={"program_code": "job_package"}).json()
+    identify_body = {"name": "김전북", "birth": "1999-01-01", "phone": "010-1234-5678",
+                     "pledge": True, "signature_data_url": "data:image/png;base64,iVBORw0KGgo="}
+    client.post(f"/api/applications/{job_old['id']}/identity", json=identify_body)
+    client.post(f"/api/applications/{job_old['id']}/subsidy-items", json={"items": [
+        {"item_type": "interview", "count": 1},
+    ]})
+    job_path = "/api/officer/programs/job_package/criteria"
+    job_criteria = client.get(job_path, params={"role": "province"}).json()["current"]
+    catalog = job_criteria["subsidy_catalog"]
+    catalog[0]["unit_cap"] = 60000
+    catalog[0]["count_scope"] = "year"
+    catalog[0]["extra_docs"][0]["date_basis"] = "payment_date"
+    job_body = {key: value for key, value in job_criteria.items()
+                if key not in {"version", "schema_version", "changed_at", "changed_role"}}
+    changed = client.put(job_path, params={"role": "province"}, json=job_body)
+    check("취업패키지 카탈로그 기준 저장", changed.status_code, 200)
+    job_new = client.post("/api/applications", json={"program_code": "job_package"}).json()
+    client.post(f"/api/applications/{job_new['id']}/identity", json=identify_body)
+    old_catalog = client.get(f"/api/applications/{job_old['id']}/subsidy-items").json()["catalog"]
+    new_catalog = client.get(f"/api/applications/{job_new['id']}/subsidy-items").json()["catalog"]
+    check("기존 신청서는 이전 항목 한도 유지", old_catalog[0]["unit_cap"], 50000)
+    check("새 신청서는 새 항목 한도 적용", new_catalog[0]["unit_cap"], 60000)
+    check("연간 범위에서 이전 신청 사용 횟수 반영", new_catalog[0]["remaining_count"], 1)
+    over_scope = client.post(f"/api/applications/{job_new['id']}/subsidy-items", json={"items": [
+        {"item_type": "interview", "count": 2},
+    ]})
+    check("연간 한도 초과 회차 거부", over_scope.status_code, 400)
+    allowed_scope = client.post(f"/api/applications/{job_new['id']}/subsidy-items", json={"items": [
+        {"item_type": "interview", "count": 1},
+    ]})
+    check("연간 남은 1회 신청 허용", allowed_scope.status_code, 200)
+    client.post(f"/api/applications/{job_new['id']}/subsidy-items", json={"items": [
+        {"item_type": "interview", "count": 1},
+    ]})
+    interview_doc = next(item for item in client.get(
+        f"/api/applications/{job_new['id']}/required-documents"
+    ).json()["items"] if item["slot_key"] == "interview_1_confirmation")
+    check("새 날짜 종류가 서류 칸에 반영", interview_doc["date_basis"], "payment_date")
+    check("날짜 입력 순서가 요구됨", interview_doc["check_declared_date"], True)
 
 
 def main() -> int:

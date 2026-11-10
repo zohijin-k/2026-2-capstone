@@ -24,7 +24,7 @@ import './subsidy-items.css'
 const won = (value: number) => `${value.toLocaleString('ko-KR')}원`
 
 /** 화면 상태: 항목별 회차와 회차별 영수증 금액 문자열. */
-type Draft = Record<string, { count: number; receipts: string[] }>
+type Draft = Record<string, { count: number; receipts: string[]; links: (number | null)[] }>
 
 function toDraft(catalog: SubsidyCatalogItem[], selections: SubsidySelection[]): Draft {
   const draft: Draft = {}
@@ -36,6 +36,7 @@ function toDraft(catalog: SubsidyCatalogItem[], selections: SubsidySelection[]):
         const value = hit?.receipts[i]
         return value === null || value === undefined ? '' : String(value)
       }),
+      links: Array.from({ length: item.max_count }, (_, i) => hit?.linked_interview_indices[i] ?? i + 1),
     }
   }
   return draft
@@ -48,6 +49,7 @@ function toSelections(draft: Draft): SubsidySelection[] {
       item_type,
       count: v.count,
       receipts: v.receipts.slice(0, v.count).map((r) => (r === '' ? null : Number(r))),
+      linked_interview_indices: v.links.slice(0, v.count),
     }))
 }
 
@@ -56,13 +58,18 @@ function ItemCard({
   draft,
   onCount,
   onReceipt,
+  interviewMax,
+  onInterviewLink,
 }: {
   item: SubsidyCatalogItem
-  draft: { count: number; receipts: string[] }
+  draft: { count: number; receipts: string[]; links: (number | null)[] }
   onCount: (count: number) => void
   onReceipt: (index: number, value: string) => void
+  interviewMax: number
+  onInterviewLink: (index: number, value: number) => void
 }) {
-  const counts = Array.from({ length: item.max_count + 1 }, (_, i) => i)
+  const allowedCount = item.remaining_count ?? item.max_count
+  const counts = Array.from({ length: allowedCount + 1 }, (_, i) => i)
   const picked = draft.count > 0
 
   return (
@@ -72,12 +79,13 @@ function ItemCard({
           <input
             type="checkbox"
             checked={picked}
+            disabled={!picked && allowedCount === 0}
             onChange={(e) => onCount(e.target.checked ? 1 : 0)}
           />
           <span className="sitem__label">{item.label}</span>
         </label>
         <span className="sitem__amount">{item.amount_label}</span>
-        <span className="sitem__count">{item.count_label}</span>
+        <span className="sitem__count">{item.count_label}{item.count_scope !== 'application' && ` · 남은 ${allowedCount}회`}</span>
       </div>
 
       <p className="sitem__desc">{item.description}</p>
@@ -85,6 +93,16 @@ function ItemCard({
 
       {picked && (
         <div className="sitem__body">
+          {item.item_type === 'suit' && Array.from({ length: draft.count }, (_, i) => (
+            <label key={`interview-link-${i}`} className="sitem__pick">
+              {i + 1}회차 정장 대여에 연결할 면접 회차
+              <select value={draft.links[i] ?? i + 1} onChange={(e) => onInterviewLink(i, Number(e.target.value))}>
+                {Array.from({ length: interviewMax }, (_, j) => j + 1).map((turn) => (
+                  <option key={turn} value={turn} disabled={draft.links.some((value, index) => index !== i && value === turn)}>{turn}회차</option>
+                ))}
+              </select>
+            </label>
+          ))}
           {item.max_count > 1 && (
             <label className="sitem__pick">
               신청 횟수
@@ -187,18 +205,26 @@ export default function SubsidyItems({
           <ItemCard
             key={item.item_type}
             item={item}
-            draft={draft[item.item_type] ?? { count: 0, receipts: [] }}
+            draft={draft[item.item_type] ?? { count: 0, receipts: [], links: [] }}
+            interviewMax={state.catalog.find((item) => item.item_type === 'interview')?.max_count ?? 2}
             onCount={(count) =>
               save({
                 ...draft,
                 [item.item_type]: {
                   count,
                   receipts: draft[item.item_type]?.receipts ?? [],
+                  links: Array.from({ length: item.max_count }, (_, index) => draft[item.item_type]?.links[index] ?? index + 1),
                 },
               })
             }
+            onInterviewLink={(index, value) => {
+              const current = draft.suit ?? { count: 0, receipts: [], links: [] }
+              const links = [...current.links]
+              links[index] = value
+              save({ ...draft, suit: { ...current, links } })
+            }}
             onReceipt={(index, value) => {
-              const current = draft[item.item_type] ?? { count: 0, receipts: [] }
+              const current = draft[item.item_type] ?? { count: 0, receipts: [], links: [] }
               const receipts = [...current.receipts]
               receipts[index] = value
               save({ ...draft, [item.item_type]: { ...current, receipts } })

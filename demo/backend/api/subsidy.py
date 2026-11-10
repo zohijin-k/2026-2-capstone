@@ -19,12 +19,15 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from ..models import STATUS_DRAFT, Application, SubsidyItem, get_session
+from ..rules.criteria import for_application, read_criteria
+from ..rules.identity import norm_name
 from ..rules.programs import get_program
 from ..rules.subsidy import (
     catalog,
     clamp_count,
     estimate,
     granted_amount,
+    get_limit,
     parse_selections,
 )
 from .common import load_application, subsidy_selections
@@ -37,6 +40,7 @@ class SubsidyItemRequest(BaseModel):
     count: int = 0
     #: 회차별 결제영수증 금액(원). 정액 항목(면접비)은 비워 둔다.
     receipts: list[int | None] = []
+    linked_interview_indices: list[int | None] = []
 
 
 class SubsidyRequest(BaseModel):
@@ -55,16 +59,24 @@ def _response(app: Application) -> dict[str, Any]:
     program = get_program(app.program_code)
     application_id = app.id or 0
     selections = subsidy_selections(application_id)
-    result = estimate(selections)
+    criteria = read_criteria(for_application(app))
+    configured = criteria["subsidy_catalog"]
+    result = estimate(selections, configured)
+    display_catalog = catalog(configured)
+    for item in display_catalog:
+        prior = _used_in_scope(app, str(item["item_type"]), str(item["count_scope"]))
+        item["used_count"] = prior
+        item["remaining_count"] = max(0, int(item["max_count"]) - prior)
     return {
         "program_code": program.code,
         "program_name": program.name,
-        "catalog": catalog(),
+        "catalog": display_catalog,
         "selections": [
             {
                 "item_type": str(s.item_type),
                 "count": s.count,
                 "receipts": list(s.receipts),
+                "linked_interview_indices": list(s.linked_interview_indices),
             }
             for s in selections
         ],
@@ -92,14 +104,38 @@ def save_subsidy_items(application_id: int, body: SubsidyRequest) -> dict[str, A
         raise HTTPException(400, "이미 제출된 신청은 지원 항목을 바꿀 수 없습니다.")
 
     try:
+        criteria = read_criteria(for_application(app))
+        configured = criteria["subsidy_catalog"]
         selections = parse_selections(
             [
                 {"item_type": i.item_type, "count": i.count, "receipts": i.receipts}
+                | {"linked_interview_indices": i.linked_interview_indices}
                 for i in body.items
-            ]
+            ], configured
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from None
+
+    suit = next((item for item in selections if str(item.item_type) == "suit"), None)
+    used_links: list[int] = []
+    if suit:
+        links = suit.linked_interview_indices or list(range(1, suit.count + 1))
+        if len(links) != suit.count or any(value is None or not 1 <= value <= get_limit("interview", configured).max_count for value in links):
+            raise HTTPException(400, "정장비 회차마다 연결할 면접 회차를 선택해 주세요.")
+        used_links = [int(value) for value in links if value is not None]
+        if len(set(used_links)) != len(used_links):
+            raise HTTPException(400, "하나의 면접확인서를 여러 정장비 회차에 연결할 수 없습니다.")
+        suit.linked_interview_indices = used_links
+
+    for selection in selections:
+        limit = get_limit(selection.item_type, configured)
+        prior = _used_in_scope(app, str(selection.item_type), limit.count_scope)
+        if selection.count + prior > limit.max_count:
+            raise HTTPException(
+                400,
+                f"{limit.label}은(는) {limit.count_scope} 기준 최대 {limit.max_count}회입니다. "
+                f"이미 사용한 {prior}회를 포함해 횟수를 조정해 주세요.",
+            )
 
     with get_session() as s:
         for old in s.exec(
@@ -108,7 +144,7 @@ def save_subsidy_items(application_id: int, body: SubsidyRequest) -> dict[str, A
             s.delete(old)
 
         for selection in selections:
-            count = clamp_count(selection.item_type, selection.count)
+            count = clamp_count(selection.item_type, selection.count, configured)
             for index in range(1, count + 1):
                 receipt = selection.receipt_at(index)
                 s.add(
@@ -117,7 +153,10 @@ def save_subsidy_items(application_id: int, body: SubsidyRequest) -> dict[str, A
                         item_type=str(selection.item_type),
                         count_index=index,
                         receipt_amount=receipt,
-                        granted_amount=granted_amount(selection.item_type, receipt),
+                        linked_interview_index=(selection.linked_interview_indices[index - 1]
+                                                if str(selection.item_type) == "suit" and index <= len(selection.linked_interview_indices)
+                                                else None),
+                        granted_amount=granted_amount(selection.item_type, receipt, configured),
                     )
                 )
 
@@ -128,3 +167,33 @@ def save_subsidy_items(application_id: int, body: SubsidyRequest) -> dict[str, A
         s.commit()
 
     return _response(load_application(application_id))
+
+
+def _used_in_scope(app: Application, item_type: str, scope: str) -> int:
+    """기준에서 정한 신청서·연간·생애 횟수 범위의 과거 신청 횟수."""
+    if scope == "application" or not app.identity_json:
+        return 0
+    name = norm_name(str(app.identity_json.get("name") or ""))
+    birth = str(app.identity_json.get("birth") or "")[:10]
+    if not name or not birth:
+        return 0
+    with get_session() as session:
+        candidates = session.exec(
+            select(Application).where(Application.program_code == app.program_code)
+        ).all()
+        matching_ids = []
+        for candidate in candidates:
+            if candidate.id == app.id:
+                continue
+            if scope == "year" and candidate.created_at.year != app.created_at.year:
+                continue
+            identity = candidate.identity_json or {}
+            if norm_name(str(identity.get("name") or "")) == name and str(identity.get("birth") or "")[:10] == birth:
+                matching_ids.append(candidate.id)
+        if not matching_ids:
+            return 0
+        rows = session.exec(
+            select(SubsidyItem).where(SubsidyItem.application_id.in_(matching_ids))
+            .where(SubsidyItem.item_type == item_type)
+        ).all()
+    return len(rows)

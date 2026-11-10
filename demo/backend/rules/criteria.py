@@ -9,12 +9,22 @@ from sqlmodel import select
 
 from ..models import Application, ProgramCriteriaVersion, get_session
 from .programs import PROGRAMS
+from .subsidy import criteria_catalog_defaults
 
-CRITERIA_SCHEMA_VERSION = 2
+CRITERIA_SCHEMA_VERSION = 4
 
 
 def default_criteria(program_code: str) -> dict[str, Any]:
     program = PROGRAMS[program_code]
+    subsidy_catalog = criteria_catalog_defaults() if program.has_subsidy_items else []
+    date_bases = {
+        "application_form": "none", "resident_abstract": "issue_date",
+        "bank_account": "none", "confirmation": "issue_date",
+        "receipt": "issue_date", "photo": "issue_date", "exam": "issue_date",
+    }
+    for item in subsidy_catalog:
+        for doc in item["extra_docs"]:
+            date_bases[f"{item['item_type']}_{doc['suffix']}"] = doc["date_basis"]
     if program_code == "double_savings":
         fallback = {"mode": "after_notice"}
         rules = {
@@ -42,8 +52,16 @@ def default_criteria(program_code: str) -> dict[str, Any]:
         "application_period_2": [d.isoformat() for d in program.apply_period_2] if program.apply_period_2 else None,
         "document_issue_rules": rules,
         "document_issue_fallback": fallback,
+        "document_date_bases": date_bases,
         "nhis_payment_months": ["2025-10", "2025-11", "2025-12"],
         "nhis_acquisition_loss_years": 5,
+        "supplement": {
+            "allowed": program.allows_supplement,
+            "days": program.supplement_days,
+        },
+        # 취업패키지 지원 항목의 금액·지급 방식·횟수·필요 서류·날짜 종류는
+        # 신규 기준 버전에 스냅샷으로 저장한다. 기본값은 기존 룰팩에서 만든다.
+        "subsidy_catalog": subsidy_catalog,
     }
 
 
@@ -62,6 +80,15 @@ def read_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
         **defaults["document_issue_fallback"],
         **(stored.get("document_issue_fallback") or {}),
     }
+    merged["document_date_bases"] = {
+        **defaults["document_date_bases"],
+        **(stored.get("document_date_bases") or {}),
+    }
+    merged["supplement"] = {
+        **defaults["supplement"],
+        **(stored.get("supplement") or {}),
+    }
+    merged["subsidy_catalog"] = stored.get("subsidy_catalog") or defaults["subsidy_catalog"]
     return merged
 
 
@@ -129,6 +156,10 @@ def for_application(app: Application) -> ProgramCriteriaVersion:
     return row or latest(app.program_code)
 
 
+def supplement_for_application(app: Application) -> dict[str, Any]:
+    return read_criteria(for_application(app))["supplement"]
+
+
 def issue_rule_for(criteria: dict[str, Any], slot_key: str) -> dict[str, Any]:
     rules = criteria.get("document_issue_rules") or {}
     if slot_key in rules:
@@ -155,16 +186,22 @@ def issue_bounds(criteria: dict[str, Any], slot_key: str, application_date: date
     return None, None
 
 
-def issue_rule_label(criteria: dict[str, Any], slot_key: str) -> str:
+def issue_rule_label(criteria: dict[str, Any], slot_key: str, date_basis: str = "issue_date") -> str:
+    date_label = {
+        "issue_date": "발급일", "payment_date": "결제일",
+        "interview_date": "면접일", "exam_date": "응시일", "none": "날짜",
+    }.get(date_basis, "발급일")
+    if date_basis == "none":
+        return "날짜 기준 없음"
     rule = issue_rule_for(criteria, slot_key)
     mode = rule.get("mode", "none")
     if mode == "after_date":
-        return f"{rule.get('date', '')} 이후 발급"
+        return f"{rule.get('date', '')} 이후 {date_label}"
     if mode == "after_notice":
-        return f"{criteria['announcement_date']} 공고일 이후 발급"
+        return f"{criteria['announcement_date']} 공고일 이후 {date_label}"
     if mode == "within_days":
-        return f"신청일 기준 {int(rule.get('days', 0))}일 이내 발급"
-    return "발급일 기준 없음"
+        return f"신청일 기준 {int(rule.get('days', 0))}일 이내 {date_label}"
+    return f"{date_label} 기준 없음"
 
 
 def public_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
@@ -177,8 +214,11 @@ def public_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
         "application_period_2": data.get("application_period_2"),
         "document_issue_rules": data.get("document_issue_rules", {}),
         "document_issue_fallback": data.get("document_issue_fallback", {"mode": "none"}),
+        "document_date_bases": data["document_date_bases"],
         "nhis_payment_months": data["nhis_payment_months"],
         "nhis_acquisition_loss_years": data["nhis_acquisition_loss_years"],
+        "supplement": data["supplement"],
+        "subsidy_catalog": data["subsidy_catalog"],
     }
 
 

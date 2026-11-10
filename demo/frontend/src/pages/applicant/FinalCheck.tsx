@@ -4,7 +4,7 @@
  * 두배적금은 **보완 요청이 없는 사업**이다. 제출 버튼을 누르는 순간이 마지막
  * 기회이고, 그 사실을 화면에서 숨기면 안 된다. 그래서 이 화면은 세 가지만 한다.
  *
- *   1. 남은 부적합·누락을 한 곳에 모으고, 각각 **고칠 수 있는 위치로 보낸다**
+ *   1. 남은 확인 항목·누락을 한 곳에 모으고, 각각 **고칠 수 있는 위치로 보낸다**
  *   2. 하나라도 남아 있으면 제출 버튼을 잠근다
  *   3. "보완 없음"을 가장 크게 경고한다
  *
@@ -18,18 +18,12 @@ import {
   fetchFinalCheck,
   submitApplication,
   type Blocker,
-  type DocStatus,
   type FinalCheck as FinalCheckData,
   type SubmitResult,
 } from '../../api.ts'
 import FileLink from '../../components/FileLink.tsx'
+import StatusBadge from '../../components/StatusBadge.tsx'
 import './final-check.css'
-
-const STATUS_LABEL: Record<DocStatus, string> = {
-  PASS: '적합',
-  FAIL: '부적합',
-  NEEDS_REVIEW: '확인필요',
-}
 
 /** 남은 항목을 어느 화면에서 고치는지 기준으로 묶는다. 순서는 신청 순서대로. */
 const BLOCKER_GROUPS: { goto: Blocker['goto']; title: string; action: string }[] = [
@@ -140,7 +134,7 @@ export default function FinalCheck({
             <tbody>
               {data.subsidy.lines.map((line) => (
                 <tr key={`${line.item_type}-${line.index}`}>
-                  <td>{line.label}</td>
+                  <td>{line.label}{line.linked_interview_index && <small className="subsidy__link-note">면접 {line.linked_interview_index}회차와 연결</small>}</td>
                   <td>
                     {line.actual_cost
                       ? line.receipt_amount === null
@@ -205,9 +199,7 @@ export default function FinalCheck({
                     <td>{d.detected_doc_type ?? '미판별'}</td>
                     <td>{d.declared_issue_date ?? '-'}</td>
                     <td>
-                      <span className={`dstatus dstatus--${status.toLowerCase()}`}>
-                        {STATUS_LABEL[status]}
-                      </span>
+                      <StatusBadge status={status} audience="applicant" />
                     </td>
                     <td className={d.findings.length ? 'fcheck__reason' : 'fcheck__none'}>
                       {d.findings.map((f) => f.message).join(' / ') || '-'}

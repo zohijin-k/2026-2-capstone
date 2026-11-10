@@ -120,6 +120,8 @@ class SubsidyItem(SQLModel, table=True):
     item_type: str
     #: 1-based 회차.
     count_index: int
+    #: 정장비 회차가 연결된 면접확인서 회차. 중복 연결은 API에서 거부한다.
+    linked_interview_index: Optional[int] = None
     #: 결제영수증 금액(원). 정액 항목(면접비)은 None.
     receipt_amount: Optional[int] = None
     granted_amount: int = 0

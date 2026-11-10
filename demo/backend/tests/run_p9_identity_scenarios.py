@@ -157,9 +157,9 @@ def test_matching(client, tmp: Path) -> None:
 
 
 def test_samples_and_no_identity(client, tmp: Path) -> None:
-    print("\n[5] 시연용 샘플은 대조 제외")
+    print("\n[5] 시연용 건강보험 서류 — 인증된 본인 명의는 통과")
     app_id = new_app(client)
-    identify(client, app_id, "조테스트", "2001-01-01")
+    identify(client, app_id, "홍길동", "1999-01-01")
     client.put(f"/api/applications/{app_id}/doc-context",
                json={"work_category": "직장가입자", "workplace_count": 1})
     for slot, filename in p4.S2_UPLOADS.items():
