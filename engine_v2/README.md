@@ -388,6 +388,19 @@ OCR이 주 경로가 되었으므로 7단계를 먼저 한다. 어댑터: `pipel
 | Apple Vision (`ocrmac`) | `pip install ocrmac` | 불가 (맥 전용) | 기준선 |
 | EasyOCR | `pip install easyocr` | 가능 | 후보 |
 | PaddleOCR | `pip install paddlepaddle paddleocr` | 가능 | 후보 |
+| 전북AI PaddleOCR-VL | 기관 API 접근 필요 | 가능 | 별도 쪽별 텍스트·표 결과 (bbox 없음) |
+
+전북AI OpenAI 호환 OCR은 `pipeline/jbai_ocr.py`의 별도 구조화 결과로 받는다.
+기존 `OcrWord`와 달리 bbox가 없는 텍스트 줄·HTML 표이며, 기존 초본·건강보험 추출기에는
+연결하지 않았다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
+인식 값은 콘솔이나 파일에 출력하지 않는다. 키는 `JBAI_API_KEY` 환경변수에서만 읽고,
+`JBAI_ALLOW_REAL_DOCS`가 true가 아니면 `data/private/` 파일과 데모 업로드는 차단한다.
+
+합성 표 이미지로 `OCR:`와 `Table Recognition:` 형식 조사를 시도했으나 두 요청 모두
+설정한 Base URL의 `/ocr`에서 HTTP 404를 반환했다(응답까지 약 0.1~0.2초).
+성공 응답 형식·표 병합 셀 표현·모델 처리시간은 아직 확인하지 못했다. 구현은 OpenAI
+호환 `choices[0].message.content` 문자열/텍스트 조각 형식을 가정하며, 기관의 성공 응답을
+확인한 뒤 조정해야 한다.
 
 비교 지표: 쪽당 처리시간, 평균 신뢰도, 저신뢰 비율, 고정 문구 적중, **정답 필드 적중**(본인 PC의 정답 파일 기준)
 
