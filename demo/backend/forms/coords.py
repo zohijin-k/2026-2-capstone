@@ -14,13 +14,9 @@ from typing import Any
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures"
 COORDS_DIR = FIXTURES / "form_coords"
 
-#: 데모가 실제로 내보내는 서식. 나머지는 좌표 맵 구조만 있고 비어 있다(설계 6-B.3).
-EXPORTABLE = ("서식1", "서식5")
-
-FORM_TITLES = {
-    "서식1": "「전북청년 함께 두배적금」참여 신청서",
-    "서식5": "행정정보 공동이용 사전동의서",
-}
+# 신청자가 작성하는 서식. 공고문 번호와 시행지침 내부 번호의 대응은
+# 템플릿 정의(cut_templates.py) 한 곳에만 둔다.
+EXPORTABLE = ("서식1", "서식2", "서식3", "서식4", "서식5", "job_application", "job_consent")
 
 
 @dataclass(frozen=True)
@@ -30,6 +26,9 @@ class FormCoords:
     template: Path
     fields: dict[str, dict[str, Any]]
     source: dict[str, Any]
+    public_form: str | None = None
+    internal_form: str | None = None
+    masks: list[dict[str, Any]] | None = None
 
     def field(self, key: str) -> dict[str, Any] | None:
         return self.fields.get(key)
@@ -70,8 +69,11 @@ def load(form_no: str) -> FormCoords | None:
     template = raw.get("template")
     return FormCoords(
         form_no=raw.get("form_no", form_no),
-        title=raw.get("title", FORM_TITLES.get(form_no, form_no)),
+        title=raw.get("title", form_no),
         template=(FIXTURES / template) if template else Path("<없음>"),
         fields=raw.get("fields", {}),
         source=raw.get("source", {}),
+        public_form=raw.get("public_form"),
+        internal_form=raw.get("internal_form"),
+        masks=raw.get("masks", []),
     )

@@ -55,6 +55,18 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
     doc = fitz.open(coords.template)
     writers: dict[int, Any] = {}
 
+    # 취업패키지 원본에 인쇄된 회색 예시 문구를 제거하고 흰색으로 덮는다.
+    masks_by_page: dict[int, list[Any]] = {}
+    for mask in coords.masks or []:
+        page_no = int(mask["page"])
+        rect = fitz.Rect(*mask["box"])
+        masks_by_page.setdefault(page_no, []).append(rect)
+    for page_no, rects in masks_by_page.items():
+        page = doc[page_no]
+        for rect in rects:
+            page.add_redact_annot(rect, fill=(1, 1, 1))
+        page.apply_redactions(images=0, graphics=0)
+
     def writer(page_no: int) -> Any:
         if page_no not in writers:
             writers[page_no] = fitz.TextWriter(doc[page_no].rect)

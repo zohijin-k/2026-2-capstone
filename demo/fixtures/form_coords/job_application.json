@@ -1,0 +1,725 @@
+{
+  "form_no": "job_application",
+  "title": "2026 전북 청년 취업지원패키지 신청서",
+  "template": "templates/job_application.pdf",
+  "public_form": null,
+  "internal_form": null,
+  "source": {
+    "file": "2026_취업패키지_신청서.pdf",
+    "pages": [
+      {
+        "page": 1,
+        "title": "『2026 전북 청년 취업지원패키지』신청서"
+      }
+    ]
+  },
+  "generated_by": "demo/fixtures/build_form_coords.py",
+  "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+  "fields": {
+    "name": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 135.24,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        122.31,
+        322.14,
+        141.16
+      ],
+      "anchor": "성  명",
+      "mode": "cell_right"
+    },
+    "birth": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 135.24,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        122.31,
+        535.27,
+        141.16
+      ],
+      "anchor": "생년월일",
+      "mode": "cell_right"
+    },
+    "address": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 160.34,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        143.16,
+        535.27,
+        170.53
+      ],
+      "anchor": "주  소",
+      "mode": "cell_right"
+    },
+    "mobile": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 185.46,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        172.53,
+        322.14,
+        191.39
+      ],
+      "anchor": "연락처",
+      "mode": "cell_right"
+    },
+    "email": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 185.46,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        172.53,
+        535.27,
+        191.39
+      ],
+      "anchor": "이메일",
+      "mode": "cell_right"
+    },
+    "bankName": {
+      "type": "text",
+      "page": 0,
+      "x": 541.27,
+      "y": 424.0,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        541.27,
+        1.0,
+        592.0,
+        840.0
+      ],
+      "anchor": "은행",
+      "mode": "cell_right"
+    },
+    "accountNo": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 206.32,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        193.39,
+        535.27,
+        212.25
+      ],
+      "anchor": "계좌번호",
+      "mode": "after"
+    },
+    "job.photo.paymentDate": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 278.66,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        266.63,
+        322.14,
+        283.69
+      ],
+      "anchor": "결 제 일",
+      "mode": "cell_right"
+    },
+    "job.photo.cost": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 278.66,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        266.63,
+        535.27,
+        283.69
+      ],
+      "anchor": "사진비용",
+      "mode": "cell_right"
+    },
+    "job.interview.1.company": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 307.67,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        295.76,
+        322.14,
+        312.58
+      ],
+      "anchor": "면접기업",
+      "mode": "cell_right"
+    },
+    "job.interview.1.location": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 307.67,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        295.76,
+        535.27,
+        312.58
+      ],
+      "anchor": "소재지",
+      "mode": "cell_right"
+    },
+    "job.interview.1.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 326.43,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        314.58,
+        322.14,
+        331.28
+      ],
+      "anchor": "면접일",
+      "mode": "cell_right"
+    },
+    "job.interview.1.detail": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 326.43,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        314.58,
+        535.27,
+        331.28
+      ],
+      "anchor": "응시직군",
+      "mode": "cell_right"
+    },
+    "job.interview.2.company": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 355.2,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        343.35,
+        322.14,
+        360.05
+      ],
+      "anchor": "면접기업",
+      "mode": "cell_right"
+    },
+    "job.interview.2.location": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 355.2,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        343.35,
+        535.27,
+        360.05
+      ],
+      "anchor": "소재지",
+      "mode": "cell_right"
+    },
+    "job.interview.2.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 373.89,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        362.05,
+        322.14,
+        378.74
+      ],
+      "anchor": "면접일",
+      "mode": "cell_right"
+    },
+    "job.interview.2.detail": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 373.89,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        362.05,
+        535.27,
+        378.74
+      ],
+      "anchor": "응시직군",
+      "mode": "cell_right"
+    },
+    "job.suit.1.company": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 402.66,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        390.81,
+        322.14,
+        407.51
+      ],
+      "anchor": "면접기업",
+      "mode": "cell_right"
+    },
+    "job.suit.1.location": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 402.66,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        390.81,
+        535.27,
+        407.51
+      ],
+      "anchor": "소재지",
+      "mode": "cell_right"
+    },
+    "job.suit.1.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 421.42,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        409.51,
+        322.14,
+        426.33
+      ],
+      "anchor": "면접일",
+      "mode": "cell_right"
+    },
+    "job.suit.1.detail": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 421.42,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        409.51,
+        535.27,
+        426.33
+      ],
+      "anchor": "대여비용",
+      "mode": "cell_right"
+    },
+    "job.suit.2.company": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 450.25,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        438.4,
+        322.14,
+        455.1
+      ],
+      "anchor": "면접기업",
+      "mode": "cell_right"
+    },
+    "job.suit.2.location": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 450.25,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        438.4,
+        535.27,
+        455.1
+      ],
+      "anchor": "소재지",
+      "mode": "cell_right"
+    },
+    "job.suit.2.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 468.95,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        457.1,
+        322.14,
+        473.8
+      ],
+      "anchor": "면접일",
+      "mode": "cell_right"
+    },
+    "job.suit.2.detail": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 468.95,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        457.1,
+        535.27,
+        473.8
+      ],
+      "anchor": "대여비용",
+      "mode": "cell_right"
+    },
+    "job.certificate.1.exam": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 497.72,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        485.87,
+        322.14,
+        502.57
+      ],
+      "anchor": "시험명",
+      "mode": "cell_right"
+    },
+    "job.certificate.1.organizer": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 497.72,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        485.87,
+        535.27,
+        502.57
+      ],
+      "anchor": "시행처",
+      "mode": "cell_right"
+    },
+    "job.certificate.1.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 516.42,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        504.57,
+        322.14,
+        521.27
+      ],
+      "anchor": "응시일",
+      "mode": "cell_right"
+    },
+    "job.certificate.1.cost": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 516.42,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        504.57,
+        535.27,
+        521.27
+      ],
+      "anchor": "시험비용",
+      "mode": "cell_right"
+    },
+    "job.certificate.2.exam": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 545.25,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        533.34,
+        322.14,
+        550.16
+      ],
+      "anchor": "시험명",
+      "mode": "cell_right"
+    },
+    "job.certificate.2.organizer": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 545.25,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        533.34,
+        535.27,
+        550.16
+      ],
+      "anchor": "시행처",
+      "mode": "cell_right"
+    },
+    "job.certificate.2.date": {
+      "type": "text",
+      "page": 0,
+      "x": 173.91,
+      "y": 564.01,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        173.91,
+        552.16,
+        322.14,
+        568.86
+      ],
+      "anchor": "응시일",
+      "mode": "cell_right"
+    },
+    "job.certificate.2.cost": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 564.01,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        552.16,
+        535.27,
+        568.86
+      ],
+      "anchor": "시험비용",
+      "mode": "cell_right"
+    },
+    "job.applicationYear": {
+      "type": "text",
+      "page": 0,
+      "x": 266.86,
+      "y": 644.42,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        266.86,
+        634.06,
+        301.72,
+        647.01
+      ],
+      "anchor": "2026년",
+      "mode": "after"
+    },
+    "job.applicationMonth": {
+      "type": "text",
+      "page": 0,
+      "x": 318.67,
+      "y": 644.42,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        318.67,
+        634.06,
+        360.0,
+        647.01
+      ],
+      "anchor": "2026년 월",
+      "mode": "after"
+    },
+    "job.applicationDay": {
+      "type": "text",
+      "page": 0,
+      "x": 376.96,
+      "y": 644.42,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        376.96,
+        634.06,
+        535.27,
+        647.01
+      ],
+      "anchor": "2026년 월 일",
+      "mode": "after"
+    },
+    "job.signature": {
+      "type": "image",
+      "page": 0,
+      "box": [
+        419.93,
+        667.65,
+        485.78,
+        698.6
+      ],
+      "anchor": "(인)"
+    },
+    "subsidy.interview.면접비": {
+      "type": "check",
+      "page": 0,
+      "x": 124.73,
+      "y": 244.29,
+      "size": 11.99,
+      "box": [
+        124.73,
+        234.7,
+        136.73,
+        246.69
+      ],
+      "label": "면접비"
+    },
+    "subsidy.suit.면접정장비": {
+      "type": "check",
+      "page": 0,
+      "x": 202.69,
+      "y": 244.29,
+      "size": 11.99,
+      "box": [
+        202.69,
+        234.7,
+        214.68,
+        246.69
+      ],
+      "label": "면접정장비"
+    },
+    "subsidy.photo.면접사진촬영비": {
+      "type": "check",
+      "page": 0,
+      "x": 304.63,
+      "y": 244.29,
+      "size": 11.99,
+      "box": [
+        304.63,
+        234.7,
+        316.63,
+        246.69
+      ],
+      "label": "면접사진촬영비"
+    },
+    "subsidy.certificate.자격증 응시료": {
+      "type": "check",
+      "page": 0,
+      "x": 430.57,
+      "y": 244.29,
+      "size": 11.99,
+      "box": [
+        430.57,
+        234.7,
+        442.56,
+        246.69
+      ],
+      "label": "자격증 응시료"
+    }
+  },
+  "masks": [
+    {
+      "page": 0,
+      "marker": "OO시/군",
+      "box": [
+        480.9,
+        299.54,
+        528.05,
+        311.17
+      ]
+    },
+    {
+      "page": 0,
+      "marker": "OO시/군",
+      "box": [
+        480.9,
+        347.13,
+        528.05,
+        358.76
+      ]
+    },
+    {
+      "page": 0,
+      "marker": "OO시/군",
+      "box": [
+        480.9,
+        394.6,
+        528.05,
+        406.23
+      ]
+    },
+    {
+      "page": 0,
+      "marker": "OO시/군",
+      "box": [
+        480.9,
+        442.18,
+        528.05,
+        453.82
+      ]
+    },
+    {
+      "page": 0,
+      "marker": "한국교통안전공단",
+      "box": [
+        417.45,
+        489.65,
+        509.1,
+        501.28
+      ]
+    },
+    {
+      "page": 0,
+      "marker": "한국산업인력공단",
+      "box": [
+        417.45,
+        537.12,
+        509.1,
+        548.75
+      ]
+    }
+  ]
+}

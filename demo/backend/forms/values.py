@@ -57,7 +57,7 @@ def _check(checks: list[str], group: str, value: Any) -> None:
         checks.append(f"{group}.{value.strip()}")
 
 
-def build_form1(app: Application) -> FilledForm:
+def build_form1(app: Application, **_: Any) -> FilledForm:
     form1: dict[str, Any] = app.form1_json or {}
     program = get_program(app.program_code)
     filled = FilledForm(form_no="서식1")
@@ -119,7 +119,75 @@ def build_form1(app: Application) -> FilledForm:
     return filled
 
 
-def build_form5(app: Application, consents: list[Consent], storage_root: Any) -> FilledForm:
+def _written_values(stamp: datetime | date) -> tuple[str, str, str]:
+    value = stamp.date() if isinstance(stamp, datetime) else stamp
+    return str(value.year), str(value.month), str(value.day)
+
+
+def build_self_check(app: Application, **_: Any) -> FilledForm:
+    filled = FilledForm(form_no="서식2")
+    for number, answer in (app.self_check_json or {}).items():
+        if str(number).isdigit():
+            _check(filled.checks, f"self_check.{number}", answer)
+    return filled
+
+
+def build_consent_form(form_no: str, app: Application, consents: list[Consent], **_: Any) -> FilledForm:
+    form1 = app.form1_json or {}
+    filled = FilledForm(form_no=form_no)
+    stamp = app.submitted_at or app.updated_at or datetime.now()
+    mapping = {
+        "서식3": {"privacy": "privacy", "uniqueId": "unique_id"},
+        "서식4": {"thirdParty": "third_party"},
+        "job_consent": {"privacy": "privacy", "thirdParty": "third_party"},
+    }[form_no]
+    prefix = "consent.job" if form_no == "job_consent" else f"consent.form{form_no[-1]}"
+    year, month, day = _written_values(stamp)
+    if form_no == "job_consent":
+        for key, value in (("year", year), ("month", month), ("day", day)):
+            _put(filled.texts, f"{prefix}.{key}", value)
+    else:
+        _put(filled.texts, f"{prefix}.year", year)
+        _put(filled.texts, f"{prefix}.month", month)
+        _put(filled.texts, f"{prefix}.day", day)
+    records = {c.consent_type: c for c in consents}
+    for field_key, consent_type in mapping.items():
+        consent = records.get(consent_type)
+        if consent is not None:
+            _check(filled.checks, f"consent.{field_key}", "동의함" if consent.agreed else "동의하지 않음")
+    return filled
+
+
+def build_job_application(
+    app: Application, subsidy_items: list[Any] | None = None, **_: Any
+) -> FilledForm:
+    form1: dict[str, Any] = app.form1_json or {}
+    filled = FilledForm(form_no="job_application")
+    for key in (
+        "name", "address", "mobile", "email", "bankName", "accountNo",
+        "job.photo.paymentDate", "job.photo.cost",
+        *(f"job.{kind}.{index}.{field}" for kind in ("interview", "suit", "certificate")
+          for index in (1, 2) for field in ("company", "location", "date", "detail", "exam", "organizer", "cost")),
+    ):
+        _put(filled.texts, key, form1.get(key))
+    _put(filled.texts, "birth", format_date(form1.get("birth")))
+    year, month, day = _written_values(app.submitted_at or app.updated_at or datetime.now())
+    for key, value in (("job.applicationYear", year), ("job.applicationMonth", month), ("job.applicationDay", day)):
+        _put(filled.texts, key, value)
+    if form1.get("job.signature_path"):
+        filled.images["job.signature"] = str(form1["job.signature_path"])
+    labels = {
+        "interview": "면접비", "suit": "면접정장비",
+        "photo": "면접사진촬영비", "certificate": "자격증 응시료",
+    }
+    for item in subsidy_items or []:
+        label = labels.get(item.item_type)
+        if label:
+            _check(filled.checks, f"subsidy.{item.item_type}", label)
+    return filled
+
+
+def build_form5(app: Application, consents: list[Consent], storage_root: Any, **_: Any) -> FilledForm:
     """서식5 — 값은 서식5 입력값 우선, 비어 있으면 서식1에서 끌어온다.
 
     동의 여부와 서명은 `consent` 테이블이 정본이다. 서식5 입력값(form5_json)에는
@@ -159,8 +227,8 @@ def available_forms(app: Application) -> list[str]:
     없어(P5에서 남긴 것) 내보낼 것이 없다.
     """
     if app.program_code != DOUBLE_SAVINGS:
-        return []
-    forms = ["서식1"]
+        return ["job_application", "job_consent"]
+    forms = ["서식1", "서식2", "서식3", "서식4"]
     if get_program(app.program_code).consent_types and "admin_info" in get_program(
         app.program_code
     ).consent_types:
@@ -168,4 +236,12 @@ def available_forms(app: Application) -> list[str]:
     return forms
 
 
-BUILDERS = {"서식1": build_form1, "서식5": build_form5}
+BUILDERS = {
+    "서식1": build_form1,
+    "서식2": build_self_check,
+    "서식3": lambda app, consents=(), **kw: build_consent_form("서식3", app, list(consents), **kw),
+    "서식4": lambda app, consents=(), **kw: build_consent_form("서식4", app, list(consents), **kw),
+    "서식5": build_form5,
+    "job_application": build_job_application,
+    "job_consent": lambda app, consents=(), **kw: build_consent_form("job_consent", app, list(consents), **kw),
+}

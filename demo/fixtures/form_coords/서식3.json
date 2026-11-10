@@ -1,17 +1,125 @@
 {
   "form_no": "서식3",
-  "template": null,
+  "title": "개인정보 수집 및 이용 동의서",
+  "template": "templates/서식3.pdf",
+  "public_form": "서식3",
+  "internal_form": "서식3",
   "source": {
-    "file": "2026년 전북청년 함께 두배적금 사업 시행지침.pdf",
-    "layout": "2-up (물리 1쪽 = 논리 2쪽)",
+    "file": "2026_두배적금_공고문.pdf",
     "pages": [
       {
-        "physical_page": 13,
-        "half": "오른쪽",
-        "logical_page": "- 26 -"
+        "page": 13,
+        "title": "서식3 개인정보 수집 및 이용 동의서"
       }
     ]
   },
-  "note": "데모의 PDF 내보내기 대상은 서식1·서식5 2종이다(설계 6-B.3). 이 서식은 구조만 남겨 두었고 좌표는 비어 있다. 채우려면 cut_templates.TEMPLATES_SPEC 에 위 원본 위치를 추가한 뒤 build_form_coords.py 에 앵커 규격을 적으면 된다.",
-  "fields": {}
+  "generated_by": "demo/fixtures/build_form_coords.py",
+  "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+  "fields": {
+    "consent.privacy.동의함": {
+      "type": "check",
+      "page": 0,
+      "x": 348.17,
+      "y": 493.14,
+      "size": 10.79,
+      "box": [
+        348.17,
+        483.88,
+        357.55,
+        494.66
+      ],
+      "label": "동의함"
+    },
+    "consent.privacy.동의하지 않음": {
+      "type": "check",
+      "page": 0,
+      "x": 420.97,
+      "y": 493.14,
+      "size": 10.79,
+      "box": [
+        420.97,
+        483.88,
+        430.35,
+        494.66
+      ],
+      "label": "동의하지 않음"
+    },
+    "consent.uniqueId.동의함": {
+      "type": "check",
+      "page": 0,
+      "x": 337.38,
+      "y": 597.31,
+      "size": 10.79,
+      "box": [
+        337.38,
+        588.04,
+        346.76,
+        598.83
+      ],
+      "label": "동의함"
+    },
+    "consent.uniqueId.동의하지 않음": {
+      "type": "check",
+      "page": 0,
+      "x": 417.37,
+      "y": 597.31,
+      "size": 10.79,
+      "box": [
+        417.37,
+        588.04,
+        426.76,
+        598.83
+      ],
+      "label": "동의하지 않음"
+    },
+    "consent.form3.year": {
+      "type": "text",
+      "page": 0,
+      "x": 397.92,
+      "y": 740.07,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        397.92,
+        730.07,
+        407.74,
+        741.59
+      ],
+      "anchor": "20",
+      "mode": "after"
+    },
+    "consent.form3.month": {
+      "type": "text",
+      "page": 0,
+      "x": 422.29,
+      "y": 740.07,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        422.29,
+        730.07,
+        441.32,
+        741.59
+      ],
+      "anchor": "년",
+      "mode": "after"
+    },
+    "consent.form3.day": {
+      "type": "text",
+      "page": 0,
+      "x": 455.87,
+      "y": 740.07,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        455.87,
+        730.07,
+        474.9,
+        741.59
+      ],
+      "anchor": "년 월",
+      "mode": "after"
+    }
+  },
+  "masks": []
 }

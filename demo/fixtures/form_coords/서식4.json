@@ -1,17 +1,97 @@
 {
   "form_no": "서식4",
-  "template": null,
+  "title": "개인(신용)정보 제3자 제공 동의서",
+  "template": "templates/서식4.pdf",
+  "public_form": "서식4",
+  "internal_form": "서식4",
   "source": {
-    "file": "2026년 전북청년 함께 두배적금 사업 시행지침.pdf",
-    "layout": "2-up (물리 1쪽 = 논리 2쪽)",
+    "file": "2026_두배적금_공고문.pdf",
     "pages": [
       {
-        "physical_page": 14,
-        "half": "왼쪽",
-        "logical_page": "- 27 -"
+        "page": 14,
+        "title": "서식4 개인(신용)정보 제3자 제공 동의서"
       }
     ]
   },
-  "note": "데모의 PDF 내보내기 대상은 서식1·서식5 2종이다(설계 6-B.3). 이 서식은 구조만 남겨 두었고 좌표는 비어 있다. 채우려면 cut_templates.TEMPLATES_SPEC 에 위 원본 위치를 추가한 뒤 build_form_coords.py 에 앵커 규격을 적으면 된다.",
-  "fields": {}
+  "generated_by": "demo/fixtures/build_form_coords.py",
+  "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+  "fields": {
+    "consent.thirdParty.동의함": {
+      "type": "check",
+      "page": 0,
+      "x": 363.52,
+      "y": 544.21,
+      "size": 11.75,
+      "box": [
+        363.52,
+        534.12,
+        373.76,
+        545.86
+      ],
+      "label": "동의함"
+    },
+    "consent.thirdParty.동의하지 않음": {
+      "type": "check",
+      "page": 0,
+      "x": 434.88,
+      "y": 544.21,
+      "size": 11.75,
+      "box": [
+        434.88,
+        534.12,
+        445.12,
+        545.86
+      ],
+      "label": "동의하지 않음"
+    },
+    "consent.form4.year": {
+      "type": "text",
+      "page": 0,
+      "x": 253.28,
+      "y": 602.46,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        253.28,
+        591.65,
+        265.74,
+        604.24
+      ],
+      "anchor": "20",
+      "mode": "after"
+    },
+    "consent.form4.month": {
+      "type": "text",
+      "page": 0,
+      "x": 281.97,
+      "y": 602.46,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        281.97,
+        591.65,
+        305.43,
+        604.24
+      ],
+      "anchor": "년",
+      "mode": "after"
+    },
+    "consent.form4.day": {
+      "type": "text",
+      "page": 0,
+      "x": 321.67,
+      "y": 602.46,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        321.67,
+        591.65,
+        345.13,
+        604.24
+      ],
+      "anchor": "년 월",
+      "mode": "after"
+    }
+  },
+  "masks": []
 }

@@ -18,7 +18,7 @@ from fastapi.responses import Response
 from ..forms import coords as form_coords
 from ..forms.render import render
 from ..forms.values import BUILDERS, available_forms
-from .common import STORAGE, list_consents, load_application
+from .common import STORAGE, list_consents, load_application, subsidy_rows
 
 router = APIRouter(prefix="/api/applications", tags=["forms"])
 
@@ -71,10 +71,12 @@ def export_form(application_id: int, form_no: str) -> Response:
         )
 
     builder = BUILDERS[form_no]
-    if form_no == "서식5":
-        filled = builder(app, list_consents(application_id), STORAGE)
-    else:
-        filled = builder(app)
+    filled = builder(
+        app,
+        consents=list_consents(application_id),
+        storage_root=STORAGE,
+        subsidy_items=subsidy_rows(application_id),
+    )
 
     pdf = render(spec, filled)
     name = quote(f"{app.application_no}_{form_no}.pdf")

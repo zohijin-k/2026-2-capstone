@@ -1,0 +1,125 @@
+{
+  "form_no": "job_consent",
+  "title": "개인정보 수집·이용·제공 동의서",
+  "template": "templates/job_consent.pdf",
+  "public_form": null,
+  "internal_form": null,
+  "source": {
+    "file": "2026_취업패키지_신청서.pdf",
+    "pages": [
+      {
+        "page": 2,
+        "title": "개인정보 수집·이용·제공 동의서"
+      }
+    ]
+  },
+  "generated_by": "demo/fixtures/build_form_coords.py",
+  "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+  "fields": {
+    "consent.privacy.동의함": {
+      "type": "check",
+      "page": 0,
+      "x": 124.73,
+      "y": 296.68,
+      "size": 11.03,
+      "box": [
+        124.73,
+        287.52,
+        135.44,
+        298.55
+      ],
+      "label": "동의함"
+    },
+    "consent.privacy.동의하지 않음": {
+      "type": "check",
+      "page": 0,
+      "x": 201.25,
+      "y": 296.68,
+      "size": 11.03,
+      "box": [
+        201.25,
+        287.52,
+        211.95,
+        298.55
+      ],
+      "label": "동의하지 않음                        ※ 해당사항에 체크"
+    },
+    "consent.thirdParty.동의함": {
+      "type": "check",
+      "page": 0,
+      "x": 127.25,
+      "y": 437.28,
+      "size": 11.03,
+      "box": [
+        127.25,
+        428.13,
+        137.95,
+        439.16
+      ],
+      "label": "동의함"
+    },
+    "consent.thirdParty.동의하지 않음": {
+      "type": "check",
+      "page": 0,
+      "x": 203.77,
+      "y": 437.28,
+      "size": 11.03,
+      "box": [
+        203.77,
+        428.13,
+        214.47,
+        439.16
+      ],
+      "label": "동의하지 않음                       ※ 해당사항에 체크"
+    },
+    "consent.job.year": {
+      "type": "text",
+      "page": 0,
+      "x": 266.14,
+      "y": 663.95,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        266.14,
+        653.6,
+        301.0,
+        666.55
+      ],
+      "anchor": "2026년",
+      "mode": "after"
+    },
+    "consent.job.month": {
+      "type": "text",
+      "page": 0,
+      "x": 317.95,
+      "y": 663.95,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        317.95,
+        653.6,
+        359.28,
+        666.55
+      ],
+      "anchor": "2026년 월",
+      "mode": "after"
+    },
+    "consent.job.day": {
+      "type": "text",
+      "page": 0,
+      "x": 376.24,
+      "y": 663.95,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        376.24,
+        653.6,
+        592.0,
+        666.55
+      ],
+      "anchor": "2026년 월 일",
+      "mode": "after"
+    }
+  },
+  "masks": []
+}
