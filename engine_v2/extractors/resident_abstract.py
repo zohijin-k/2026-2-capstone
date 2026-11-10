@@ -196,6 +196,22 @@ def _parse_header(lines: list[list[Word]]) -> dict:
             if name:
                 out["name"] = name
                 out["name_words"] = nws
+        if y < 26 and "성명" in squash(t) and out["name"] is None:
+            remainder = re.split(r"성명\s*[:：]?", t, maxsplit=1)[-1]
+            candidate = re.search(r"[가-힣]{2,6}", remainder)
+            if candidate and candidate.group() not in {"주민등록", "생년월일"}:
+                out["name"] = candidate.group()
+                out["name_words"] = [w for w in line if candidate.group() in w.text] or line
+        if y < 26 and "생년월일" in squash(t) and out["birth"] is None:
+            found = APPLICANT_DATE.search(t)
+            if found:
+                digits = re.sub(r"\D", "", found.group(1))
+                if len(digits) == 8:
+                    try:
+                        out["birth"] = date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+                        out["birth_words"] = [w for w in line if found.group(1) in w.text] or line
+                    except ValueError:
+                        pass
     out["title"] = squash(" ".join(title_parts))
     return out
 

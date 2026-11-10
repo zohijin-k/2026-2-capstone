@@ -17,6 +17,7 @@ from typing import Any, Callable
 import yaml
 
 from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract
+from .extractors import jbai_text
 from .extractors.resident_abstract import kst_today
 from .pipeline.ocr import OcrResult, OcrWord, run_ocr
 from .pipeline.field_safety import remove_header_only_fields
@@ -68,7 +69,8 @@ class _Extraction:
 
 
 def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult]],
-                      app: ApplicationInput, rulepack: dict, today: date | None = None) -> DocumentResult:
+                      app: ApplicationInput, rulepack: dict, today: date | None = None,
+                      extractor_result: _Extraction | None = None) -> DocumentResult:
     """OCR까지 끝난 페이지로 한 서류를 판정한다 (입출력 없음 → 테스트하기 쉬움)."""
     today = today or kst_today()
     extractor = EXTRACTORS.get(doc.declared_type)
@@ -77,7 +79,7 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
                               type_confidence=0.0, verdict=Verdict.NEEDS_REVIEW,
                               review_reasons=["이 서류 종류의 판독 부품이 아직 없음 (수동 심사)"])
 
-    ex: _Extraction = extractor(pages, today=today)
+    ex: _Extraction = extractor_result if extractor_result is not None else extractor(pages, today=today)
     remove_header_only_fields(ex.fields)
     ctx = RuleContext(
         reference_date=app.announcement_date, applicant=app.applicant,
@@ -190,10 +192,33 @@ def _load_pages(doc: DocumentInput, ocr_engine: str) -> list[tuple[PageImage, Oc
         return str(e)
 
 
-def run(app: ApplicationInput, ocr_engine: str = "applevision", today: date | None = None) -> ApplicationResult:
+def run(app: ApplicationInput, ocr_engine: str = "applevision", today: date | None = None,
+        *, is_demo_upload: bool = False) -> ApplicationResult:
     rulepack = load_rulepack(app.program_id.value)
     docs: list[DocumentResult] = []
+    if ocr_engine == "jbai" and is_demo_upload:
+        import os
+
+        if os.environ.get("JBAI_ALLOW_REAL_DOCS", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            ocr_engine = "applevision"
     for d in app.documents:
+        if ocr_engine == "jbai":
+            from .pipeline.jbai_ocr import JBAIOCRError, run_jbai_pdf_pair
+
+            try:
+                captured = run_jbai_pdf_pair(d.file_path, is_demo_upload=is_demo_upload)
+                ex = jbai_text.extract(captured, d.declared_type, today=today)
+                docs.append(evaluate_document(d, [], app, rulepack, today, extractor_result=ex))
+            except (JBAIOCRError, ValueError) as error:
+                message = str(error)
+                docs.append(DocumentResult(
+                    doc_id=d.doc_id, declared_type=d.declared_type, detected_type=DocType.UNKNOWN,
+                    type_confidence=0.0, verdict=Verdict.NEEDS_REVIEW,
+                    checks=[CheckResult(rule_id="ocr.jbai", rule_type="ocr", status=CheckStatus.UNKNOWN,
+                                        applicant_message=REVIEW_MSG, reviewer_message=message)],
+                    review_reasons=[message],
+                ))
+            continue
         pages = _load_pages(d, ocr_engine)
         if isinstance(pages, str):
             docs.append(DocumentResult(doc_id=d.doc_id, declared_type=d.declared_type, detected_type=DocType.UNKNOWN,

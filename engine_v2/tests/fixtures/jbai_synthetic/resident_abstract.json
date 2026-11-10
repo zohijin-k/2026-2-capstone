@@ -1,0 +1,23 @@
+{
+  "doc_type": "resident_abstract",
+  "expected": {
+    "name": "김가상",
+    "birth_date": "1999-01-01",
+    "issue_date": "2026-11-10",
+    "applicant_name": "김가상",
+    "applicant_birth_date": "1999-01-01",
+    "history_count": 2
+  },
+  "pages": [
+    {
+      "page": 0,
+      "ocr_content": "문서확인번호 : 1234-5678-9012-34567  1/2\n\n주민등록표 (초본)\n\n발급일 2026년 11월 10일\n\n성명 김가상\n생년월일 1999-01-01\n신청인: 김가상 (1999-01-01)\n\n번호          주소          발생일          신고일          세대주 및 관계\n1           전라북도 진주시 덕진구 예시로 2     2020.04.10     2020.04.11     본인\n    \n  변동사유 전입\n\n홍익肖는\n신흥부사",
+      "table_content": "<fcel>문서확인번호 : 1234-5678-9012-34567    1/2<lcel><lcel><lcel><lcel><nl><fcel>주민등록표(초본)<lcel><lcel><lcel><lcel><nl><fcel>발급일 2026년 11월 10일<lcel><lcel><lcel><lcel><nl><fcel>성명 김가상<lcel><lcel><lcel><lcel><nl><fcel>생년월일 1999-01-01<lcel><lcel><lcel><lcel><nl><fcel>신청인: 김가상 (1999-01-01)<lcel><lcel><lcel><lcel><nl><fcel>번호<fcel>주소<fcel>발행일<fcel>신고일<fcel>세대주 및 관계<nl><fcel>1<fcel>전라북도 전주시 덕진구 예시로 2<fcel>2020.04.10<fcel>2020.04.11<fcel>본인<nl><ecel><fcel>변동사유 전입<ecel><ecel><ecel><nl>"
+    },
+    {
+      "page": 1,
+      "ocr_content": "문서확인번호 : 1234-5678-9012-34567   2/2\n\n주민등록표 ( 초 본 )\n\n발급일 2026년 11월 10일\n\n성명 김가상\n생년월일 1999-01-01\n\n번호频率 不소  발생일 신고일 세대주 및 관계\n2 전북특별자치도 전주시 완산구 가상로 1  2023.08.30  2023.08.30  본인\nF   변동사유 전임  \n\n",
+      "table_content": "<fcel>변호<fcel>주소<fcel>발생일<fcel>신고일<fcel>세대주 및 관계<nl><fcel>2<fcel>전북특별자치도 전주시 완산구 가상로 1<fcel>2023.08.30<fcel>2023.08.30<fcel>본인<nl><ecel><fcel>변동사유 전입<ecel><ecel><ecel><nl>"
+    }
+  ]
+}

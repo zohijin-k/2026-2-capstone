@@ -90,18 +90,26 @@ def _run_nhis(args, gt: dict) -> None:
     doc_type = V2DocType.NHIS_PAYMENT if args.doc == "nhis_payment" else V2DocType.NHIS_ACQUISITION_LOSS
     input_doc = DocumentInput(doc_id="private-check", declared_type=doc_type, file_path=str(args.file))
     try:
-        pages = _load_pages(input_doc, args.engine)
+        if args.engine == "jbai":
+            from ..pipeline.jbai_ocr import run_jbai_pdf_pair
+            from ..extractors.jbai_text import extract as extract_jbai
+
+            result = extract_jbai(run_jbai_pdf_pair(args.file), doc_type)
+            pages = None
+        else:
+            pages = _load_pages(input_doc, args.engine)
     except Exception:
         print("입력 처리: 못찾음 — PDF 또는 OCR 처리 실패")
         return
     if isinstance(pages, str):
         print("입력 처리: 못찾음 — 페이지 또는 OCR 처리가 중단됨")
         return
-    if args.layout:
+    if args.layout and pages is not None:
         _layout(args.doc, pages)
-    extractor = nhis_payment.extract if args.doc == "nhis_payment" else nhis_acquisition_loss.extract
     try:
-        result = extractor(pages)
+        if pages is not None:
+            extractor = nhis_payment.extract if args.doc == "nhis_payment" else nhis_acquisition_loss.extract
+            result = extractor(pages)
     except Exception:
         print("추출 처리: 못찾음 — 서류 구조 또는 입력 처리 실패")
         return
@@ -143,6 +151,11 @@ def main() -> None:
     ap.add_argument("--layout", action="store_true", help="칸·열 제목 위치만 값 가림 형태로 표시")
     args = ap.parse_args()
 
+    if args.engine == "jbai":
+        import os
+        if os.environ.get("JBAI_ALLOW_REAL_DOCS", "").strip().lower() not in {"1", "true", "yes", "on"}:
+            raise SystemExit("전북AI 실제 파일 판독은 JBAI_ALLOW_REAL_DOCS=true일 때만 실행할 수 있습니다.")
+
     if not args.file.exists():
         if args.doc == "resident_abstract":
             raise SystemExit(f"서류 파일이 없어요: {args.file}  → engine_v2/data/private/ 에 PDF를 넣어주세요")
@@ -160,16 +173,21 @@ def main() -> None:
         _run_nhis(args, gt)
         return
 
-    pages = []
-    for p in preprocess(args.file):
-        if p.source == PageSource.TEXT_LAYER:
-            continue
-        r = run_ocr(args.engine, p.png, p.pixel_size)
-        if r.error:
-            raise SystemExit(r.error)
-        pages.append((p, r))
-
-    res = extract(pages)
+    if args.engine == "jbai":
+        from ..extractors.jbai_text import extract as extract_jbai
+        from ..pipeline.jbai_ocr import run_jbai_pdf_pair
+        res = extract_jbai(run_jbai_pdf_pair(args.file), V2DocType.RESIDENT_ABSTRACT)
+        pages = []
+    else:
+        pages = []
+        for p in preprocess(args.file):
+            if p.source == PageSource.TEXT_LAYER:
+                continue
+            r = run_ocr(args.engine, p.png, p.pixel_size)
+            if r.error:
+                raise SystemExit(r.error)
+            pages.append((p, r))
+        res = extract(pages)
     gt = json.loads(gt_path.read_text(encoding="utf-8")) if gt_path else {}
 
     if args.layout:

@@ -1,0 +1,38 @@
+{
+  "doc_type": "nhis_acquisition_loss",
+  "expected": {
+    "name": "김가상",
+    "birth_date": "1999-01-01",
+    "issue_date": "2026-11-10",
+    "recent_five_years": true,
+    "history": [
+      {
+        "category": "지역",
+        "acquired": "2020-03-01",
+        "lost": "2021-12-31"
+      },
+      {
+        "category": "직장",
+        "acquired": "2022-01-01",
+        "lost": "2023-05-31"
+      },
+      {
+        "category": "직장",
+        "acquired": "2023-06-01",
+        "lost": null
+      }
+    ]
+  },
+  "pages": [
+    {
+      "page": 0,
+      "ocr_content": "문서확인번호 : 1234-5678-9012-34567  1/2\n\n건강보험 자격등실확인서\n\n성명  김가상\n생년월일  1999.01.01\n발급일  2026.11.10\n조회기간  2020.01.01 ~ 2026.11.10\n\n가입자구분\n자격취득일\n자격상실일\n사업장명칭\n지역\n2020-03-01\n2021-12-31\n가상사업장\n직장\n2022-01-01\n2023-05-31\n가상사업장",
+      "table_content": "<fcel>가입자구분<fcel>자격취득일<fcel>자격상실일<fcel>사업장명칭<nl><fcel>지역<fcel>2020-03-01<fcel>2021-12-31<fcel>가상사업장<nl><fcel>직장<fcel>2022-01-01<fcel>2023-05-31<fcel>가상사업장<nl><ecel><ecel><ecel><ecel><nl>"
+    },
+    {
+      "page": 1,
+      "ocr_content": "문서확인번호 : 1234-5678-9012-34567   2/2\n\n건강보험 자격득실확인서\n\n성명 김가상\n생년월일 1999.01.01\n발급일 2026.11.10\n조회기간 2020.01.01 ~ 2026.11.10\n\n기입자구분\n자격취득일\n자격상실일\n사업장명항\n직장\n2023-06-01\n가상사업장",
+      "table_content": "<fcel>문서확인번호 : 1234-5678-9012-34567  2/2 견강보험 자격득실확인서<lcel><lcel><lcel><nl><fcel>성명  김가상<lcel><lcel><lcel><nl><fcel>생년월일 1999.01.01<lcel><lcel><lcel><nl><fcel>발급일 2026.11.10<lcel><lcel><lcel><nl><fcel>조회기간 2020.01.01 ~ 2026.11.10<lcel><lcel><lcel><nl><ecel><fcel>자격취득일<fcel>자격상실일<fcel>사업장명칭<nl><fcel>직장<fcel>2023-06-01<ecel><fcel>가상사업장<nl><ecel><ecel><ecel><ecel><nl><ecel><ecel><ecel><ecel><nl>"
+    }
+  ]
+}

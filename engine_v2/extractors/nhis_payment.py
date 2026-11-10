@@ -184,11 +184,13 @@ def _extract_monthly(pages):
     if period_start is None:
         period_start = None
     for page, result in pages:
-        page_charge_xs = _header_x([(page, result)], ("고지금액", "고지보험료"))
-        page_paid_xs = _header_x([(page, result)], ("납부금액", "납부보험료", "실납부"))
-        page_health_xs = _header_x([(page, result)], HEALTH)
-        page_care_xs = _header_x([(page, result)], CARE)
-        page_outside_health_xs = _header_x([(page, result)], OUTSIDE_HEALTH)
+        # 쪽별 표 인식이 머리글 일부를 빠뜨려도 같은 양식의 다른 쪽에서 찾은
+        # 열 위치를 쓴다. 페이지마다 같은 표 너비·열 순서를 유지하는 서식이다.
+        page_charge_xs = charge_xs[:1]
+        page_paid_xs = paid_xs[:1]
+        page_health_xs = health_xs[:1]
+        page_care_xs = care_xs[:1]
+        page_outside_health_xs = _header_x(pages, OUTSIDE_HEALTH)[:1]
         lines = common.page_lines(page, result)
         header_indices = _month_header(lines)
         if not header_indices:
@@ -308,8 +310,12 @@ def _body_issue_date(pages):
     for page, result in pages:
         lines = common.page_lines(page, result)
         for index, line in enumerate(lines):
-            if "확인합니다" not in squash(line_text(line)):
+            flat = squash(line_text(line))
+            if "확인합니다" not in flat:
                 continue
+            # 표 인식 결과가 확인 문장·날짜·공단명을 한 줄로 합쳐도 날짜를 읽는다.
+            if dates := common.dates_in_line(line):
+                return dates[0][0], dates[0][1]
             for candidate in lines[index + 1 : index + 7]:
                 flat = squash(line_text(candidate))
                 if "국민건강보험공단" in flat:
@@ -452,14 +458,15 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         warnings.append("월별 표의 년월이 연속되지 않아 담당자 확인이 필요합니다.")
 
     charge_sum = sum(monthly[m][0] for m in found_months if m in monthly) + (settlement_billed if has_settlement_billed else 0)
-    total_matches = not totals or (len(totals) == 1 and all_amounts_found and totals[0] == charge_sum)
+    # 여러 쪽에 월 구간이 나뉘고 쪽마다 합계가 인쇄되면 부분합을 합쳐 대조한다.
+    total_matches = not totals or (all_amounts_found and sum(totals) == charge_sum)
     validations.append(common.Validation("monthly_total_matches", total_matches))
     if not total_matches:
         warnings.append("월별 고지금액 합계가 표의 합계와 맞지 않습니다.")
 
-    paid_total_matches = not paid_totals or (len(paid_totals) == 1 and bool(paid_monthly) and
+    paid_total_matches = not paid_totals or (bool(paid_monthly) and
                                               all(month in paid_monthly for month in found_months) and
-                                              paid_totals[0] == sum(paid_monthly[m][0] for m in found_months) +
+                                              sum(paid_totals) == sum(paid_monthly[m][0] for m in found_months) +
                                               (settlement_paid if has_settlement_paid else 0))
     validations.append(common.Validation("paid_total_matches", paid_total_matches))
     if not paid_total_matches:

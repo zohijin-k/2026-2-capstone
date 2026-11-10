@@ -390,18 +390,21 @@ OCR이 주 경로가 되었으므로 7단계를 먼저 한다. 어댑터: `pipel
 | PaddleOCR | `pip install paddlepaddle paddleocr` | 가능 | 후보 |
 | 전북AI PaddleOCR-VL | 기관 API 접근 필요 | 가능 | 별도 쪽별 텍스트·표 결과 (bbox 없음) |
 
-전북AI OpenAI 호환 OCR은 `pipeline/jbai_ocr.py`의 별도 구조화 결과로 받는다.
-기존 `OcrWord`와 달리 bbox가 없는 텍스트 줄·HTML 표이며, 기존 초본·건강보험 추출기에는
-연결하지 않았다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
+전북AI OpenAI 호환 OCR은 `pipeline/jbai_ocr.py`의 쪽별 텍스트·표 결과로 받는다.
+기존 `OcrWord`와 달리 bbox가 없고, 표 응답은 HTML 또는 OTSL 토큰이다. `extractors/jbai_text.py`가
+기존 초본·납부확인서·자격득실 추출기의 결과 계약에 맞춰 연결되며, `run(..., ocr_engine="jbai")`로
+선택할 수 있다. 기본 엔진은 계속 기존 체인이다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
 인식 값은 콘솔이나 파일에 출력하지 않는다. 키는 `JBAI_API_KEY` 환경변수에서만 읽고,
 `JBAI_ALLOW_REAL_DOCS`가 true가 아니면 `data/private/` 파일과 데모 업로드는 차단한다.
 
 가상 값만 넣은 합성 표 이미지로 `OCR:`와 `Table Recognition:`을 각각 호출해 HTTP 200을 확인했다.
 `OCR:` 응답은 `choices[0].message.content`의 일반 문자열이며 줄 사이를 개행으로 나눴고,
 좌표나 bbox는 없었다. 표 작업 응답도 문자열이지만 HTML이 아니라 `<fcel>`, `<lcel>`,
-`<ecel>`, `<nl>` 구조 토큰을 사용했다. 이 응답에는 `reasoning` 값이 없었고,
-`rowspan`/`colspan` 표현도 확인되지 않았다. 합성 호출은 각각 약 0.6초 걸렸다.
-따라서 현재 HTML 표 파서는 이 서비스의 표 구조 토큰을 아직 해석하지 않는다.
+`<ecel>`, `<ucel>`, `<xcel>`, `<nl>` 구조 토큰을 사용했다. 합성 표의 OTSL을 격자로
+변환해 가로·세로 병합을 복원하고 기존 `JBAITable`의 `rowspan`/`colspan`으로 보존한다.
+응답에 쓸 만한 별도 reasoning 필드는 없었다. 합성 호출은 각각 약 0.6초 걸렸다.
+`python -m engine_v2.tools.extract_check <합성.pdf> --doc resident_abstract --engine jbai --gt <정답.json>`로
+합성 재생 결과를 점검할 수 있다. 실제 서류는 `JBAI_ALLOW_REAL_DOCS=true`를 명시하기 전에는 차단된다.
 
 비교 지표: 쪽당 처리시간, 평균 신뢰도, 저신뢰 비율, 고정 문구 적중, **정답 필드 적중**(본인 PC의 정답 파일 기준)
 
