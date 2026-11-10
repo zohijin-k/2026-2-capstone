@@ -25,15 +25,29 @@
       "align": "center",
       "box": [
         405.86,
-        552.48,
+        550.48,
         434.36,
-        568.01
+        570.01
       ],
       "anchor": "2026 년",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "month"
+      "date_part": "month",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 565.42,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 566.14,
+        "font_family": "sans",
+        "glyph_box": [
+          435.36,
+          552.48,
+          448.32,
+          568.01
+        ]
+      }
     },
     "writtenDay": {
       "type": "text",
@@ -44,15 +58,29 @@
       "align": "center",
       "box": [
         451.32,
-        552.48,
+        550.48,
         475.14,
-        568.01
+        570.01
       ],
       "anchor": "2026 년 월",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "day"
+      "date_part": "day",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 565.42,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 566.14,
+        "font_family": "sans",
+        "glyph_box": [
+          476.14,
+          552.48,
+          489.09,
+          568.01
+        ]
+      }
     },
     "name": {
       "type": "text",
@@ -64,7 +92,7 @@
       "box": [
         329.8,
         604.5,
-        367.5,
+        401.04,
         620.03
       ],
       "anchor": "성 명:",
@@ -134,13 +162,14 @@
       "type": "image",
       "page": 0,
       "box": [
-        369.5,
-        604.5,
-        401.9,
-        620.0
+        403.04,
+        603.0,
+        493.38,
+        621.53
       ],
       "anchor": "(서명또는인)"
     }
   },
-  "masks": []
+  "masks": [],
+  "requirements": []
 }

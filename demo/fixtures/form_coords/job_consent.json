@@ -81,15 +81,29 @@
       "align": "center",
       "box": [
         266.14,
-        653.6,
+        651.6,
         301.0,
-        666.55
+        668.55
       ],
       "anchor": "2026년",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "month"
+      "date_part": "month",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 663.95,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 664.67,
+        "font_family": "sans",
+        "glyph_box": [
+          302.0,
+          653.6,
+          314.95,
+          666.55
+        ]
+      }
     },
     "consent.job.day": {
       "type": "text",
@@ -100,15 +114,29 @@
       "align": "center",
       "box": [
         317.95,
-        653.6,
+        651.6,
         359.28,
-        666.55
+        668.55
       ],
       "anchor": "2026년 월",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "day"
+      "date_part": "day",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 663.95,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 664.67,
+        "font_family": "sans",
+        "glyph_box": [
+          360.28,
+          653.6,
+          373.24,
+          666.55
+        ]
+      }
     },
     "name": {
       "type": "text",
@@ -130,13 +158,14 @@
       "type": "image",
       "page": 0,
       "box": [
-        452.28,
-        695.07,
-        510.25,
-        708.02
+        515.78,
+        693.57,
+        539.75,
+        709.52
       ],
       "anchor": "(인)"
     }
   },
-  "masks": []
+  "masks": [],
+  "requirements": []
 }

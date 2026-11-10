@@ -53,15 +53,29 @@
       "align": "left",
       "box": [
         253.28,
-        591.65,
+        589.65,
         265.74,
-        604.24
+        606.24
       ],
       "anchor": "20",
       "mode": "after",
       "format": "yy",
       "auto_date": true,
-      "date_part": "year"
+      "date_part": "year",
+      "date_reference": {
+        "size": 12.58,
+        "baseline": 602.46,
+        "character": "년",
+        "render_size_scale": 1.1,
+        "render_baseline": 603.18,
+        "font_family": "sans",
+        "glyph_box": [
+          266.74,
+          591.65,
+          278.97,
+          604.24
+        ]
+      }
     },
     "consent.form4.month": {
       "type": "text",
@@ -72,15 +86,29 @@
       "align": "center",
       "box": [
         281.97,
-        591.65,
+        589.65,
         305.43,
-        604.24
+        606.24
       ],
       "anchor": "년",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "month"
+      "date_part": "month",
+      "date_reference": {
+        "size": 12.58,
+        "baseline": 602.46,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 603.18,
+        "font_family": "sans",
+        "glyph_box": [
+          306.43,
+          591.65,
+          318.67,
+          604.24
+        ]
+      }
     },
     "consent.form4.day": {
       "type": "text",
@@ -91,16 +119,31 @@
       "align": "center",
       "box": [
         321.67,
-        591.65,
+        589.65,
         345.13,
-        604.24
+        606.24
       ],
       "anchor": "년 월",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "day"
+      "date_part": "day",
+      "date_reference": {
+        "size": 12.58,
+        "baseline": 602.46,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 603.18,
+        "font_family": "sans",
+        "glyph_box": [
+          346.13,
+          591.65,
+          358.37,
+          604.24
+        ]
+      }
     }
   },
-  "masks": []
+  "masks": [],
+  "requirements": []
 }

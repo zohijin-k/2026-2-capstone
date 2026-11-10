@@ -75,12 +75,30 @@ def form_layout(application_id: int, form_no: str) -> dict[str, Any]:
 
     with fitz.open(spec.template) as doc:
         sizes = [{"width": page.rect.width, "height": page.rect.height} for page in doc]
+    # Applicant layout uses stable opaque field ids. Internal model keys stay in the
+    # local client binding table and never enter the applicant-facing API payload.
+    field_ids = {key: f"f{index:04d}" for index, key in enumerate(spec.fields)}
+    public_fields = {field_ids[key]: value for key, value in spec.fields.items()}
+    public_requirements = []
+    for rule in spec.requirements or []:
+        public_rule = dict(rule)
+        for key in ("field",):
+            if key in public_rule:
+                internal = public_rule[key]
+                public_rule[key] = field_ids.get(internal) or next(
+                    (opaque for name, opaque in field_ids.items() if name.startswith(f"{internal}.")), ""
+                )
+        for key in ("fields", "required"):
+            if key in public_rule:
+                public_rule[key] = [field_ids[name] for name in public_rule[key] if name in field_ids]
+        public_requirements.append(public_rule)
     return {
         "form_no": spec.form_no,
         "title": spec.title,
         "public_form": spec.public_form,
         "page_sizes": sizes,
-        "fields": spec.fields,
+        "fields": public_fields,
+        "requirements": public_requirements,
         "masks": spec.masks or [],
         "auto_date": form_date(app).isoformat(),
     }

@@ -28,8 +28,7 @@ PRINT_INK = (0.08, 0.08, 0.08)
 
 #: 칸을 넘칠 때 줄일 수 있는 최소 글자 크기.
 MIN_SIZE = 5.0
-CHECK_HEIGHT_RATIO = 1.5
-CHECK_MIN_HEIGHT_PT = 13.5  # 18px at the 794px editor width.
+CHECK_INSET_RATIO = 0.16
 
 
 def _font() -> Any:
@@ -147,6 +146,40 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             writers[key] = fitz.TextWriter(doc[page_no].rect)
         return writers[key]
 
+    # Self-check source labels are replaced with centered checkbox labels. The source
+    # row text is masked once per row while leaving the table rules untouched.
+    radio_rows: dict[tuple[int, tuple[float, ...], str], dict[str, dict[str, Any]]] = {}
+    for key, spec in coords.fields.items():
+        if spec.get("control") == "radio_text" and spec.get("group_box"):
+            radio_rows.setdefault((int(spec["page"]), tuple(spec["group_box"]), key.rsplit(".", 1)[0]), {})[key.rsplit(".", 1)[-1]] = spec
+    for (page_no, group_box, group_key), options in radio_rows.items():
+        page = doc[page_no]
+        row_rect = fitz.Rect(*group_box)
+        page.draw_rect(row_rect, color=None, fill=(1, 1, 1), overlay=True)
+        selected = next((option for option in ("예", "아니오") if f"{group_key}.{option}" in filled.checks), None)
+        x0, y0, x1, y1 = group_box
+        slot_width = (x1 - x0) / 2
+        baseline = float(options["예"].get("y", options["아니오"].get("y", (y0 + y1) / 2)))
+        size = float(options["예"].get("size", 9.5))
+        square_size = size * 0.78
+        for index, option in enumerate(("예", "아니오")):
+            label_width = font.text_length(option, size)
+            total_width = square_size + 3.0 + label_width
+            sx = x0 + index * slot_width + max(1.0, (slot_width - total_width) / 2)
+            sy = (y0 + y1 - square_size) / 2
+            square = fitz.Rect(sx, sy, sx + square_size, sy + square_size)
+            if selected == option:
+                page.draw_rect(square, color=INK, fill=INK, overlay=True)
+                page.draw_line((sx + square_size * .2, sy + square_size * .53),
+                               (sx + square_size * .43, sy + square_size * .76),
+                               color=(1, 1, 1), width=max(.7, size * .09), overlay=True)
+                page.draw_line((sx + square_size * .43, sy + square_size * .76),
+                               (sx + square_size * .83, sy + square_size * .22),
+                               color=(1, 1, 1), width=max(.7, size * .09), overlay=True)
+            else:
+                page.draw_rect(square, color=INK, width=.8, overlay=True)
+            writer(page_no, PRINT_INK).append((sx + square_size + 3.0, baseline), option, font=font, fontsize=size)
+
     # --- 글자 ---------------------------------------------------------
     for key, text in filled.texts.items():
         spec = coords.field(key)
@@ -156,14 +189,17 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         box = spec["box"]
         width = box[2] - box[0]
         height = box[3] - box[1]
-        size = min(float(spec["size"]), height * 0.82) if spec.get("auto_date") else float(spec["size"])
-        size = fit_size(font, text, size, width)
+        reference = spec.get("date_reference") or {}
+        size = float(reference.get("size", spec["size"])) * float(reference.get("render_size_scale", 1)) if spec.get("auto_date") else float(spec["size"])
+        if not spec.get("auto_date") or not text.isdigit():
+            size = fit_size(font, text, size, width)
         x = float(spec["x"])
         if spec.get("align") == "center":
             x = box[0] + (width - font.text_length(text, size)) / 2
         page_no = int(spec["page"])
         color = PRINT_INK if spec.get("auto_date") else INK
-        writer(page_no, color).append((x, float(spec["y"])), text, font=font, fontsize=size)
+        baseline = float(reference.get("render_baseline", reference.get("baseline", spec["y"]))) if spec.get("auto_date") else float(spec["y"])
+        writer(page_no, color).append((x, baseline), text, font=font, fontsize=size)
 
     # --- 체크 ---------------------------------------------------------
     for key in filled.checks:
@@ -174,47 +210,27 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             continue
         box = spec["box"]
         if spec.get("control") == "radio_text":
-            pad_x = max(1.3, (float(box[2]) - float(box[0])) * 0.12)
-            pad_y = max(1.2, (float(box[3]) - float(box[1])) * 0.16)
-            outer_width = float(box[2]) - float(box[0]) + 2 * pad_x
-            outer_height = float(box[3]) - float(box[1]) + 2 * pad_y
-            inset_x = outer_width * 0.03
-            inset_y = outer_height * 0.05
-            circle = fitz.Rect(
-                float(box[0]) - pad_x + inset_x, float(box[1]) - pad_y + inset_y,
-                float(box[2]) + pad_x - inset_x, float(box[3]) + pad_y - inset_y,
-            )
-            doc[int(spec["page"])].draw_oval(circle, color=INK, width=0.9, overlay=True)
             continue
         height = float(box[3] - box[1])
-        size = max(height * CHECK_HEIGHT_RATIO, CHECK_MIN_HEIGHT_PT)
+        size = max(float(box[2] - box[0]), height) + 3.0
         center_x = (float(box[0]) + float(box[2])) / 2
         center_y = (float(box[1]) + float(box[3])) / 2
-        # Same 24×24 tick proportions as the SVG in PdfFormsWorkspace.
-        points = (
-            (center_x - size * 0.40, center_y + size * 0.02),
-            (center_x - size * 0.12, center_y + size * 0.31),
-            (center_x + size * 0.43, center_y - size * 0.36),
-        )
+        square = fitz.Rect(center_x - size / 2, center_y - size / 2,
+                           center_x + size / 2, center_y + size / 2)
         page = doc[int(spec["page"])]
-        page.draw_line(points[0], points[1], color=INK, width=max(1.7, size * 0.13), overlay=True)
-        page.draw_line(points[1], points[2], color=INK, width=max(1.7, size * 0.13), overlay=True)
-        # Keep the mark searchable for text-based review and accessible extraction.
-        # Render mode 3 is invisible; the visible check is the vector mark above.
-        page_no = int(spec["page"])
-        if page_no not in check_text_writers:
-            check_text_writers[page_no] = fitz.TextWriter(page.rect)
-        semantic_size = min(4.0, max(1.0, height * 0.35))
-        mark_width = font.text_length("✓", semantic_size)
-        mark_x = center_x - mark_width / 2
-        check_text_writers[page_no].append(
-            (mark_x, center_y + semantic_size * 0.35), "✓", font=font, fontsize=semantic_size
+        page.draw_rect(square, color=INK, fill=INK, overlay=True)
+        points = (
+            (center_x - size * 0.30, center_y + size * 0.00),
+            (center_x - size * 0.08, center_y + size * 0.22),
+            (center_x + size * 0.31, center_y - size * 0.28),
         )
+        page.draw_line(points[0], points[1], color=(1, 1, 1), width=max(0.9, size * 0.10), overlay=True)
+        page.draw_line(points[1], points[2], color=(1, 1, 1), width=max(0.9, size * 0.10), overlay=True)
 
     for (page_no, color), text_writer in writers.items():
         text_writer.write_text(doc[page_no], color=color)
-    for page_no, text_writer in check_text_writers.items():
-        text_writer.write_text(doc[page_no], color=INK, render_mode=3)
+    # `radio_text` rows are still source text at this stage; they are kept readable
+    # until their paired replacement labels are drawn by the coordinate-map renderer.
 
     # --- 이미지 (서식5 전자서명) ---------------------------------------
     for key, image_path in filled.images.items():

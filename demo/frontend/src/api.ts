@@ -7,6 +7,7 @@ import {
   mockOfficerList,
   mockReviewDetail,
 } from './pages/officer/mock-data.ts'
+import { FORM_FIELD_KEYS } from './forms/form-field-bindings.ts'
 
 /**
  * 사업 설정. 화면 분기는 전부 이 값으로 한다.
@@ -466,6 +467,9 @@ export interface FormFieldLayout {
   format?: 'yyyy' | 'yy' | 'none'
   auto_date?: boolean
   date_part?: 'year' | 'month' | 'day'
+  date_reference?: { size: number; baseline: number; render_baseline: number; render_size_scale: number; character: string; font_family: 'serif' | 'sans'; glyph_box: [number, number, number, number] }
+  group_box?: [number, number, number, number]
+  font_family?: 'serif' | 'sans'
   anchor?: string
   label?: string
 }
@@ -476,12 +480,21 @@ export interface FormLayout {
   public_form: string | null
   page_sizes: { width: number; height: number }[]
   fields: Record<string, FormFieldLayout>
+  requirements?: ({ kind: 'all_or_none'; fields: string[] } | { kind: 'when_choice'; field: string; equals: string; required: string[] })[]
   masks?: { page: number; box: [number, number, number, number] }[]
   auto_date: string
 }
 
-export const fetchFormLayout = (id: number, formNo: string) =>
-  json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
+export const fetchFormLayout = async (id: number, formNo: string): Promise<FormLayout> => {
+  const layout = await json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
+  const bindings = FORM_FIELD_KEYS[formNo] || []
+  const fields = Object.fromEntries(Object.entries(layout.fields).map(([opaqueId, field], index) => [bindings[index] || opaqueId, field]))
+  const keyById = Object.fromEntries(bindings.map((key, index) => [`f${String(index).padStart(4, '0')}`, key]))
+  const requirements = (layout.requirements || []).map((rule) => rule.kind === 'all_or_none'
+    ? { ...rule, fields: rule.fields.map((key) => keyById[key] || key) }
+    : { ...rule, field: (keyById[rule.field] || rule.field).split('.')[0], required: rule.required.map((key) => keyById[key] || key) })
+  return { ...layout, fields, requirements }
+}
 
 /** 본인인증 결과. 서류 본인 대조의 기준이 된다 (연락처는 가려서 돌아온다). */
 export interface Identity {

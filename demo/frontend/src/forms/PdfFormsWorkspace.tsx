@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 
 import {
   fetchFormLayout,
@@ -15,6 +15,7 @@ import {
 import Modal from '../components/Modal.tsx'
 import SignaturePad from '../components/SignaturePad.tsx'
 import type { ConsentValue } from './consent-model.ts'
+import { formatPhone, isValidPhone, phoneCursorPosition } from './phone.ts'
 import { EMPTY_FORM1, type Form1Value } from './form1-model.ts'
 import { JOB_PACKAGE_SELF_CHECK_ITEMS, SELF_CHECK_ITEMS, type SelfCheckAnswers } from './form2-model.ts'
 import { EMPTY_FORM5, type Form5Value, type SignMode } from './form5-model.ts'
@@ -225,20 +226,15 @@ export default function PdfFormsWorkspace({
     return ''
   }
 
-  const isSelected = (group: string): boolean => {
-    if (group.startsWith('self_check.')) return !!answers[Number(group.split('.')[1])]
-    if (group === 'consent.privacy') return !!consent.privacy
-    if (group === 'consent.uniqueId') return !!consent.uniqueId
-    if (group === 'consent.thirdParty') return !!consent.thirdParty
-    if (group === 'agree') return !!form5.agree
-    if (group.startsWith('subsidy.')) return selectedItems.includes(group.split('.')[1])
-    if (group === 'referralPaths') return form1.referralPaths.length > 0
-    return truthy(readForm(form1, group))
-  }
-
   const requiredItems = (formNo: string): string[] => {
     const keys = requiredKeys(formNo, isJob)
-    if (formNo === '서식1' && form1.householdSize === '10인 이상') keys.push('householdSizeCount')
+    for (const rule of layouts[formNo]?.requirements || []) {
+      if (rule.kind === 'all_or_none') {
+        if (rule.fields.some((field) => truthy(readForm(form1, field)))) keys.push(...rule.fields)
+      } else if (readForm(form1, rule.field) === rule.equals) {
+        keys.push(...rule.required)
+      }
+    }
     return keys
   }
 
@@ -249,11 +245,31 @@ export default function PdfFormsWorkspace({
     if (key === 'consent.thirdParty') return !!consent.thirdParty
     if (key === 'agree') return !!form5.agree
     if (key === 'signature') return signMode === '전자서명' ? !!form5.signature : !!form5.handwrittenFileName
+    if (key === 'ecContact') return isValidPhone(String(readForm(form1, key) || ''))
     if (key.endsWith('.signature')) return !!readForm(form1, key)
     return truthy(readForm(form1, key))
   }
 
   const missing = (formNo: string): string[] => requiredItems(formNo).filter((key) => !requirementSatisfied(key))
+
+  const missingGroupBoxes = (formNo: string, targetPage: number): [number, number, number, number][] => {
+    const fields = layouts[formNo]?.fields || {}
+    const groups = new Map<string, [number, number, number, number]>()
+    for (const missingKey of missing(formNo)) {
+      const entry = Object.entries(fields).find(([fieldKey, field]) => field.type === 'check' && (fieldKey === missingKey || fieldGroup(fieldKey) === missingKey))
+      if (!entry) continue
+      const group = fieldGroup(entry[0])
+      const siblings = Object.entries(fields).filter(([fieldKey, field]) => field.type === 'check' && field.page === targetPage && fieldGroup(fieldKey) === group)
+      const boxes = siblings.map(([, field]) => field.group_box || field.box)
+      if (!boxes.length) continue
+      const box: [number, number, number, number] = [
+        Math.min(...boxes.map((item) => item[0])), Math.min(...boxes.map((item) => item[1])),
+        Math.max(...boxes.map((item) => item[2])), Math.max(...boxes.map((item) => item[3])),
+      ]
+      groups.set(`${targetPage}-${group}`, box)
+    }
+    return [...groups.values()]
+  }
 
   const hasStarted = (formNo: string): boolean => requiredItems(formNo).some(requirementSatisfied)
 
@@ -273,6 +289,7 @@ export default function PdfFormsWorkspace({
       onForm1({ ...form1, birth: { y, m: String(Number(m)), d: String(Number(d)) } })
       return
     }
+    if (key === 'mobile' || key === 'ecContact') value = formatPhone(value)
     onForm1({ ...(form1 as unknown as Record<string, unknown>), [key]: value } as unknown as Form1Value)
   }
 
@@ -390,7 +407,24 @@ export default function PdfFormsWorkspace({
     ? `/api/applications/${applicationId}/forms/${encodeURIComponent(active.formNo)}/pages/${page + 1}.png?preview=${active.mode === 'preview' ? 'true' : 'false'}&v=${previewKey}`
     : ''
 
-  const renderField = ([key, field]: [string, FormFieldLayout]) => {
+  const focusNextMissing = () => {
+    if (!active) return
+    const key = missing(active.formNo)[0]
+    if (!key) return
+    const entry = Object.entries(currentLayout?.fields || {}).find(([fieldKey]) => fieldKey === key || fieldGroup(fieldKey) === key)
+    if (!entry) return
+    const [fieldKey, field] = entry
+    if (field.page !== page) setPage(field.page)
+    const sorted = Object.entries(currentLayout?.fields || {}).sort((a, b) => a[1].page - b[1].page || a[1].box[1] - b[1].box[1] || a[1].box[0] - b[1].box[0])
+    const index = sorted.findIndex(([candidate]) => candidate === fieldKey)
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const element = document.querySelector<HTMLElement>(`[data-field-ref="${field.page}-${index}"]`)
+      element?.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' })
+      ;(element?.matches('input,button') ? element : element?.querySelector<HTMLElement>('input,button'))?.focus({ preventScroll: true })
+    }))
+  }
+
+  const renderField = ([key, field]: [string, FormFieldLayout], fieldIndex: number) => {
     if (!active || field.page !== page) return null
     const [x0, y0, x1, y1] = field.box
     const boxStyle = {
@@ -400,39 +434,41 @@ export default function PdfFormsWorkspace({
       height: Math.max(8, (y1 - y0) * scale),
     }
     const isMissing = missing(active.formNo).some((required) => required === key || fieldGroup(key) === required)
-    const label = field.anchor || field.label || key
+    const label = field.anchor || field.label || '입력 항목'
+    const publicId = `pdf-input-${fieldIndex}`
+    const fieldRef = `${field.page}-${fieldIndex}`
     if (field.type === 'check') {
       const checked = readChoice(key)
       const derived = fieldGroup(key) === 'residencePeriod' || fieldGroup(key) === 'workPeriod'
       if (field.control === 'radio_text') {
         const optionGroup = fieldGroup(key)
-        const [x0, y0, x1, y1] = field.box
-        const padX = Math.max(1.3, (x1 - x0) * 0.12) * scale
-        const padY = Math.max(1.2, (y1 - y0) * 0.16) * scale
+        const [gx0, gy0, gx1, gy1] = field.group_box || field.box
+        const groupWidth = (gx1 - gx0) * scale
+        const groupHeight = (gy1 - gy0) * scale
+        const isYes = key.endsWith('.예')
+        const half = groupWidth / 2
+        const radioStyle = { left: gx0 * scale + (isYes ? 0 : half), top: gy0 * scale, width: half, height: groupHeight, fontSize: Number(field.size || 9) * scale }
+        const groupKeys = Object.keys(layouts[active.formNo].fields).filter((fieldKey) => fieldGroup(fieldKey) === optionGroup)
+        const radioName = `pdf-radio-${active.formNo}-${Object.keys(layouts[active.formNo].fields).indexOf(groupKeys[0])}`
         return (
-          <label key={key} className={`pdf-form__radio-text ${isMissing && !isSelected(optionGroup) ? 'is-missing' : ''}`} style={boxStyle}>
-            <input
-              id={`pdf-field-${active.formNo}-${key}`}
-              type="radio"
-              name={`pdf-radio-${active.formNo}-${optionGroup}`}
-              checked={checked}
-              disabled={readOnly}
-              aria-label={`${optionGroup} ${field.label || key.split('.').slice(-1)[0]}`}
-              onChange={() => toggleChoice(key, true)}
-            />
-            {checked && <svg className="pdf-form__radio-oval" aria-hidden="true" style={{ left: -padX, top: -padY, width: boxStyle.width + padX * 2, height: boxStyle.height + padY * 2 }} viewBox="0 0 100 100" preserveAspectRatio="none"><ellipse cx="50" cy="50" rx="47" ry="45" /></svg>}
-          </label>
+          <Fragment key={key}>
+            <label data-field-ref={fieldRef} className={`pdf-form__radio-text pdf-form__radio-text--${field.font_family || 'sans'}`} style={radioStyle}>
+              <input id={publicId} type="radio" name={radioName} checked={checked} disabled={readOnly} aria-label={`${label} ${field.label || '선택'}`} onChange={() => toggleChoice(key, true)} />
+              <svg className={`pdf-form__radio-box ${checked ? 'is-checked' : ''}`} aria-hidden="true" style={{ width: Number(field.size || 9) * scale * 0.78, height: Number(field.size || 9) * scale * 0.78 }} viewBox="0 0 20 20"><rect x="1.5" y="1.5" width="17" height="17" /><path d="M4.5 10.5 8.2 14 15.5 6" /></svg>
+              <span>{field.label || (isYes ? '예' : '아니오')}</span>
+            </label>
+          </Fragment>
         )
       }
-      const markSize = Math.max(18, boxStyle.height * 1.5)
+      const markSize = (Math.max(x1 - x0, y1 - y0) + 3) * scale
       return (
-        <label key={key} className={`pdf-form__check ${isMissing && !isSelected(fieldGroup(key)) ? 'is-missing' : ''}`} style={boxStyle}>
+        <label key={key} data-field-ref={fieldRef} className="pdf-form__check" style={boxStyle}>
           <input
-            id={`pdf-field-${active.formNo}-${key}`}
+            id={publicId}
             type="checkbox"
             checked={checked}
             disabled={derived || readOnly}
-            aria-label={`${label} ${field.label || key.split('.').slice(-1)[0]}`}
+            aria-label={`${label} ${field.label || '선택'}`}
             onChange={(event) => toggleChoice(key, event.currentTarget.checked)}
           />
           {checked && <svg
@@ -441,7 +477,7 @@ export default function PdfFormsWorkspace({
             height={markSize}
             viewBox="0 0 24 24"
             aria-hidden="true"
-          ><path d="M3 12.5 9 18 21 4" /></svg>}
+          ><rect x="1" y="1" width="22" height="22" rx="1" /><path d="M5 12.5 10 17 19 7" /></svg>}
         </label>
       )
     }
@@ -451,7 +487,8 @@ export default function PdfFormsWorkspace({
         <button
           key={key}
           type="button"
-          id={`pdf-field-${active.formNo}-${key}`}
+          id={publicId}
+          data-field-ref={fieldRef}
           disabled={readOnly}
           className={`pdf-form__sign ${isMissing && !value ? 'is-missing' : ''}`}
           style={boxStyle}
@@ -463,7 +500,7 @@ export default function PdfFormsWorkspace({
       )
     }
     const value = readText(key)
-    const required = requiredKeys(active.formNo, isJob).includes(key)
+    const required = requiredItems(active.formNo).includes(key)
     const round = key.match(/^job\.(interview|suit|certificate)\.(\d+)\./)
     const roundEnabled = !round || (subsidySelections.find((item) => item.item_type === round[1])?.count ?? 0) >= Number(round[2])
     const photoEnabled = !key.startsWith('job.photo.') || selectedItems.includes('photo')
@@ -483,23 +520,41 @@ export default function PdfFormsWorkspace({
       : value
     if (field.auto_date) {
       const text = autoDateText(layouts[active.formNo], field)
-      const autoSize = Math.max(5 * scale, Math.min(boxStyle.height * 0.82, Number(field.size || 10) * scale, boxStyle.width / Math.max(1, text.length * 0.62)))
-      return <span key={key} className="pdf-form__auto-date" aria-hidden="true" data-auto-date={key} style={{ ...boxStyle, fontSize: autoSize, lineHeight: 1, textAlign: field.align || 'center' }}>{text}</span>
+      const reference = field.date_reference
+      const autoSize = (reference?.size || Number(field.size || 10)) * (reference?.render_size_scale || 1) * scale
+      const baseline = (reference?.render_baseline ?? reference?.baseline ?? field.y ?? y1) * scale
+      return <span key={key} className={`pdf-form__auto-date pdf-form__auto-date--${reference?.font_family || 'sans'}`} aria-hidden="true" data-auto-date="true" style={{ left: x0 * scale, top: baseline - autoSize * 0.79, width: boxStyle.width, height: autoSize, fontSize: autoSize, lineHeight: `${autoSize}px`, textAlign: field.align || 'center' }}>{text}</span>
     }
     const baseFont = Math.min(12, Math.max(8, Number(field.size || 9) * scale))
     const fitFont = value.length > 0 ? Math.max(7, Math.min(baseFont, boxStyle.width / (value.length * 0.62))) : baseFont
     return (
       <input
         key={key}
-        id={`pdf-field-${active.formNo}-${key}`}
-        type="text"
+        id={publicId}
+        data-field-ref={fieldRef}
+        type={key === 'transferIn' || key === 'employedAt' ? 'date' : 'text'}
         className={`pdf-form__text ${isMissing && required ? 'is-missing' : ''}`}
         style={{ ...boxStyle, fontSize: fitFont, textAlign: field.align || 'left' }}
         aria-label={label}
-        value={applyFieldFormat(dateValue, field.format)}
+        value={key === 'transferIn' || key === 'employedAt' ? isoDate(readForm(form1, key) as unknown as Form1Value['transferIn']) : applyFieldFormat(dateValue, field.format)}
         readOnly={readOnly || locked || !roundEnabled || !photoEnabled || !householdCountEnabled || suitFieldsLinked || key.startsWith('written') || key.includes('.year') || key.includes('.month') || key.includes('.day') || key.startsWith('job.application')}
-        inputMode={key === 'householdSizeCount' ? 'numeric' : undefined}
-        onChange={(event) => setText(key, event.currentTarget.value)}
+        inputMode={key === 'householdSizeCount' || key === 'ecContact' ? 'numeric' : undefined}
+        maxLength={key === 'ecContact' ? 13 : undefined}
+        max={key === 'transferIn' || key === 'employedAt' ? layouts[active.formNo]?.auto_date : undefined}
+        onChange={(event) => {
+          const input = event.currentTarget
+          const next = event.currentTarget.value
+          if (key === 'transferIn' || key === 'employedAt') {
+            onForm1({ ...form1, [key]: fromISO(next) })
+          } else if (key === 'ecContact' || key === 'mobile') {
+            const digitCount = next.slice(0, event.currentTarget.selectionStart ?? next.length).replace(/\D/g, '').length
+            const formatted = formatPhone(next)
+            setText(key, formatted)
+            requestAnimationFrame(() => {
+              input.setSelectionRange(phoneCursorPosition(formatted, digitCount), phoneCursorPosition(formatted, digitCount))
+            })
+          } else setText(key, next)
+        }}
       />
     )
   }
@@ -585,8 +640,10 @@ export default function PdfFormsWorkspace({
           variant="viewer"
           footer={active.mode === 'edit' && !readOnly ? (
             <>
+              <span className="pdf-form__remaining">{missing(active.formNo).length === 0 ? '작성 완료' : `남은 항목 ${missing(active.formNo).length}개`}</span>
+              {missing(active.formNo).length > 0 && <button type="button" className="btn" onClick={focusNextMissing}>다음 빈칸으로</button>}
               <button type="button" className="btn" onClick={() => void startPreview(active.formNo)}>미리보기</button>
-          <button type="button" className="btn" onClick={() => void saveAndClose()}>저장하고 닫기</button>
+              <button type="button" className="btn" onClick={() => void saveAndClose()}>저장하고 닫기</button>
             </>
           ) : active.mode === 'preview' && !readOnly ? (
             <button type="button" className="btn btn--primary" onClick={() => setActive({ ...active, mode: 'edit' })}>수정</button>
@@ -620,6 +677,14 @@ export default function PdfFormsWorkspace({
                       aria-hidden="true"
                       style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }}
                     />
+                  })}
+                  {Array.from(new Map(Object.entries(currentLayout.fields).filter(([, field]) => field.control === 'radio_text' && field.group_box).map(([, field]) => [JSON.stringify([field.page, field.group_box]), { page: field.page, box: field.group_box! }])).values()).filter((mask) => mask.page === page).map((mask, index) => {
+                    const [x0, y0, x1, y1] = mask.box
+                    return <span key={`selfcheck-cover-${index}`} className="pdf-form__mask" aria-hidden="true" style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }} />
+                  })}
+                  {missingGroupBoxes(active.formNo, page).map((box, index) => {
+                    const [x0, y0, x1, y1] = box
+                    return <span key={`missing-choice-${index}`} className="pdf-form__group-missing" aria-hidden="true" style={{ left: x0 * scale - 2, top: y0 * scale - 2, width: (x1 - x0) * scale + 4, height: (y1 - y0) * scale + 4 }} />
                   })}
                   {Object.entries(currentLayout.fields)
                     .sort((a, b) => a[1].page - b[1].page || a[1].box[1] - b[1].box[1] || a[1].box[0] - b[1].box[0])
@@ -655,28 +720,18 @@ export default function PdfFormsWorkspace({
             <div className="pdf-form__extra">
               <strong>기간 산정에 쓰는 날짜</strong>
               <label>전북 최종 전입일
-                <input type="date" value={isoDate(form1.transferIn)} onChange={(event) => onForm1({ ...form1, transferIn: fromISO(event.currentTarget.value) })} />
+                <input type="date" max={currentLayout?.auto_date} value={isoDate(form1.transferIn)} onChange={(event) => onForm1({ ...form1, transferIn: fromISO(event.currentTarget.value) })} />
               </label>
               <label>현 직장 입사일
-                <input type="date" value={isoDate(form1.employedAt)} onChange={(event) => onForm1({ ...form1, employedAt: fromISO(event.currentTarget.value) })} />
+                <input type="date" max={currentLayout?.auto_date} value={isoDate(form1.employedAt)} onChange={(event) => onForm1({ ...form1, employedAt: fromISO(event.currentTarget.value) })} />
               </label>
               <span>기간 구간은 공고일 기준으로 서식에 자동 표시됩니다.</span>
+              {(isAfterBasis(form1.transferIn, program.announcement_date) || isAfterBasis(form1.employedAt, program.announcement_date)) && (
+                <span className="pdf-form__date-warning" role="alert">공고일({koreanDate(program.announcement_date)}) 이후 날짜입니다. 기간 보기에 해당하는 칸이 없습니다.</span>
+              )}
             </div>
           )}
-          {active.mode === 'edit' && !readOnly && missing(active.formNo).length > 0 && (
-            <div className="pdf-form__missing">
-              <strong>빠진 항목</strong>
-              <ul>{missing(active.formNo).map((key) => (
-                <li key={key}><button type="button" onClick={() => {
-                  const entry = Object.entries(currentLayout.fields).find(([fieldKey]) => fieldKey === key || fieldGroup(fieldKey) === key)
-                  const fieldKey = entry?.[0] || key
-                  const field = entry?.[1]
-                  if (field) setPage(field.page)
-                  requestAnimationFrame(() => document.getElementById(`pdf-field-${active.formNo}-${fieldKey}`)?.focus())
-                }}>{key}</button></li>
-              ))}</ul>
-            </div>
-          )}
+
         </Modal>
       )}
     </section>
@@ -692,4 +747,14 @@ function fromISO(value: string): Form1Value['transferIn'] {
   if (!value) return { y: '', m: '', d: '' }
   const [y, m, d] = value.split('-')
   return { y, m: String(Number(m)), d: String(Number(d)) }
+}
+
+function isAfterBasis(value: Form1Value['transferIn'], basis: string): boolean {
+  const selected = isoDate(value)
+  return !!selected && selected > basis
+}
+
+function koreanDate(value: string): string {
+  const [year, month, day] = value.split('-').map(Number)
+  return `${year}. ${month}. ${day}.`
 }

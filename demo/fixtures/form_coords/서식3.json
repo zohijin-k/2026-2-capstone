@@ -81,15 +81,29 @@
       "align": "left",
       "box": [
         397.92,
-        730.07,
+        728.07,
         407.74,
-        741.59
+        743.59
       ],
       "anchor": "20",
       "mode": "after",
       "format": "yy",
       "auto_date": true,
-      "date_part": "year"
+      "date_part": "year",
+      "date_reference": {
+        "size": 10.79,
+        "baseline": 740.07,
+        "character": "년",
+        "render_size_scale": 1.1,
+        "render_baseline": 740.79,
+        "font_family": "sans",
+        "glyph_box": [
+          408.74,
+          730.81,
+          419.29,
+          741.59
+        ]
+      }
     },
     "consent.form3.month": {
       "type": "text",
@@ -100,15 +114,29 @@
       "align": "center",
       "box": [
         422.29,
-        730.07,
+        728.07,
         441.32,
-        741.59
+        743.59
       ],
       "anchor": "년",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "month"
+      "date_part": "month",
+      "date_reference": {
+        "size": 10.79,
+        "baseline": 740.07,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 740.79,
+        "font_family": "sans",
+        "glyph_box": [
+          442.32,
+          730.81,
+          452.87,
+          741.59
+        ]
+      }
     },
     "consent.form3.day": {
       "type": "text",
@@ -119,16 +147,31 @@
       "align": "center",
       "box": [
         455.87,
-        730.07,
+        728.07,
         474.9,
-        741.59
+        743.59
       ],
       "anchor": "년 월",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "day"
+      "date_part": "day",
+      "date_reference": {
+        "size": 10.79,
+        "baseline": 740.07,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 740.79,
+        "font_family": "sans",
+        "glyph_box": [
+          475.9,
+          730.81,
+          486.46,
+          741.59
+        ]
+      }
     }
   },
-  "masks": []
+  "masks": [],
+  "requirements": []
 }

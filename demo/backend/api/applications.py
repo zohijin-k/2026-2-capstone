@@ -85,6 +85,27 @@ def _without_server_form_dates(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if key not in SERVER_FORM_DATE_KEYS}
 
 
+def _validate_period_dates(values: dict[str, Any]) -> None:
+    """거주·근로 기간 산정 날짜는 오늘보다 미래일 수 없다."""
+    from ..forms.values import today
+
+    for key in ("transferIn", "employedAt"):
+        raw = values.get(key)
+        if not raw:
+            continue
+        if isinstance(raw, dict) and not all(raw.get(part) for part in ("y", "m", "d")):
+            continue
+        try:
+            if isinstance(raw, dict):
+                parsed = date(int(raw["y"]), int(raw["m"]), int(raw["d"]))
+            else:
+                parsed = date.fromisoformat(str(raw))
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(400, "기간 산정 날짜 형식을 확인해 주세요.") from None
+        if parsed > today():
+            raise HTTPException(400, "기간 산정 날짜는 오늘 이후일 수 없습니다.")
+
+
 def _decode_signature(data_url: str, kind: str) -> tuple[bytes, str]:
     """서명 data URL → (바이트, 확장자). 형식·크기가 맞지 않으면 400."""
     if kind not in ("electronic", "uploaded"):
@@ -176,6 +197,7 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
         _require_draft(app)
         if body.form1 is not None:
+            _validate_period_dates(body.form1)
             app.form1_json = _lock_identity(_without_server_form_dates(body.form1), app.identity_json or {})
         if body.self_check is not None:
             app.self_check_json = body.self_check

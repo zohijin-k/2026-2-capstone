@@ -64,6 +64,7 @@ class Char:
     ox: float
     oy: float
     size: float
+    font: str
 
 
 @dataclass
@@ -180,6 +181,7 @@ def read_sheet(page: Any, number: int) -> Sheet:
                             ox=c["origin"][0],
                             oy=c["origin"][1],
                             size=span["size"],
+                            font=span.get("font", ""),
                         )
                     )
 
@@ -468,7 +470,7 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
     if box[2] - box[0] < 8:
         raise ValueError(f"{spec.key}: 값을 넣을 폭이 너무 좁습니다 ({box})")
 
-    return {
+    result = {
         "type": "text",
         "page": sheet.number,
         "x": round(box[0], 2),
@@ -482,6 +484,33 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
         **({"auto_date": True, "date_part": spec.auto_date_part} if spec.auto_date_part else {}),
         **({"note": spec.note} if spec.note else {}),
     }
+    if spec.auto_date_part:
+        marker = {"year": "년", "month": "월", "day": "일"}[spec.auto_date_part]
+        candidates = [ch for row in sheet.lines for ch in row.chars if ch.c == marker and abs(ch.oy - baseline) <= 3.5]
+        if not candidates:
+            # 두배적금 신청서 날짜는 `2026. . .` 형태다. 점보다 연도 숫자 스팬의
+            # 크기·기준선을 기준으로 써, 좁은 점 bbox가 숫자를 축소하지 않게 한다.
+            candidates = [ch for row in sheet.lines for ch in row.chars if ch.c.isdigit() and abs(ch.oy - baseline) <= 3.5]
+        if candidates:
+            reference = min(candidates, key=lambda ch: abs(ch.ox - (box[0] + box[2]) / 2))
+            font_name = reference.font.lower()
+            family = "serif" if any(part in font_name for part in ("batang", "myeongjo", "명조", "song")) else "sans"
+            result["date_reference"] = {
+                "size": round(reference.size, 2), "baseline": round(reference.oy, 2),
+                "character": reference.c,
+                "render_size_scale": 1.0 if reference.c.isdigit() else 1.1,
+                "render_baseline": round(reference.oy + (0.72 if not reference.c.isdigit() else 0.0), 2),
+                "font_family": family, "glyph_box": [round(reference.x0, 2), round(reference.y0, 2), round(reference.x1, 2), round(reference.y1, 2)],
+            }
+            # Automatic dates use the adjacent printed glyph's baseline and size.
+            # The embedded CJK font's extracted glyph box is slightly taller than
+            # the source character span, so reserve vertical ink room without
+            # changing the baseline or the narrow month/day column.
+            result["box"] = [
+                round(box[0], 2), round(box[1] - 2.0, 2),
+                round(box[2], 2), round(box[3] + 2.0, 2),
+            ]
+    return result
 
 
 def _check_group(sheet: Sheet, spec: CheckGroup) -> dict[str, dict[str, Any]]:
@@ -547,7 +576,12 @@ def _choice_line(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, A
 def _radio_pair(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, Any]]:
     line, first, last = sheet.find("예, 아니오", y_hint)
     anchor_index = next((i for i, char_index in enumerate(line.index) if char_index == first), 0)
+    baseline = line.chars[last].oy
     out = {}
+    all_chars = line.chars[first:last + 1]
+    group_cell = sheet.cell_at((min(ch.x0 for ch in all_chars) + max(ch.x1 for ch in all_chars)) / 2, baseline - 2)
+    group_box = [round(group_cell[0] + 2, 2), round(min(ch.y0 for ch in all_chars) - 1, 2),
+                 round(group_cell[2] - 2, 2), round(max(ch.y1 for ch in all_chars) + 1, 2)]
     for label in ("예", "아니오"):
         at = line.text.find(norm(label), anchor_index)
         if at < 0:
@@ -563,6 +597,8 @@ def _radio_pair(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, An
             "size": round(max(ch.size for ch in selected), 2),
             "box": [round(value, 2) for value in box],
             "label": label,
+            "group_box": group_box,
+            "font_family": "serif" if any(part in selected[0].font.lower() for part in ("batang", "myeongjo", "명조", "song")) else "sans",
         }
     return out
 
@@ -623,10 +659,7 @@ def _build_form5(doc: Any):
     sheet = read_sheet(doc[0], 0)
     fields = _text_fields(sheet, FORM5_TEXTS)
     fields.update(_choice_line(sheet, "agree", 442.8))
-    fields["signature"] = {
-        "type": "image", "page": sheet.number, "box": [369.5, 604.5, 401.9, 620.0],
-        "anchor": "(서명또는인)",
-    }
+    fields["signature"] = _image_field(sheet, ImageField("signature", "(서명또는인)", y_hint=615.5, grow=(1.5, 1.5, 1.5, 1.5)))
     fields["name"]["box"][2] = round(fields["signature"]["box"][0] - 2.0, 2)
     return fields, []
 
@@ -676,7 +709,7 @@ def _build_job_application(doc: Any):
         TextField("job.applicationDay", "2026년 월", mode="after", y_hint=647.0, align="center", format="none", auto_date_part="day"),
     )))
     fields["job.signature"] = _image_field(sheet, ImageField(
-        "job.signature", "(인)", y_hint=688.6, grow=(70, 8, -25, 10)))
+        "job.signature", "(인)", y_hint=688.6, grow=(1.5, 1.5, 1.5, 1.5)))
     for key, option in zip(("subsidy.interview", "subsidy.suit", "subsidy.photo", "subsidy.certificate"),
                            ("면접비", "면접정장비", "면접사진촬영비", "자격증 응시료")):
         fields.update(_check_group(sheet, CheckGroup(key, "신청분야", (option,), same_cell=True)))
@@ -699,7 +732,7 @@ def _build_job_consent(doc: Any):
     )))
     fields["name"]["box"][2] = 445.0
     fields["consent.job.signature"] = _image_field(
-        sheet, ImageField("consent.job.signature", "(인)", y_hint=705.4, grow=(65, 0, -28, 0))
+        sheet, ImageField("consent.job.signature", "(인)", y_hint=705.4, grow=(1.5, 1.5, 1.5, 1.5))
     )
     return fields, []
 
@@ -716,6 +749,14 @@ BUILDERS = {"서식1": lambda doc: (_build_form1_fields(doc), []), "서식2": _b
             "서식3": _build_form3, "서식4": _build_form4, "서식5": _build_form5,
             "job_application": _build_job_application, "job_consent": _build_job_consent,
             "job_interview_confirmation": _build_job_interview}
+
+REQUIREMENTS = {
+    "서식1": [
+        {"kind": "all_or_none", "fields": ["ecName", "ecRelation", "ecContact"]},
+        {"kind": "when_choice", "field": "priorJoined", "equals": "참여", "required": ["priorName", "priorPeriod", "priorAmount"]},
+        {"kind": "when_choice", "field": "householdSize", "equals": "10인 이상", "required": ["householdSizeCount"]},
+    ],
+}
 
 
 def _build_form1_fields(doc: Any):
@@ -756,6 +797,7 @@ def build_all(out_dir: Path = COORDS) -> list[Path]:
                 "generated_by": "demo/fixtures/build_form_coords.py",
                 "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
                 "fields": fields, "masks": masks,
+                "requirements": REQUIREMENTS.get(key, []),
             }
         target = out_dir / f"{key}.json"
         target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

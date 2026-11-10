@@ -891,16 +891,30 @@
       "align": "center",
       "box": [
         286.62,
-        406.9,
+        404.9,
         304.47,
-        418.45
+        420.45
       ],
       "anchor": "2026.",
       "mode": "after",
       "format": "none",
       "auto_date": true,
       "date_part": "month",
-      "note": "원문 '2026. . .' 의 첫 빈칸(월)"
+      "note": "원문 '2026. . .' 의 첫 빈칸(월)",
+      "date_reference": {
+        "size": 11.03,
+        "baseline": 416.9,
+        "character": "6",
+        "render_size_scale": 1.0,
+        "render_baseline": 416.9,
+        "font_family": "sans",
+        "glyph_box": [
+          275.13,
+          407.42,
+          280.65,
+          418.45
+        ]
+      }
     },
     "writtenDay": {
       "type": "text",
@@ -911,16 +925,30 @@
       "align": "center",
       "box": [
         311.44,
-        406.9,
+        404.9,
         329.42,
-        418.45
+        420.45
       ],
       "anchor": "2026..",
       "mode": "after",
       "format": "none",
       "auto_date": true,
       "date_part": "day",
-      "note": "원문 '2026. . .' 의 둘째 빈칸(일)"
+      "note": "원문 '2026. . .' 의 둘째 빈칸(일)",
+      "date_reference": {
+        "size": 11.03,
+        "baseline": 416.9,
+        "character": "6",
+        "render_size_scale": 1.0,
+        "render_baseline": 416.9,
+        "font_family": "sans",
+        "glyph_box": [
+          275.13,
+          407.42,
+          280.65,
+          418.45
+        ]
+      }
     },
     "monthlyDeposit.월 10만원": {
       "type": "check",
@@ -1035,5 +1063,33 @@
       "label": "기타)"
     }
   },
-  "masks": []
+  "masks": [],
+  "requirements": [
+    {
+      "kind": "all_or_none",
+      "fields": [
+        "ecName",
+        "ecRelation",
+        "ecContact"
+      ]
+    },
+    {
+      "kind": "when_choice",
+      "field": "priorJoined",
+      "equals": "참여",
+      "required": [
+        "priorName",
+        "priorPeriod",
+        "priorAmount"
+      ]
+    },
+    {
+      "kind": "when_choice",
+      "field": "householdSize",
+      "equals": "10인 이상",
+      "required": [
+        "householdSizeCount"
+      ]
+    }
+  ]
 }

@@ -29,6 +29,7 @@ class FormCoords:
     public_form: str | None = None
     internal_form: str | None = None
     masks: list[dict[str, Any]] | None = None
+    requirements: list[dict[str, Any]] | None = None
 
     def field(self, key: str) -> dict[str, Any] | None:
         return self.fields.get(key)
@@ -76,4 +77,5 @@ def load(form_no: str) -> FormCoords | None:
         public_form=raw.get("public_form"),
         internal_form=raw.get("internal_form"),
         masks=raw.get("masks", []),
+        requirements=raw.get("requirements", []),
     )

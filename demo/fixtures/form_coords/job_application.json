@@ -553,15 +553,29 @@
       "align": "center",
       "box": [
         266.86,
-        634.06,
+        632.06,
         301.72,
-        647.01
+        649.01
       ],
       "anchor": "2026년",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "month"
+      "date_part": "month",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 644.42,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 645.14,
+        "font_family": "sans",
+        "glyph_box": [
+          302.72,
+          634.06,
+          315.67,
+          647.01
+        ]
+      }
     },
     "job.applicationDay": {
       "type": "text",
@@ -572,24 +586,38 @@
       "align": "center",
       "box": [
         318.67,
-        634.06,
+        632.06,
         360.0,
-        647.01
+        649.01
       ],
       "anchor": "2026년 월",
       "mode": "after",
       "format": "none",
       "auto_date": true,
-      "date_part": "day"
+      "date_part": "day",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 644.42,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 645.14,
+        "font_family": "sans",
+        "glyph_box": [
+          361.0,
+          634.06,
+          373.96,
+          647.01
+        ]
+      }
     },
     "job.signature": {
       "type": "image",
       "page": 0,
       "box": [
-        419.93,
-        667.65,
-        485.78,
-        698.6
+        488.43,
+        674.15,
+        512.28,
+        690.1
       ],
       "anchor": "(인)"
     },
@@ -711,5 +739,6 @@
         548.75
       ]
     }
-  ]
+  ],
+  "requirements": []
 }
