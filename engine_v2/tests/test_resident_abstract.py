@@ -20,9 +20,10 @@ def wd(x: float, y: float, text: str, conf: float = 0.5, width: float = 10) -> O
     return OcrWord(text, conf, (x / 100 * W, y / 100 * H, (x + width) / 100 * W, (y + 1.0) / 100 * H))
 
 
-def header(page: int, total: int, issue="2026년 11월 10일", name="김전북", title="초 본") -> list[OcrWord]:
+def header(page: int, total: int, issue="2026년 11월 10일", name="김전북", title="초 본",
+           applicant: str | None = None) -> list[OcrWord]:
     a, b = title.split()
-    return [
+    words = [
         wd(16.5, 3.3, "문서확인번호 : 1234-5678-9012-34567", 1.0, 30), wd(79.4, 3.3, f"{page}/{total}", 1.0, 3),
         wd(46.5, 5.4, f"이 {a}{b}은 개인별 주민등록표의 기재 내용을", 1.0, 30),
         wd(15.4, 7.4, "주민등록표", 0.5), wd(46.5, 7.4, "그대로 증명합니다.", 1.0),
@@ -31,6 +32,9 @@ def header(page: int, total: int, issue="2026년 11월 10일", name="김전북",
         wd(9.5, 17.7, "성명(한자)", 0.5, 8), wd(22.8, 17.7, name, 0.5, 8), wd(36.4, 17.7, "( 金全北", 0.5, 8),
         wd(49.6, 17.7, ")", 0.5, 1), wd(54.5, 17.7, "주민등록번호", 1.0, 10), wd(68.3, 17.7, "990101-1234567", 1.0, 15),
     ]
+    if applicant is not None:
+        words.append(wd(14.0, 19.5, applicant, 1.0, 35))
+    return words
 
 
 def table_head(y: float) -> list[OcrWord]:
@@ -99,6 +103,27 @@ def test_basic_fields():
     assert "1234567" not in f["birth_date"].raw_text          # 주민번호 뒷자리 미보존
     assert f["issue_date"].confidence >= 0.9                    # 3쪽 일치 → 높은 신뢰도
     assert f["issue_date"].bbox is not None and f["issue_date"].bbox.page == 0
+
+
+def test_applicant_identity_fields():
+    r = extract(build(applicant="신청인: 김전북 (1999-01-01)"), today=date(2026, 11, 10))
+    assert r.fields["applicant_name"].value == "김전북"
+    assert r.fields["applicant_birth_date"].value == date(1999, 1, 1)
+    assert r.fields["applicant_name"].bbox is not None
+
+
+def test_applicant_unreadable_is_not_guessed():
+    r = extract(build(applicant="신청인: 김전북 (생년월일 확인불가)"), today=date(2026, 11, 10))
+    assert "applicant_name" not in r.fields
+    assert "applicant_birth_date" not in r.fields
+    assert any("신청인" in warning for warning in r.warnings)
+
+
+def test_single_address_history_count_is_preserved():
+    words = header(1, 1, applicant="신청인: 김전북 (1999-01-01)") + table_head(31.8)
+    words += row(34.4, 1, "전북특별자치도 전주시 완산구 효자동 456", "2023-08-30", "2023-08-30")
+    r = extract([page(0, words)], today=date(2026, 11, 10))
+    assert r.fields["address_history_count"].value == 1
 
 
 def test_history_parsing():

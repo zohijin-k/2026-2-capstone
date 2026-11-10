@@ -662,6 +662,7 @@ def _document_view(d: Document, labels: dict[str, str]) -> dict[str, Any]:
         "label": labels.get(d.slot_key, "미배정 페이지"),
         "expected_doc_type": d.expected_doc_type,
         "detected_doc_type": d.doc_type,
+        "classification_evidence": (d.ocr_json or {}).get("classification_evidence", ""),
         "status": d.stage1_status,
         "findings": d.findings_json or [],
         "file_url": f"/api/files/{d.id}",

@@ -11,7 +11,7 @@
 배점 출처: `docs/demo-site-dev-plan.md` 2.4절 (시행지침 서식6 원문 대조 확정본)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from .doc_types import DocType
@@ -32,9 +32,12 @@ MEDIAN_INCOME_140: dict[int, dict[str, int]] = {
     5: {"직장": 354_964, "지역": 320_449, "혼합": 369_517},
     6: {"직장": 407_092, "지역": 382_076, "혼합": 431_294},
     7: {"직장": 461_699, "지역": 447_279, "혼합": 506_004},
+    8: {"직장": 506_004, "지역": 496_008, "혼합": 552_230},
+    9: {"직장": 552_230, "지역": 545_971, "혼합": 599_810},
+    10: {"직장": 599_810, "지역": 591_277, "혼합": 673_463},
 }
 
-#: 표에 있는 최대 가구원수. 그 이상은 이 값을 적용한다.
+#: 표에 있는 최대 가구원수. 그 이상은 이 값을 적용하고 담당자 확인 사유를 남긴다.
 MAX_TABLE_HOUSEHOLD = max(MEDIAN_INCOME_140)
 
 #: 신청 자격 상한. 이 값을 넘으면 점수와 무관하게 부적합이다.
@@ -121,6 +124,7 @@ class ScoringFacts:
     transfer_in_date: date | None = None
     employment_date: date | None = None
     birth_date: date | None = None
+    residence_history_incomplete_suspected: bool = False
     sources: dict[str, FactSource] = field(default_factory=dict)
 
     def source(self, key: str) -> FactSource:
@@ -223,8 +227,8 @@ def premium_limit_140(household_size: int, insurance_type: str) -> tuple[int, st
     if size > MAX_TABLE_HOUSEHOLD:
         size = MAX_TABLE_HOUSEHOLD
         note = (
-            f"{ESTIMATE_LABEL} 공고문 기준표는 7인까지만 제공되어 "
-            f"{household_size}인 가구에 7인 기준을 적용했습니다."
+            f"{ESTIMATE_LABEL} 공고문 기준표는 10인까지만 제공되어 "
+            f"{household_size}인 가구에 10인 기준을 적용했습니다. 담당자 확인이 필요합니다."
         )
     size = max(1, size)
     row = MEDIAN_INCOME_140[size]
@@ -320,6 +324,11 @@ def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, li
 def score_residence(facts: ScoringFacts, basis_date: date) -> ScoreItem:
     """2. 도 거주기간 (25점). 최종 전입일 → 공고일 역산."""
     source = facts.source("residence")
+    if facts.residence_history_incomplete_suspected:
+        source = replace(
+            source,
+            origin=(source.origin + " · 과거 주소 미포함 의심(주소 이력 1건), 거주기간 담당자 확인 필요").strip(" ·"),
+        )
     start = facts.transfer_in_date
     if start is None or start > basis_date:
         return _missing("residence", "도 거주기간", 25, "전북특별자치도 최종 전입일", source)
@@ -336,6 +345,7 @@ def score_residence(facts: ScoringFacts, basis_date: date) -> ScoreItem:
         basis=(
             f"{start.isoformat()} 전입 → 공고일({basis_date.isoformat()})까지 "
             f"{years}년 {months}개월 → {band}"
+            + (" · 과거 주소 미포함 의심, 거주기간 담당자 확인 필요" if facts.residence_history_incomplete_suspected else "")
         ),
         source=source,
     )

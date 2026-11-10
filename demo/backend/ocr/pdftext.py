@@ -38,6 +38,7 @@ DOC_TYPE_KEYWORDS: list[tuple[DocType, tuple[str, ...]]] = [
     (DocType.FISHERY_BIZ_CERT, ("어업경영체",)),
     (DocType.LABOR_CONTRACT, ("근로계약서",)),
     (DocType.ADMIN_INFO_CONSENT, ("행정정보공동이용",)),
+    (DocType.ID_PHOTO_COPY, ("면접용사진사본", "면접용증명사진사본", "면접사진")),
     (DocType.INTERVIEW_CONFIRMATION, ("면접확인서",)),
     (DocType.EXAM_CONFIRMATION, ("응시확인서",)),
     (DocType.EXAM_TRANSCRIPT, ("성적표",)),
@@ -54,6 +55,10 @@ _ISSUE_LABEL_RE = re.compile(
 _TRANSFER_RE = re.compile(
     r"(?:최종전입일|전입일자?|신고일)\s*[:：]?\s*"
     r"(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?"
+)
+_APPLICANT_RE = re.compile(
+    r"신청인[:：]?([가-힣]{2,6})[（(]?"
+    r"(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{4}년\d{1,2}월\d{1,2}일|\d{8})"
 )
 #: "가구원수 4명" / "세대원수: 4"
 _HOUSEHOLD_RE = re.compile(r"(?:가구원\s*수|세대원\s*수|세대원수)\s*[:：]?\s*(\d{1,2})")
@@ -89,11 +94,17 @@ def _squeeze(text: str) -> str:
 
 def classify(text: str) -> DocType | None:
     """본문 텍스트로 문서 종류를 판별한다."""
+    return classify_with_evidence(text)[0]
+
+
+def classify_with_evidence(text: str) -> tuple[DocType | None, str]:
+    """기대 슬롯과 무관하게 본문 제목·서식 키워드로 종류와 근거를 고른다."""
     flat = _squeeze(text)
     for doc_type, keywords in DOC_TYPE_KEYWORDS:
-        if any(k in flat for k in keywords):
-            return doc_type
-    return None
+        for keyword in keywords:
+            if _squeeze(keyword) in flat:
+                return doc_type, f"본문에서 '{keyword}' 제목·서식 단서를 확인했습니다."
+    return None, "본문에서 지원 서류의 제목·서식 단서를 찾지 못했습니다."
 
 
 def _to_date(groups: tuple[str, str, str]) -> date | None:
@@ -119,6 +130,22 @@ def extract_transfer_in(text: str) -> date | None:
     if labeled:
         return _to_date(labeled.groups())  # type: ignore[arg-type]
     return None
+
+
+def extract_applicant(text: str) -> tuple[str, date] | None:
+    """초본 첫 쪽의 신청인 성명·생년월일. 라벨이 없거나 형식이 불명확하면 비운다."""
+    match = _APPLICANT_RE.search(_squeeze(text))
+    if not match:
+        return None
+    name, raw_date = match.groups()
+    digits = re.sub(r"\D", "", raw_date)
+    if len(digits) != 8:
+        return None
+    try:
+        birth = date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+    except ValueError:
+        return None
+    return name, birth
 
 
 def extract_household_size(text: str) -> str | None:
@@ -187,7 +214,7 @@ def _confidence(text: str, doc_type: DocType | None, issue_date: date | None) ->
 
 def read_page_text(text: str, page, page_index: int) -> OcrResult:
     """페이지 텍스트 하나를 판독 결과로 만든다. 병합 PDF 분리에서도 이걸 쓴다."""
-    doc_type = classify(text)
+    doc_type, type_evidence = classify_with_evidence(text)
     issue_date = extract_issue_date(text)
 
     fields: dict[str, str] = {}
@@ -219,6 +246,11 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
 
     if doc_type is DocType.RESIDENT_ABSTRACT:
         fields["주소변동내역"] = "포함" if has_address_history(text) else "미포함"
+        applicant = extract_applicant(text)
+        if applicant:
+            name, birth = applicant
+            fields["초본신청인성명"] = name
+            fields["초본신청인생년월일"] = birth.isoformat()
 
     # 취업지원패키지 추가서류. 응시일이 없으면 체크리스트의 `required_fields`
     # 검사에서 부적합으로 떨어진다 — 사업계획서 "(응시일 표기 필수)".
@@ -248,6 +280,8 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
         fields=fields,
         bboxes=bboxes,
         tier=NAME,
+        classification_evidence=type_evidence,
+        classification_confidence=0.95 if doc_type is not None else 0.0,
     )
 
 

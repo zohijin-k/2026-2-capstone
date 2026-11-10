@@ -172,6 +172,25 @@ def main() -> None:
     res = extract(pages)
     gt = json.loads(gt_path.read_text(encoding="utf-8")) if gt_path else {}
 
+    if args.layout:
+        from ..pipeline.layout import group_lines, line_text, normalize, squash
+
+        print("[가린 배치] 값은 ### 로 숨겼습니다.")
+        found = False
+        for page, result in pages:
+            if not page.pixel_size:
+                continue
+            for line in group_lines(normalize(result.words, page.page, page.pixel_size)):
+                text = squash(line_text(line))
+                if "신청인" not in text:
+                    continue
+                x0 = min(word.x0 for word in line)
+                print(f"쪽 {page.page + 1}: [{x0:.1f}%] 신청인  [###]")
+                found = True
+        if not found:
+            print("쪽 1: 신청인 라벨을 못 찾음")
+        return
+
     print(f"서류 판별: {res.detected_type.value} ({res.type_confidence})")
     for w in res.warnings:
         print(f"  경고: {w}")

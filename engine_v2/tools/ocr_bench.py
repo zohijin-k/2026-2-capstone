@@ -29,6 +29,9 @@ from ..paths import PRIVATE_DIR
 
 from ..pipeline.ocr import ENGINES, run_ocr
 from ..pipeline.preprocess import PageSource, preprocess
+from ..pipeline.jbai_ocr import (
+    JBAIOCRError, TASK_OCR, TASK_TABLE, run_jbai_pdf,
+)
 
 # 초본에 거의 항상 등장하는 고정 문구 — 읽혔는지로 기본 인식력 확인 (개인정보 아님)
 KEYWORDS = ["주민등록표", "초본", "성명", "주민등록번호", "주소", "발생일", "신고일",
@@ -80,6 +83,43 @@ def main() -> None:
     print(f"페이지 {len(pages)}쪽, 엔진 {args.engines}\n")
     summary = []
     for eng in args.engines:
+        if eng in {"jbai-ocr", "jbai-table"}:
+            task = TASK_OCR if eng == "jbai-ocr" else TASK_TABLE
+            try:
+                result = run_jbai_pdf(args.file, task=task)
+            except JBAIOCRError as error:
+                print(f"[{eng}] 실패 — {error}\n")
+                summary.append({"engine": eng, "error": str(error)})
+                continue
+            content = "\n".join(
+                "\n".join(page.text_lines) + "\n" + "\n".join(
+                    cell.text for table in page.tables for row in table.rows for cell in row
+                )
+                for page in result.pages
+            )
+            row = {
+                "engine": eng,
+                "sec_total": round(result.elapsed_sec, 1),
+                "sec_per_page": round(result.elapsed_sec / max(len(result.pages), 1), 1),
+                "pages": len(result.pages),
+                "text_lines": sum(len(page.text_lines) for page in result.pages),
+                "tables": sum(len(page.tables) for page in result.pages),
+                "table_cells": sum(
+                    len(row) for page in result.pages for table in page.tables for row in table.rows
+                ),
+            }
+            if gt:
+                matches = score_gt(content, gt)
+                row["gt_correct"] = f"{sum(matches.values())}/{len(matches)}"
+                row["gt_detail"] = matches
+            summary.append(row)
+            print(f"[{eng}]")
+            for key, value in row.items():
+                if key != "engine":
+                    print(f"  {key}: {value}")
+            print("  인식 내용은 화면에 출력하거나 파일로 저장하지 않았습니다.\n")
+            continue
+
         all_words, elapsed, err, texts = [], 0.0, None, []
         for p in pages:
             r = run_ocr(eng, p.png, p.pixel_size)

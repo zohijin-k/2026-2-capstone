@@ -135,9 +135,14 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
 
     # --- 2. 거주기간: 초본의 전입일 우선, 없으면 신청서 입력값 ---
     transfer_in = parse_ymd(_field(abstract, "전입일"))
+    residence_history_incomplete_suspected = _field(abstract, "주소이력건수") == "1"
+    if residence_history_incomplete_suspected:
+        residence_origin = "주민등록초본 전입일 판독 · 과거 주소 미포함 의심(주소 이력 1건), 거주기간 담당자 확인 필요"
+    else:
+        residence_origin = "주민등록초본 전입일 판독"
     if transfer_in is not None:
         residence_source = _source(
-            abstract, DocType.RESIDENT_ABSTRACT, "전입일", "주민등록초본 전입일 판독"
+            abstract, DocType.RESIDENT_ABSTRACT, "전입일", residence_origin
         )
     else:
         transfer_in = parse_ymd(form1.get("transferIn"))
@@ -181,6 +186,7 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
         transfer_in_date=transfer_in,
         employment_date=employed_at,
         birth_date=birth,
+        residence_history_incomplete_suspected=residence_history_incomplete_suspected,
         sources={
             "income": income_source,
             "residence": residence_source,

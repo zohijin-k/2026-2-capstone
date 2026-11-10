@@ -92,7 +92,12 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     fields: dict[str, str] = {}
     bboxes: dict[str, BBox] = {}
 
-    for v2key, label in (("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일")):
+    for v2key, label in (
+        ("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일"),
+        ("applicant_name", "초본신청인성명"),
+        ("applicant_birth_date", "초본신청인생년월일"),
+        ("address_history_count", "주소이력건수"),
+    ):
         if v2key in f:
             v = f[v2key].value
             fields[label] = v.isoformat() if isinstance(v, date) else str(v)
@@ -112,6 +117,8 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     if ex.history:
         fields["현주소시도"] = ra.resolved_sido(ex.history, len(ex.history) - 1) or "판별불가"
         fields["주소이력건수"] = str(len(ex.history))
+        if len(ex.history) == 1:
+            fields["과거주소미포함의심"] = "true"
         # 이력이 2건 이상이면 '주소변동내역 포함'으로 본다. 1건 이하는 단정하지 않는다
         # (미포함으로 단정하면 doc_check가 부적합을 낸다 — 오독일 때 신청자가 억울해진다).
         if len(ex.history) >= 2:
@@ -139,7 +146,8 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     )
 
 
-def _from_nhis(ex, pages, v2types) -> OcrResult:
+def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
+               detected_override: DocType | None = None) -> OcrResult:
     """engine_v2 건강보험 판독 결과를 신청자·담당자 화면 계약으로 옮긴다."""
     fields: dict[str, str] = {}
     bboxes: dict[str, BBox] = {}
@@ -160,7 +168,7 @@ def _from_nhis(ex, pages, v2types) -> OcrResult:
         v2types.NHIS_PAYMENT: DocType.NHIS_PAYMENT,
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
-    detected = detected_map.get(ex.detected_type)
+    detected = detected_override or detected_map.get(ex.detected_type)
     issue = ex.fields.get("발급일")
     issue_date = None
     if issue:
@@ -177,6 +185,8 @@ def _from_nhis(ex, pages, v2types) -> OcrResult:
         bboxes=bboxes,
         page_count=len(pages),
         tier=NAME,
+        classification_evidence=classification_evidence,
+        classification_confidence=0.95 if detected else 0.0,
     )
 
 
@@ -228,35 +238,44 @@ class LocalOcr:
     name = NAME
 
     def read(self, file_path: str, expected: DocType | None) -> OcrResult | None:
+        del expected  # 종류는 슬롯 기대값이 아니라 본문 OCR 결과로 먼저 고른다.
         engine = _engine_name()
         path = Path(file_path)
         if not path.exists() or path.suffix.lower() not in {".pdf", ".jpg", ".jpeg", ".png"}:
             return None
 
         text_pdf = path.suffix.lower() == ".pdf" and _tier2_can_read(path)
-        nhis_types = {DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS}
-        nhis_expected = expected in nhis_types
-        if engine == "off" and not (nhis_expected and text_pdf):
+
+        from . import pdftext
+
+        if text_pdf:
+            # 텍스트 레이어는 바로 읽어 분류한 다음, 지원되는 NHIS 유형이면 그 추출기를 고른다.
+            classified = pdftext._read_pdf(path)
+            if classified is None:
+                return None
+            detected = classified.detected_doc_type
+            if detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS):
+                return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
+        elif engine == "off":
             return None
-        if text_pdf and not nhis_expected:
-            return None  # 텍스트 PDF·암호 PDF → Tier2
 
         try:
             ra, payment_extractor, acquisition_extractor, run_ocr, PageSource, preprocess, v2types, V2DocumentInput, load_pages = _import_v2()
         except ImportError:
             return None
 
-        if nhis_expected:
-            v2type = v2types.NHIS_PAYMENT if expected == DocType.NHIS_PAYMENT else v2types.NHIS_ACQUISITION_LOSS
+        if text_pdf:
+            v2type = v2types.NHIS_PAYMENT if detected == DocType.NHIS_PAYMENT else v2types.NHIS_ACQUISITION_LOSS
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
-            extractor = payment_extractor if expected == DocType.NHIS_PAYMENT else acquisition_extractor
-            return _from_nhis(extractor.extract(pages), pages, v2types)
+            extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+            return _from_nhis(
+                extractor.extract(pages), pages, v2types,
+                classified.classification_evidence, detected,
+            )
 
-        if engine == "off":
-            return None
         try:
             page_images = preprocess(path)
         except ValueError:
@@ -271,10 +290,31 @@ class LocalOcr:
                 return None  # 엔진 미설치 등 → 다음 계층
             pages.append((p, r))
 
-        ex = ra.extract(pages)
-        if ex.detected_type in (v2types.RESIDENT_ABSTRACT, v2types.RESIDENT_REGISTER):
-            result = _from_resident(ex, pages, ra, v2types)
+        text = "\n".join(result.text for _, result in pages)
+        detected, evidence = pdftext.classify_with_evidence(text)
+        if detected is None:
+            return None
+
+        if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS):
+            extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+            result = _from_nhis(extractor.extract(pages), pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result
-        return _generic(pages, path)
+
+        if detected in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
+            ex = ra.extract(pages)
+            result = _from_resident(ex, pages, ra, v2types)
+            result.detected_doc_type = detected
+            result.classification_evidence = evidence
+            result.classification_confidence = 0.95
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
+
+        result = _generic(pages, path)
+        if result is not None:
+            result.detected_doc_type = detected
+            result.classification_evidence = evidence
+            result.classification_confidence = 0.95
+        return result

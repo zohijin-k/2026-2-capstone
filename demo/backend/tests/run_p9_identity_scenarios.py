@@ -9,7 +9,7 @@
   3. 본인 초본 → 적합 / 타인 초본 → 부적합(본인 서류 아님) / 동명이인(생년월일 다름) → 부적합
   4. 판독이 불확실해 다르게 읽힌 경우 → 부적합이 아니라 확인필요 (남의 서류로 단정 금지)
   5. 신청자 안내에 서류 속 남의 이름을 되읊지 않는다
-  6. 시연용 샘플(가상 인물 '홍길동')은 대조하지 않는다 — 본인 초본 + 샘플로 시연 가능
+  6. NHIS 시연 샘플도 본인인증 정보와 대조한다. 이름이 다르면 관계 확인이 필요하다.
   7. 본인인증 없이 올리면 대조하지 않는다 (기존 동작 유지)
   8. 담당자 화면에 본인인증·서약 여부가 보이고, 연락처는 나가지 않는다
   9. 서약 서명은 직접 서명(PNG) 또는 서명 파일(PNG·JPG·PDF, 5MB 이하)로 받는다
@@ -21,6 +21,7 @@ DB·저장소는 임시 폴더로 격리하고 끝나면 지운다. 실제 개�
 """
 
 import base64
+import json
 import shutil
 import tempfile
 from pathlib import Path
@@ -75,6 +76,147 @@ def upload_abstract(client, app_id: int, tmp: Path, words: list, stem: str) -> d
 
 def codes(doc: dict) -> list[str]:
     return [f["code"] for f in doc.get("findings", [])]
+
+
+def upload_fixture(client, app_id: int, tmp: Path, stem: str, slot: str) -> dict:
+    from ...fixtures.make_samples import make
+
+    pdf = make(stem, tmp)
+    with pdf.open("rb") as fh:
+        return client.post(
+            f"/api/applications/{app_id}/documents",
+            files={"file": (pdf.name, fh, "application/pdf")},
+            data={"slot_key": slot, "declared_issue_date": "2026-03-05"},
+        ).json()
+
+
+def check_applicant_name_hidden(client, app_id: int, parent_name: str, uploads: list[dict]) -> None:
+    responses: list[object] = list(uploads)
+    for path in (
+        f"/api/applications/{app_id}/documents",
+        f"/api/applications/{app_id}/required-documents",
+        f"/api/applications/{app_id}/final-check",
+    ):
+        response = client.get(path)
+        check(f"신청자 응답 {path.rsplit('/', 1)[-1]} → 200", response.status_code, 200)
+        responses.append(response.json())
+    serialized = json.dumps(responses, ensure_ascii=False)
+    check_true("신청자 API 전체 응답에 가입자 이름 미노출", parent_name not in serialized)
+
+
+def test_nhis_dependent_reconciliation(client, tmp: Path) -> None:
+    print("\n[9] 건강보험 가입자(부모) 명의 대조와 신청자 응답")
+    parent = "김보호자"
+
+    own = new_app(client)
+    identify(client, own, "홍길동", "1999-01-01")
+    own_doc = upload_fixture(
+        client, own, tmp, "S2_건강보험료납부확인서_적합", "nhis_payment"
+    )
+    check("본인 명의 납부확인서 → 통과", own_doc["status"], "PASS")
+
+    dependent = new_app(client)
+    identify(client, dependent, "김전북", "1999-01-01")
+    first = upload_fixture(
+        client, dependent, tmp, "P9_건강보험료납부확인서_부모명의", "nhis_payment"
+    )
+    check("부모 명의 납부확인서만 → 확인필요", first["status"], "NEEDS_REVIEW")
+    second = upload_fixture(
+        client, dependent, tmp, "P9_건강보험자격확인서_부모명의_본인포함", "nhis_qualification"
+    )
+    docs = client.get(f"/api/applications/{dependent}/documents").json()
+    by_slot = {doc["slot_key"]: doc for doc in docs}
+    check("같은 가입자 + 가구원 본인 → 납부확인서 통과",
+          by_slot["nhis_payment"]["status"], "PASS")
+    check("같은 가입자 + 가구원 본인 → 자격확인서 통과",
+          by_slot["nhis_qualification"]["status"], "PASS")
+    check_true("피부양자 판정 사유 코드 기록",
+               "NHIS_DEPENDENT_INSURED_PERSON" in codes(by_slot["nhis_payment"]))
+    check_applicant_name_hidden(client, dependent, parent, [first, second])
+
+    # 담당자 상세에는 같은 근거와 가입자 이름이 보인다.
+    form1 = {**p4.BASE_FORM1, "name": "김전북", "birth": {"y": "1999", "m": "1", "d": "1"}}
+    client.patch(f"/api/applications/{dependent}", json={"form1": form1})
+    client.post(f"/api/applications/{dependent}/self-check", json={"answers": p4.SELF_CHECK_ANSWERS})
+    client.post(f"/api/applications/{dependent}/consents", json={"consents": p4.CONSENTS})
+    client.put(f"/api/applications/{dependent}/doc-context",
+               json={"work_category": "직장가입자", "workplace_count": 1})
+    for slot, stem in (
+        ("resident_abstract", "S2_주민등록초본_적합"),
+        ("nhis_acquisition_loss", "S2_건강보험자격득실확인서_적합"),
+        ("work_proof", "S2_4대보험가입내역확인서_적합"),
+    ):
+        upload_fixture(client, dependent, tmp, stem, slot)
+    check("부모 명의 서류가 포함된 신청 제출", client.post(
+        f"/api/applications/{dependent}/submit").status_code, 200)
+    officer = client.get(
+        f"/api/officer/applications/{dependent}", params={"role": p4.ROLE_CITY}
+    ).json()
+    officer_docs = {doc["slot_key"]: doc for doc in officer["documents"]}
+    officer_finding = next(
+        finding for finding in officer_docs["nhis_payment"]["findings"]
+        if finding["code"] == "NHIS_DEPENDENT_INSURED_PERSON"
+    )
+    check_true("담당자 근거에 가입자 이름 포함",
+               parent in officer_finding.get("detail", ""))
+    check_true("담당자 근거에 두 서류·가구원 대조 포함",
+               "납부확인서" in officer_finding["detail"]
+               and "자격확인서" in officer_finding["detail"]
+               and "가구원 목록" in officer_finding["detail"])
+
+    missing_qual = new_app(client)
+    identify(client, missing_qual, "김전북", "1999-01-01")
+    miss_upload = upload_fixture(
+        client, missing_qual, tmp, "P9_건강보험료납부확인서_부모명의", "nhis_payment"
+    )
+    check("자격확인서 없음 → 확인필요", miss_upload["status"], "NEEDS_REVIEW")
+    check_applicant_name_hidden(client, missing_qual, parent, [miss_upload])
+
+    absent_member = new_app(client)
+    identify(client, absent_member, "김전북", "1999-01-01")
+    absent_payment = upload_fixture(
+        client, absent_member, tmp, "P9_건강보험료납부확인서_부모명의", "nhis_payment"
+    )
+    absent_qualification = upload_fixture(
+        client, absent_member, tmp, "P9_건강보험자격확인서_부모명의_본인미포함", "nhis_qualification"
+    )
+    absent_docs = client.get(f"/api/applications/{absent_member}/documents").json()
+    check("가구원 목록에 본인 없음 → 확인필요",
+          absent_docs[0]["status"], "NEEDS_REVIEW")
+    check_applicant_name_hidden(
+        client, absent_member, parent, [absent_payment, absent_qualification]
+    )
+
+    reverse = new_app(client)
+    identify(client, reverse, "김전북", "1999-01-01")
+    reverse_qualification = upload_fixture(
+        client, reverse, tmp, "P9_건강보험자격확인서_부모명의_본인포함", "nhis_qualification"
+    )
+    check("자격확인서 먼저 → 확인필요", reverse_qualification["status"], "NEEDS_REVIEW")
+    reverse_payment = upload_fixture(
+        client, reverse, tmp, "P9_건강보험료납부확인서_부모명의", "nhis_payment"
+    )
+    reverse_docs = client.get(f"/api/applications/{reverse}/documents").json()
+    reverse_by_slot = {doc["slot_key"]: doc for doc in reverse_docs}
+    check("납부확인서 나중 → 두 서류 모두 통과",
+          [reverse_by_slot[k]["status"] for k in ("nhis_payment", "nhis_qualification")],
+          ["PASS", "PASS"])
+    deleted = client.delete(
+        f"/api/applications/{reverse}/documents/{reverse_by_slot['nhis_qualification']['document_id']}"
+    )
+    check("자격확인서 삭제", deleted.status_code, 200)
+    remaining = client.get(f"/api/applications/{reverse}/documents").json()
+    check("자격확인서 삭제 뒤 납부확인서 → 확인필요",
+          remaining[0]["status"], "NEEDS_REVIEW")
+    check_applicant_name_hidden(
+        client, reverse, parent,
+        [reverse_qualification, reverse_payment, deleted.json()],
+    )
+
+    parent_abstract = new_app(client)
+    identify(client, parent_abstract, "이익산", "1998-05-05")
+    abstract = upload_abstract(client, parent_abstract, tmp, fake_abstract_words(), "부모명의초본")
+    check("부모 명의 초본 → 기존과 같은 부적합", abstract["status"], "FAIL")
 
 
 # ------------------------------------------------------------------ 시나리오
@@ -134,13 +276,16 @@ def test_matching(client, tmp: Path) -> None:
     check_true("사유: IDENTITY_MISMATCH", "IDENTITY_MISMATCH" in codes(doc))
     msg = " ".join(f["message"] + f["how_to_fix"] for f in doc["findings"])
     check_true("안내에 서류 속 이름 미노출", "김전북" not in msg)
-    check_true("안내에 다른 항목 명시", "성명·생년월일" in msg)
+    check_true("초본 신청인 불일치의 정해진 안내",
+               msg == "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요.")
 
     namesake = new_app(client)
     identify(client, namesake, "김전북", "2000-02-02")
     doc = upload_abstract(client, namesake, tmp, fake_abstract_words(), "동명이인")
     check("동명이인(생년월일 다름) → 판정", doc["status"], "FAIL")
-    check_true("다른 항목은 생년월일만", any("생년월일이(가)" in f["message"] for f in doc["findings"]))
+    check_true("생년월일이 다른 신청인 안내",
+               any(f["message"] == "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요."
+                   for f in doc["findings"]))
 
     print("\n[4] 판독 불확실 → 확인필요")
     shaky = new_app(client)
@@ -172,6 +317,20 @@ def test_samples_and_no_identity(client, tmp: Path) -> None:
                 data={"slot_key": slot, "declared_issue_date": "2026-03-05"},
             ).json()
         check(f"{slot} (홍길동 샘플) → 판정", doc["status"], "PASS")
+
+    print("\n[5-1] 본인인증 이름이 시연 샘플과 다름 — 샘플도 본인 대조 대상")
+    different = new_app(client)
+    identify(client, different, "김전북", "1999-01-01")
+    payment = upload_fixture(
+        client, different, tmp, "S2_건강보험료납부확인서_적합", "nhis_payment"
+    )
+    qualification = upload_fixture(
+        client, different, tmp, "S2_건강보험자격확인서_적합", "nhis_qualification"
+    )
+    sample_docs = client.get(f"/api/applications/{different}/documents").json()
+    check("시연 샘플의 명의가 인증 정보와 다르면 확인필요",
+          [doc["status"] for doc in sample_docs], ["NEEDS_REVIEW", "NEEDS_REVIEW"])
+    check_applicant_name_hidden(client, different, "홍길동", [payment, qualification])
 
     print("\n[6] 본인인증 없이 → 대조하지 않음")
     bare = new_app(client)
@@ -245,6 +404,7 @@ def main() -> int:
             test_identity_api(client)
             test_matching(client, tmp)
             test_samples_and_no_identity(client, tmp)
+            test_nhis_dependent_reconciliation(client, tmp)
             test_officer_view(client, tmp)
             test_signature_upload(client)
     finally:

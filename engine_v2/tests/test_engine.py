@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from ..engine import combine, evaluate_document, load_rulepack
+from ..engine import EXTRACTORS, combine, evaluate_document, load_rulepack
 from ..schemas.models import (ApplicantInput, ApplicationInput, CheckStatus, DocType, DocumentInput,
-                            Verdict)
+                            ExtractedField, FieldSource, Verdict)
 from ..tests.test_resident_abstract import build
 
 TODAY = date(2026, 11, 10)
@@ -27,7 +27,8 @@ def app(name="김전북", birth=date(1999, 1, 1), issue="2026-11-10", announce=d
 
 
 def evaluate(a, pages=None):
-    d = evaluate_document(a.documents[0], pages or build(), a, RP, today=TODAY)
+    synthetic_applicant = f"신청인: {a.applicant.name} ({a.applicant.birth_date.isoformat()})"
+    d = evaluate_document(a.documents[0], pages or build(applicant=synthetic_applicant), a, RP, today=TODAY)
     return d, combine(a, [d], RP)
 
 
@@ -90,6 +91,22 @@ def test_reviewer_message_filled():
     m = {c.rule_id: c.reviewer_message for c in d.checks}
     assert "38개월" in m["abstract.residence_period"] or "35개월" in m["abstract.residence_period"]
     assert "{" not in "".join(m.values())
+
+
+def test_header_only_value_is_removed_before_engine_rules(monkeypatch):
+    original = EXTRACTORS[DocType.RESIDENT_ABSTRACT]
+
+    def header_name_extractor(pages, today=None):
+        result = original(pages, today=today)
+        result.fields["name"] = ExtractedField(
+            value="주민등록번호", raw_text="주민등록번호", confidence=0.99,
+            source=FieldSource.OCR,
+        )
+        return result
+
+    monkeypatch.setitem(EXTRACTORS, DocType.RESIDENT_ABSTRACT, header_name_extractor)
+    document, _ = evaluate(app())
+    assert "name" not in document.fields
 
 
 def test_missing_document():
