@@ -456,6 +456,7 @@ export const patchApplication = (
 
 export interface FormFieldLayout {
   type: 'text' | 'check' | 'image'
+  control?: 'radio_text'
   page: number
   box: [number, number, number, number]
   x?: number
@@ -463,6 +464,8 @@ export interface FormFieldLayout {
   size?: number
   align?: 'left' | 'center'
   format?: 'yyyy' | 'yy' | 'none'
+  auto_date?: boolean
+  date_part?: 'year' | 'month' | 'day'
   anchor?: string
   label?: string
 }
@@ -474,6 +477,7 @@ export interface FormLayout {
   page_sizes: { width: number; height: number }[]
   fields: Record<string, FormFieldLayout>
   masks?: { page: number; box: [number, number, number, number] }[]
+  auto_date: string
 }
 
 export const fetchFormLayout = (id: number, formNo: string) =>

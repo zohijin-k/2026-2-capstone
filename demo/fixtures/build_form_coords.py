@@ -10,8 +10,9 @@
 
   1. **표 선(벡터)** — `page.get_drawings()`로 수직·수평선을 모아 격자를 만들고,
      "라벨 칸의 바로 오른쪽 칸"처럼 표 구조로 자리를 지목한다.
-  2. **글자 위치** — `page.get_text("rawdict")`의 글자별 `bbox`·`origin`(기준선).
-     `□` 글자의 원점에 `✓`를 얹고, "은행명 :" 다음 빈자리에 값을 쓴다.
+    2. **글자 위치** — `page.get_text("rawdict")`의 글자별 `bbox`·`origin`(기준선).
+     "예"와 "아니오" 텍스트 자체를 라디오 선택 영역으로 쓰고, 선택 시 글자 둘레에
+     타원을 그린다. "은행명 :" 다음 빈자리에 값을 쓴다.
 
 사람이 적는 것은 **앵커 문구**(원문에 있는 말)와 여백 상수(3pt)뿐이다. 그래서
 원본 PDF가 개정돼 표가 밀려도 이 스크립트를 다시 돌리면 좌표가 따라온다.
@@ -252,6 +253,7 @@ class TextField:
     y_hint: float | None = None
     align: Align = "left"
     format: Literal["yyyy", "yy", "none"] | None = None
+    auto_date_part: Literal["year", "month", "day"] | None = None
     note: str = ""
 
 
@@ -375,11 +377,11 @@ FORM1_TEXTS_P1 = (
     TextField("accountNo", "계좌번호 :", mode="after", y_hint=146.0),
     TextField("accountHolder", "예금주 :", mode="after", y_hint=146.0),
     TextField(
-        "writtenMonth", "2026.", mode="after", y_hint=418.5, align="center", format="none",
+        "writtenMonth", "2026.", mode="after", y_hint=418.5, align="center", format="none", auto_date_part="month",
         note="원문 '2026. . .' 의 첫 빈칸(월)",
     ),
     TextField(
-        "writtenDay", "2026..", mode="after", y_hint=418.5, align="center", format="none",
+        "writtenDay", "2026..", mode="after", y_hint=418.5, align="center", format="none", auto_date_part="day",
         note="원문 '2026. . .' 의 둘째 빈칸(일)",
     ),
 )
@@ -404,8 +406,8 @@ FORM1_CHECKS_P1 = (
 # ---- 서식5 -----------------------------------------------------------------
 
 FORM5_TEXTS = (
-    TextField("writtenMonth", "2026 년", mode="after", y_hint=568.0, align="center", format="none"),
-    TextField("writtenDay", "2026 년 월", mode="after", y_hint=568.0, align="center", format="none"),
+    TextField("writtenMonth", "2026 년", mode="after", y_hint=568.0, align="center", format="none", auto_date_part="month"),
+    TextField("writtenDay", "2026 년 월", mode="after", y_hint=568.0, align="center", format="none", auto_date_part="day"),
     TextField("name", "성 명:", mode="after", y_hint=620.0),
     TextField("birth", "생년월일:", mode="after", y_hint=668.0),
     TextField("phone", "전화번호:", mode="after", y_hint=694.0),
@@ -477,6 +479,7 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
         "anchor": spec.anchor,
         "mode": spec.mode,
         **({"format": spec.format} if spec.format is not None else {}),
+        **({"auto_date": True, "date_part": spec.auto_date_part} if spec.auto_date_part else {}),
         **({"note": spec.note} if spec.note else {}),
     }
 
@@ -546,20 +549,20 @@ def _radio_pair(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, An
     anchor_index = next((i for i, char_index in enumerate(line.index) if char_index == first), 0)
     out = {}
     for label in ("예", "아니오"):
-        at = line.text.find(label, anchor_index)
+        at = line.text.find(norm(label), anchor_index)
         if at < 0:
             raise LookupError(f"{key}: '{label}' 위치를 못 찾았습니다.")
-        char = line.chars[line.index[at]]
-        size = min(8.0, max(6.0, char.y1 - char.y0))
-        x1 = char.x0 - 2.5
-        x0 = x1 - size
-        y0 = (char.y0 + char.y1 - size) / 2
+        selected = [line.chars[i] for i in line.index[at : at + len(norm(label))]]
+        box = [
+            min(ch.x0 for ch in selected), min(ch.y0 for ch in selected),
+            max(ch.x1 for ch in selected), max(ch.y1 for ch in selected),
+        ]
         out[f"{key}.{label}"] = {
-            "type": "check", "page": sheet.number, "x": round(x0, 2),
-            "y": round(y0 + size * 0.82, 2), "size": round(size, 2),
-            "box": [round(x0, 2), round(y0, 2), round(x1, 2), round(y0 + size, 2)],
+            "type": "check", "control": "radio_text", "page": sheet.number,
+            "x": round(box[0], 2), "y": round(box[3], 2),
+            "size": round(max(ch.size for ch in selected), 2),
+            "box": [round(value, 2) for value in box],
             "label": label,
-            "source_mark": "text-choice",
         }
     return out
 
@@ -598,9 +601,9 @@ def _build_form3(doc: Any):
     fields.update(_choice_line(sheet, "consent.privacy", 494.6))
     fields.update(_choice_line(sheet, "consent.uniqueId", 598.8))
     fields.update(_text_fields(sheet, (
-        TextField("consent.form3.year", "20", mode="after", y_hint=740.1, format="yy"),
-        TextField("consent.form3.month", "년", mode="after", y_hint=740.1, align="center", format="none"),
-        TextField("consent.form3.day", "년 월", mode="after", y_hint=740.1, align="center", format="none"),
+        TextField("consent.form3.year", "20", mode="after", y_hint=740.1, format="yy", auto_date_part="year"),
+        TextField("consent.form3.month", "년", mode="after", y_hint=740.1, align="center", format="none", auto_date_part="month"),
+        TextField("consent.form3.day", "년 월", mode="after", y_hint=740.1, align="center", format="none", auto_date_part="day"),
     )))
     return fields, []
 
@@ -609,9 +612,9 @@ def _build_form4(doc: Any):
     sheet = read_sheet(doc[0], 0)
     fields = _choice_line(sheet, "consent.thirdParty", 545.8)
     fields.update(_text_fields(sheet, (
-        TextField("consent.form4.year", "20", mode="after", y_hint=602.5, format="yy"),
-        TextField("consent.form4.month", "년", mode="after", y_hint=602.5, align="center", format="none"),
-        TextField("consent.form4.day", "년 월", mode="after", y_hint=602.5, align="center", format="none"),
+        TextField("consent.form4.year", "20", mode="after", y_hint=602.5, format="yy", auto_date_part="year"),
+        TextField("consent.form4.month", "년", mode="after", y_hint=602.5, align="center", format="none", auto_date_part="month"),
+        TextField("consent.form4.day", "년 월", mode="after", y_hint=602.5, align="center", format="none", auto_date_part="day"),
     )))
     return fields, []
 
@@ -669,8 +672,8 @@ def _build_job_application(doc: Any):
                 field["x"] = sample[0]
             fields[key] = field
     fields.update(_text_fields(sheet, (
-        TextField("job.applicationMonth", "2026년", mode="after", y_hint=647.0, align="center", format="none"),
-        TextField("job.applicationDay", "2026년 월", mode="after", y_hint=647.0, align="center", format="none"),
+        TextField("job.applicationMonth", "2026년", mode="after", y_hint=647.0, align="center", format="none", auto_date_part="month"),
+        TextField("job.applicationDay", "2026년 월", mode="after", y_hint=647.0, align="center", format="none", auto_date_part="day"),
     )))
     fields["job.signature"] = _image_field(sheet, ImageField(
         "job.signature", "(인)", y_hint=688.6, grow=(70, 8, -25, 10)))
@@ -690,8 +693,8 @@ def _build_job_consent(doc: Any):
     fields.update(_choice_line(sheet, "consent.privacy", 298.9))
     fields.update(_choice_line(sheet, "consent.thirdParty", 439.5))
     fields.update(_text_fields(sheet, (
-        TextField("consent.job.month", "2026년", mode="after", y_hint=664.0, align="center", format="none"),
-        TextField("consent.job.day", "2026년 월", mode="after", y_hint=664.0, align="center", format="none"),
+        TextField("consent.job.month", "2026년", mode="after", y_hint=664.0, align="center", format="none", auto_date_part="month"),
+        TextField("consent.job.day", "2026년 월", mode="after", y_hint=664.0, align="center", format="none", auto_date_part="day"),
         TextField("name", "신청인 :", mode="after", y_hint=705.4),
     )))
     fields["name"]["box"][2] = 445.0

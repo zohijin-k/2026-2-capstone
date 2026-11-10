@@ -9,15 +9,21 @@ PDF를 **브라우저 안에서 열리도록** 돌려준다. `files.py`와 같�
 PC로 내려가는 일이 여전히 0회다.
 """
 
+from hashlib import sha256
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from ..forms import coords as form_coords
-from ..forms.render import render, render_page_png, render_template_page_png
-from ..forms.values import BUILDERS, available_forms
+from ..forms.render import (
+    filled_payload,
+    render,
+    render_filled_page_png_cached,
+    render_template_page_png,
+)
+from ..forms.values import BUILDERS, available_forms, form_date
 from .common import STORAGE, list_consents, load_application, subsidy_rows
 
 router = APIRouter(prefix="/api/applications", tags=["forms"])
@@ -76,6 +82,7 @@ def form_layout(application_id: int, form_no: str) -> dict[str, Any]:
         "page_sizes": sizes,
         "fields": spec.fields,
         "masks": spec.masks or [],
+        "auto_date": form_date(app).isoformat(),
     }
 
 
@@ -98,10 +105,12 @@ def form_template(application_id: int, form_no: str) -> Response:
 
 @router.get("/{application_id}/forms/{form_no}/pages/{page_no}.png")
 def form_page_png(
+    request: Request,
     application_id: int,
     form_no: str,
     page_no: int,
     preview: bool = Query(default=False),
+    dpi: int = Query(default=200, ge=40, le=300),
 ) -> Response:
     """원본 또는 완성 서식의 한 쪽을 PyMuPDF로 렌더링한다."""
     app = load_application(application_id)
@@ -128,17 +137,25 @@ def form_page_png(
                 storage_root=STORAGE,
                 subsidy_items=subsidy_rows(application_id),
             )
-        pdf = render(spec, filled)
-        png = render_page_png(pdf, page_no)
-        cache_control = "no-store"
+        stat = spec.template.stat()
+        payload = filled_payload(filled)
+        etag = '"' + sha256(
+            f"{form_no}|{stat.st_mtime_ns}|{page_no}|{dpi}|{payload}".encode("utf-8")
+        ).hexdigest() + '"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+        png = render_filled_page_png_cached(
+            form_no, str(spec.template), stat.st_mtime_ns, page_no, dpi, payload
+        )
+        cache_control = "private, max-age=60" if dpi <= 80 else "no-store"
     else:
         stat = spec.template.stat()
-        png = render_template_page_png(str(spec.template), stat.st_mtime_ns, page_no)
+        png = render_template_page_png(str(spec.template), stat.st_mtime_ns, page_no, dpi)
         cache_control = "private, max-age=3600"
     return Response(
         content=png,
         media_type="image/png",
-        headers={"Cache-Control": cache_control},
+        headers={"Cache-Control": cache_control, **({"ETag": etag} if preview else {})},
     )
 
 

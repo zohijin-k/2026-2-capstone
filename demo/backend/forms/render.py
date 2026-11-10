@@ -13,6 +13,8 @@
 """
 
 from functools import lru_cache
+import base64
+import json
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,7 @@ from .values import FilledForm
 #: 기입값 색. 원본 인쇄는 검정이라, 사람이 채운 부분이 한눈에 갈리도록 짙은 남색을
 #: 쓴다. 종이 서식에 파란 볼펜으로 쓴 것과 같은 관습이다.
 INK = (0.05, 0.10, 0.45)
+PRINT_INK = (0.08, 0.08, 0.08)
 
 #: 칸을 넘칠 때 줄일 수 있는 최소 글자 크기.
 MIN_SIZE = 5.0
@@ -68,6 +71,48 @@ def render_template_page_png(path: str, modified_ns: int, page_no: int, dpi: int
     return render_page_png(source, page_no, dpi)
 
 
+def filled_payload(filled: FilledForm) -> str:
+    """Stable, private cache key and payload for rendering a completed form page."""
+    images: dict[str, dict[str, str]] = {}
+    for key, value in filled.images.items():
+        if isinstance(value, bytes):
+            images[key] = {"kind": "bytes", "value": base64.b64encode(value).decode("ascii")}
+        else:
+            path = Path(value)
+            stat = path.stat() if path.exists() else None
+            images[key] = {
+                "kind": "path", "value": str(path),
+                "revision": f"{stat.st_size}:{stat.st_mtime_ns}" if stat else "missing",
+            }
+    return json.dumps(
+        {"form_no": filled.form_no, "texts": filled.texts, "checks": filled.checks, "images": images},
+        ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+
+
+@lru_cache(maxsize=96)
+def render_filled_page_png_cached(
+    form_no: str, template_path: str, modified_ns: int, page_no: int, dpi: int, payload: str
+) -> bytes:
+    """Cache filled preview rasters by their complete visible content and source revision."""
+    from .coords import load
+
+    raw = json.loads(payload)
+    images: dict[str, str | bytes] = {}
+    for key, image in raw["images"].items():
+        if image["kind"] == "bytes":
+            images[key] = base64.b64decode(image["value"])
+        else:
+            images[key] = image["value"]
+    filled = FilledForm(
+        form_no=raw["form_no"], texts=raw["texts"], checks=raw["checks"], images=images
+    )
+    coords = load(form_no)
+    if coords is None or str(coords.template) != template_path:
+        raise FileNotFoundError(f"{form_no} 좌표 맵을 사용할 수 없습니다.")
+    return render_page_png(render(coords, filled), page_no, dpi)
+
+
 def render(coords: FormCoords, filled: FilledForm) -> bytes:
     """템플릿 + 입력값 → 완성된 서식 PDF 바이트."""
     import fitz
@@ -81,7 +126,7 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
 
     font = _font()
     doc = fitz.open(coords.template)
-    writers: dict[int, Any] = {}
+    writers: dict[tuple[int, tuple[float, float, float]], Any] = {}
     check_text_writers: dict[int, Any] = {}
 
     # 취업패키지 원본에 인쇄된 회색 예시 문구를 제거하고 흰색으로 덮는다.
@@ -96,10 +141,11 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             page.add_redact_annot(rect, fill=(1, 1, 1))
         page.apply_redactions(images=0, graphics=0)
 
-    def writer(page_no: int) -> Any:
-        if page_no not in writers:
-            writers[page_no] = fitz.TextWriter(doc[page_no].rect)
-        return writers[page_no]
+    def writer(page_no: int, color: tuple[float, float, float]) -> Any:
+        key = (page_no, color)
+        if key not in writers:
+            writers[key] = fitz.TextWriter(doc[page_no].rect)
+        return writers[key]
 
     # --- 글자 ---------------------------------------------------------
     for key, text in filled.texts.items():
@@ -109,11 +155,15 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         text = format_field_text(spec, text)
         box = spec["box"]
         width = box[2] - box[0]
-        size = fit_size(font, text, float(spec["size"]), width)
+        height = box[3] - box[1]
+        size = min(float(spec["size"]), height * 0.82) if spec.get("auto_date") else float(spec["size"])
+        size = fit_size(font, text, size, width)
         x = float(spec["x"])
         if spec.get("align") == "center":
             x = box[0] + (width - font.text_length(text, size)) / 2
-        writer(int(spec["page"])).append((x, float(spec["y"])), text, font=font, fontsize=size)
+        page_no = int(spec["page"])
+        color = PRINT_INK if spec.get("auto_date") else INK
+        writer(page_no, color).append((x, float(spec["y"])), text, font=font, fontsize=size)
 
     # --- 체크 ---------------------------------------------------------
     for key in filled.checks:
@@ -123,6 +173,19 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             # 줄 모르니 남긴다 — 다만 선택 기능이라 예외로 세우지는 않는다.
             continue
         box = spec["box"]
+        if spec.get("control") == "radio_text":
+            pad_x = max(1.3, (float(box[2]) - float(box[0])) * 0.12)
+            pad_y = max(1.2, (float(box[3]) - float(box[1])) * 0.16)
+            outer_width = float(box[2]) - float(box[0]) + 2 * pad_x
+            outer_height = float(box[3]) - float(box[1]) + 2 * pad_y
+            inset_x = outer_width * 0.03
+            inset_y = outer_height * 0.05
+            circle = fitz.Rect(
+                float(box[0]) - pad_x + inset_x, float(box[1]) - pad_y + inset_y,
+                float(box[2]) + pad_x - inset_x, float(box[3]) + pad_y - inset_y,
+            )
+            doc[int(spec["page"])].draw_oval(circle, color=INK, width=0.9, overlay=True)
+            continue
         height = float(box[3] - box[1])
         size = max(height * CHECK_HEIGHT_RATIO, CHECK_MIN_HEIGHT_PT)
         center_x = (float(box[0]) + float(box[2])) / 2
@@ -148,8 +211,8 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             (mark_x, center_y + semantic_size * 0.35), "✓", font=font, fontsize=semantic_size
         )
 
-    for page_no, text_writer in writers.items():
-        text_writer.write_text(doc[page_no], color=INK)
+    for (page_no, color), text_writer in writers.items():
+        text_writer.write_text(doc[page_no], color=color)
     for page_no, text_writer in check_text_writers.items():
         text_writer.write_text(doc[page_no], color=INK, render_mode=3)
 

@@ -17,7 +17,7 @@
  *
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
 import {
   createApplication,
@@ -99,6 +99,7 @@ export default function ApplyFlow() {
   const [selectedSubsidyTypes, setSelectedSubsidyTypes] = useState(0)
   const [formContinuing, setFormContinuing] = useState(false)
   const [formError, setFormError] = useState('')
+  const saveQueue = useRef<Promise<void>>(Promise.resolve())
 
   /** 사업을 고른 시점에 신청 건을 만든다. 이후 단계마다 부분 저장한다. */
   const pickProgram = (picked: Program) => {
@@ -117,11 +118,11 @@ export default function ApplyFlow() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }
 
-  const save = (body: { form1?: unknown; self_check?: unknown; form5?: unknown }) => {
-    if (appId === null) return
-    patchApplication(appId, body).catch(() => {
-      /* 데모에서는 임시저장 실패를 조용히 넘긴다 */
-    })
+  const save = (body: { form1?: unknown; self_check?: unknown; form5?: unknown }): Promise<void> => {
+    if (appId === null) return Promise.resolve()
+    const next = saveQueue.current.catch(() => undefined).then(() => patchApplication(appId, body)).then(() => undefined)
+    saveQueue.current = next.catch(() => undefined)
+    return saveQueue.current
   }
 
   const continueFromForms = async () => {
@@ -303,7 +304,20 @@ export default function ApplyFlow() {
           onSignMode={setSignMode}
           onFlush={async () => {
             if (appId === null) return
+            await saveQueue.current
             await patchApplication(appId, { form1, self_check: answers, form5 })
+            const values: Record<ConsentType, ConsentPayload> = {
+              privacy: { consent_type: 'privacy', agreed: consent.privacy === '동의함' },
+              unique_id: { consent_type: 'unique_id', agreed: consent.uniqueId === '동의함' },
+              third_party: { consent_type: 'third_party', agreed: consent.thirdParty === '동의함' },
+              admin_info: {
+                consent_type: 'admin_info',
+                agreed: form5.agree === '동의함',
+                signature_data_url: signMode === '전자서명' ? form5.signature : undefined,
+                signature_kind: signMode === '전자서명' ? 'electronic' : 'handwritten',
+              },
+            }
+            await postConsents(appId, consentTypesOf(program).map((type) => values[type]))
           }}
           onChangedSubsidy={(state) => { setSelectedSubsidyTypes(state.selections.length); setChecklistKey((key) => key + 1) }}
           onContinue={() => void continueFromForms()}

@@ -87,7 +87,9 @@
       ],
       "anchor": "20",
       "mode": "after",
-      "format": "yy"
+      "format": "yy",
+      "auto_date": true,
+      "date_part": "year"
     },
     "consent.form3.month": {
       "type": "text",
@@ -104,7 +106,9 @@
       ],
       "anchor": "년",
       "mode": "after",
-      "format": "none"
+      "format": "none",
+      "auto_date": true,
+      "date_part": "month"
     },
     "consent.form3.day": {
       "type": "text",
@@ -121,7 +125,9 @@
       ],
       "anchor": "년 월",
       "mode": "after",
-      "format": "none"
+      "format": "none",
+      "auto_date": true,
+      "date_part": "day"
     }
   },
   "masks": []

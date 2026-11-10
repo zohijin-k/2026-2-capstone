@@ -8,6 +8,10 @@
 .pdf-form-row--empty { border-left: 4px solid var(--border-strong); }
 .pdf-form-row__info { display: flex; flex-direction: column; gap: 4px; }
 .pdf-form-row__info span { color: var(--muted); font-size: 12px; }
+.pdf-form-row__thumb { flex: 0 0 44px; width: 44px; height: 58px; padding: 0; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 3px; background: #fff; cursor: zoom-in; }
+.pdf-form-row__thumb img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.pdf-form-row__thumb:disabled { cursor: default; }
+.pdf-form-row__info { flex: 1; min-width: 0; }
 .pdf-form-row__actions { display: flex; gap: 8px; }
 .pdf-forms__selfcheck { display: grid; gap: 12px; }
 .pdf-forms__selfcheck h3 { margin: 0; }
@@ -26,12 +30,19 @@
 .pdf-form__text { padding: 0 2px; border: 1px solid rgb(51 83 147 / 25%); border-radius: 2px; background: rgb(242 247 255 / 72%); color: #101d42; line-height: 1.1; z-index: 2; }
 .pdf-form__text:focus { outline: 2px solid var(--brand); z-index: 3; }
 .pdf-form__text[readonly] { background: rgb(239 242 246 / 65%); }
+.pdf-form__auto-date { position: absolute; display: flex; align-items: center; justify-content: center; box-sizing: border-box; overflow: visible; padding: 0; border: 0; background: transparent; color: #141414; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; font-weight: 400; white-space: nowrap; pointer-events: auto; user-select: none; z-index: 2; }
 .pdf-form__text.is-missing, .pdf-form__check.is-missing, .pdf-form__sign.is-missing { outline: 2px solid #c33; outline-offset: 1px; }
 .pdf-form__check { display: block; z-index: 4; overflow: visible; }
 .pdf-form__check input { appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; border: 1px solid transparent; }
 .pdf-form__check-mark { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); overflow: visible; pointer-events: none; z-index: 1; }
 .pdf-form__check-mark path { fill: none; stroke: #112861; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
 .pdf-form__check input:focus-visible { outline: 2px solid var(--brand); }
+.pdf-form__radio-text { position: absolute; display: block; z-index: 5; overflow: visible; pointer-events: auto; }
+.pdf-form__radio-text input { appearance: none; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border: 0; opacity: 0; cursor: pointer; }
+.pdf-form__radio-text input:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; opacity: 1; }
+.pdf-form__radio-oval { position: absolute; overflow: visible; pointer-events: none; }
+.pdf-form__radio-oval ellipse { fill: none; stroke: #112861; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.pdf-form__radio-text.is-missing { outline: 1.5px dashed #c33; outline-offset: 2px; }
 .pdf-form__sign { display: grid; place-items: center; padding: 0; border: 1px dashed rgb(50 70 120 / 38%); background: rgb(238 244 255 / 36%); cursor: pointer; z-index: 4; }
 .pdf-form__sign img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .pdf-form__sign span { font-size: 11px; color: #384a73; }
@@ -46,4 +57,11 @@
 .pdf-form__missing { padding: 12px 18px; background: #fff8f5; border-top: 1px solid #eed0ca; }
 .pdf-form__missing ul { display: flex; flex-wrap: wrap; gap: 6px 16px; padding-left: 18px; margin: 6px 0 0; }
 .pdf-form__missing button { border: 0; padding: 0; color: #a22; text-decoration: underline; background: transparent; cursor: pointer; }
+.pdf-form__sign-pad .signature-box { display: inline-flex; align-items: center; gap: 12px; }
+.pdf-form__sign-pad .signature-frame { position: relative; display: block; overflow: hidden; border: 1px solid var(--border-strong); border-radius: 5px; background: #fff; }
+.pdf-form__sign-pad .signature-pad { display: block; touch-action: none; cursor: crosshair; }
+.pdf-form__sign-pad .signature-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); pointer-events: none; }
+.pdf-form__sign-pad .signature-actions { display: flex; align-items: center; gap: 8px; }
+.modal--viewer .modal__body:has(.pdf-form__scroll) { display: flex; flex-direction: column; min-height: 0; }
+.modal--viewer .pdf-form__scroll { flex: 1 1 auto; min-height: 180px; height: auto; }
 @media (max-width: 900px) { .pdf-form-row { align-items: flex-start; flex-direction: column; } .pdf-form-row__actions { flex-wrap: wrap; } }

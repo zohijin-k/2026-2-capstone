@@ -22,6 +22,20 @@ def _chars(page):
     ]
 
 
+def _text_glyph_boxes(page):
+    grouped = []
+    for block in page.get_text("rawdict")["blocks"]:
+        for line in block.get("lines", []):
+            chars = [char for span in line["spans"] for char in span["chars"]]
+            text = "".join(char["c"] for char in chars)
+            if text:
+                grouped.append((text, pymupdf.Rect(
+                    min(char["bbox"][0] for char in chars), min(char["bbox"][1] for char in chars),
+                    max(char["bbox"][2] for char in chars), max(char["bbox"][3] for char in chars),
+                ), chars))
+    return grouped
+
+
 def _has_source_square(page, rect: pymupdf.Rect) -> bool:
     if any(char in {"□", "☐"} and rect.intersects(box) for char, box in _chars(page)):
         return True
@@ -90,17 +104,39 @@ def run() -> None:
                     if overlaps:
                         failures.append(f"{key}.{name}: 글자 칸에 가림 처리되지 않은 원본 글자가 겹침 ({''.join(overlaps[:8])})")
                 if field["type"] == "check":
-                    if field.get("source_mark") == "text-choice":
-                        target = field.get("label", "")
-                        has_label = any(
-                            word[4].startswith(target) and word[0] >= rect.x1 - 0.5
-                            and word[1] <= rect.y1 + 2 and word[3] >= rect.y0 - 2
-                            for word in template[field["page"]].get_text("words")
-                        )
-                        if not has_label:
-                            failures.append(f"{key}.{name}: 원본 예/아니오 문구와 선택칸 위치 불일치")
+                    if field.get("control") == "radio_text":
+                        glyph_lines = _text_glyph_boxes(template[field["page"]])
+                        def glyph_box(label: str, y: float):
+                            for text, line_box, chars in glyph_lines:
+                                offset = text.find(label)
+                                if offset < 0 or abs(line_box.y0 - y) > 2:
+                                    continue
+                                selected = [pymupdf.Rect(char["bbox"]) for char in chars[offset:offset + len(label)]]
+                                return pymupdf.Rect(
+                                    min(box.x0 for box in selected), min(box.y0 for box in selected),
+                                    max(box.x1 for box in selected), max(box.y1 for box in selected),
+                                )
+                            return None
+                        target_box = glyph_box(field.get("label", ""), rect.y0)
+                        if target_box is None or not (
+                            rect.x0 <= target_box.x0 + 0.02 and rect.y0 <= target_box.y0 + 0.02
+                            and rect.x1 >= target_box.x1 - 0.02 and rect.y1 >= target_box.y1 - 0.02
+                        ):
+                            failures.append(f"{key}.{name}: 라디오 영역이 원본 글자 bbox를 감싸지 않음")
+                        opposite = "아니오" if field.get("label") == "예" else "예"
+                        opposite_box = glyph_box(opposite, rect.y0)
+                        if opposite_box is not None and rect.intersects(opposite_box):
+                            failures.append(f"{key}.{name}: 라디오 영역이 옆 글자와 겹침")
                     elif not _has_source_square(template[field["page"]], rect):
                         failures.append(f"{key}.{name}: 좌표 안에서 원본 체크 상자(□)를 찾지 못함")
+            if key == "서식2":
+                for row in range(1, 9):
+                    yes = spec["fields"].get(f"self_check.{row}.예")
+                    no = spec["fields"].get(f"self_check.{row}.아니오")
+                    if not yes or not no:
+                        failures.append(f"서식2: {row}번 행에 예/아니오 라디오 쌍이 없음")
+                    elif pymupdf.Rect(*yes["box"]).intersects(pymupdf.Rect(*no["box"])):
+                        failures.append(f"서식2: {row}번 행의 예/아니오 글자 영역이 겹침")
             positioned_fields = list(spec["fields"].items())
             for index, (name, field) in enumerate(positioned_fields):
                 a = pymupdf.Rect(*field["box"])

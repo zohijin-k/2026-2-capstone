@@ -559,7 +559,9 @@
       ],
       "anchor": "2026년",
       "mode": "after",
-      "format": "none"
+      "format": "none",
+      "auto_date": true,
+      "date_part": "month"
     },
     "job.applicationDay": {
       "type": "text",
@@ -576,7 +578,9 @@
       ],
       "anchor": "2026년 월",
       "mode": "after",
-      "format": "none"
+      "format": "none",
+      "auto_date": true,
+      "date_part": "day"
     },
     "job.signature": {
       "type": "image",
