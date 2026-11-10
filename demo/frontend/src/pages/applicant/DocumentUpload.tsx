@@ -7,7 +7,7 @@
  *   근로유형 선택 → 본인에게 필요한 서류만 남는다 (R3.2)
  *   슬롯마다  [발급처 바로가기] [발급일 직접 입력] → [파일 업로드]
  *            발급일 입력을 받는 서류는 날짜를 다 적어야 파일을 고를 수 있다 (2차 검증의 기준값)
- *   업로드 즉시 적합 / 부적합 / 확인필요 + 사유 + 해결 방법 + 재업로드 (R2.1·R2.2)
+ *   업로드 즉시 확인 안내 + 해결 방법 + 재업로드 (R2.1·R2.2)
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -18,21 +18,17 @@ import {
   putDocContext,
   uploadDocument,
   type Checklist,
+  type DocContext,
   type DocRequirementRow,
-  type DocStatus,
   type UploadedDocument,
 } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
 import Modal from '../../components/Modal.tsx'
-import { Checks, DateTriple } from '../../forms/FormSheet.tsx'
+import PdfPages from '../../components/PdfPages.tsx'
+import StatusBadge from '../../components/StatusBadge.tsx'
+import { DateTriple } from '../../forms/FormSheet.tsx'
 import { EMPTY_YMD, isCompleteYMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './document-upload.css'
-
-const STATUS_LABEL: Record<DocStatus, string> = {
-  PASS: '적합',
-  FAIL: '부적합',
-  NEEDS_REVIEW: '확인필요',
-}
 
 const WORKPLACE_COUNTS = ['1개', '2개', '3개'] as const
 
@@ -43,17 +39,52 @@ const SHOW_TECH = new URLSearchParams(window.location.search).has('debug')
  * 판정 도장. 서류 접수 때 찍는 도장처럼 결과를 한 번에 보여준다.
  * 슬롯 머리 오른쪽에 하나만 둔다 — 상태를 여러 곳에서 반복하지 않는다.
  */
-function StatusStamp({ status }: { status: DocStatus }) {
-  return (
-    <span className={`dstamp dstamp--${status.toLowerCase()}`} role="status">
-      {STATUS_LABEL[status]}
-    </span>
-  )
-}
-
 /** 파일 형식 표시 (PDF·JPG·PNG). */
 function fileKind(name: string): string {
   return (name.split('.').pop() ?? '').toUpperCase().slice(0, 4) || 'FILE'
+}
+
+function isPdf(doc: UploadedDocument): boolean {
+  return (doc.file_format || doc.file_name).toLowerCase().endsWith('pdf')
+}
+
+function DocumentThumbnail({ doc, onClick }: { doc: UploadedDocument; onClick: () => void }) {
+  const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const pdf = isPdf(doc)
+  const extension = fileKind(doc.file_name)
+  const kind = extension === 'JPEG' ? 'JPG' : extension
+
+  return (
+    <button
+      type="button"
+      className="dresult__kind"
+      onClick={onClick}
+      aria-label={`${doc.file_name} 크게 보기`}
+    >
+      {!failed && (pdf ? (
+        <PdfPages
+          url={doc.file_url}
+          width={56}
+          maxHeight={76}
+          maxPages={1}
+          className={ready ? 'dresult__pages dresult__pages--ready' : 'dresult__pages'}
+          onReady={() => setReady(true)}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <img
+          className="dresult__image"
+          src={doc.file_url}
+          alt=""
+          onLoad={() => setReady(true)}
+          onError={() => setFailed(true)}
+        />
+      ))}
+      {(!ready || failed) && <span className="dresult__fallback">{kind}</span>}
+      {ready && !failed && <span className="dresult__badge">{kind}</span>}
+    </button>
+  )
 }
 
 function DocumentResult({
@@ -69,14 +100,7 @@ function DocumentResult({
   return (
     <div className={`dresult dresult--${status.toLowerCase()}`}>
       <div className="dresult__file">
-        <button
-          type="button"
-          className="dresult__kind"
-          onClick={() => setViewing(true)}
-          aria-label={`${doc.file_name} 크게 보기`}
-        >
-          {fileKind(doc.file_name)}
-        </button>
+        <DocumentThumbnail key={doc.file_url} doc={doc} onClick={() => setViewing(true)} />
         <div className="dresult__body">
           <button type="button" className="dresult__name" onClick={() => setViewing(true)}>
             {doc.file_name}
@@ -91,7 +115,7 @@ function DocumentResult({
               ))}
             </dl>
           )}
-          {/* 적합이면 서류 종류는 이미 맞은 것이라 다시 말하지 않는다 */}
+          {/* 확인이 필요한 경우에만 판독된 서류 종류를 함께 보여준다 */}
           {status !== 'PASS' && doc.detected_doc_type && (
             <span className="dresult__detected">읽은 서류 종류: {doc.detected_doc_type}</span>
           )}
@@ -215,6 +239,15 @@ function SlotCard({
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
   const dateReady = !item.check_declared_date || isCompleteYMD(declared)
+  const issueISO = isCompleteYMD(declared) ? ymdToISO(declared) : ''
+  const current = new Date()
+  const todayISO = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-${String(current.getDate()).padStart(2, '0')}`
+  const basisLabel = item.date_basis_label || '발급일'
+  const dateWarning = issueISO && issueISO > todayISO
+    ? `${basisLabel}이 오늘 이후입니다. 다시 확인해 주세요.`
+    : issueISO && item.min_issue_date && issueISO < item.min_issue_date
+      ? `이 사업은 ${item.min_issue_date.replaceAll('-', '.')} 이후 ${basisLabel}만 인정합니다. 서류를 확인해 주세요.`
+      : ''
 
   return (
     <li
@@ -237,7 +270,7 @@ function SlotCard({
           )}
         </div>
         {status ? (
-          <StatusStamp status={status} />
+          <StatusBadge status={status} audience="applicant" />
         ) : (
           item.issuer_url && (
             <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
@@ -246,6 +279,8 @@ function SlotCard({
           )
         )}
       </div>
+
+      <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
 
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
       {!doc && (
@@ -263,10 +298,11 @@ function SlotCard({
           />
           {item.check_declared_date && (
             <label className="dslot__declared">
-              <span className="dslot__declared-label">서류에 적힌 발급일</span>
+              <span className="dslot__declared-label">서류에 적힌 {basisLabel}</span>
               <DateTriple value={declared} onChange={onDeclaredChange} ariaPrefix={item.label} />
             </label>
           )}
+          {dateWarning && <p className="dslot__date-warning" role="status">{dateWarning}</p>}
           <button
             type="button"
             className="btn btn--primary dslot__upload"
@@ -276,7 +312,7 @@ function SlotCard({
             {busy ? '읽는 중…' : '파일 업로드'}
           </button>
           {!dateReady && !busy && (
-            <p className="dslot__gate">발급일을 입력하면 파일을 올릴 수 있습니다.</p>
+            <p className="dslot__gate">{basisLabel}을 입력하면 파일을 올릴 수 있습니다.</p>
           )}
         </div>
       )}
@@ -302,10 +338,33 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
   const context = checklist?.context ?? {}
 
   /** 근로유형 등이 바뀌면 서버가 다시 조립한 체크리스트로 통째로 갈아끼운다. */
-  const changeContext = (patch: Record<string, unknown>) => {
-    putDocContext(applicationId, { ...context, ...patch })
-      .then(setChecklist)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+  const changeContext = async (patch: Partial<DocContext>) => {
+    const proofRows = checklist?.items.filter((item) =>
+      item.slot_key.startsWith('work_proof') || item.slot_key === 'labor_contract'
+    ) ?? []
+    const changesWorkTypeOrCount = (['work_category', 'workplace_count'] as const)
+      .some((key) => patch[key] !== undefined && patch[key] !== context[key])
+    const changesAdminContract = patch.admin_fixed_term !== undefined &&
+      patch.admin_fixed_term !== context.admin_fixed_term
+    const proofDocs = proofRows
+      .filter((item) => changesWorkTypeOrCount || (changesAdminContract && item.slot_key === 'labor_contract'))
+      .flatMap((item) => item.documents)
+    if (proofDocs.length > 0 &&
+      !window.confirm('올리신 근로확인서류가 빠집니다. 바꾸시겠어요?')) return
+
+    setError('')
+    setBusySlot('work-context')
+    try {
+      if (proofDocs.length > 0) {
+        for (const doc of proofDocs) await deleteDocument(applicationId, doc.document_id)
+      }
+      setChecklist(await putDocContext(applicationId, { ...context, ...patch }))
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e))
+      await refresh()
+    } finally {
+      setBusySlot('')
+    }
   }
 
   const refresh = () => fetchChecklist(applicationId).then(setChecklist)
@@ -333,6 +392,7 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
 
   const uploadItems = checklist.items.filter((i) => i.upload)
   const onlineItems = checklist.items.filter((i) => !i.upload)
+  const hasAdminConsent = checklist.items.some((i) => i.slot_key === 'admin_info_consent')
 
   return (
     <div className="dupload">
@@ -344,27 +404,43 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
           <p className="dupload__hint">
             근로확인서류는 5종 중 1종만 내면 됩니다. 아래에서 고르면 본인에게 필요한 서류만 남습니다.
           </p>
-          <Checks
-            name="work_category"
-            options={checklist.work_categories}
-            value={context.work_category ?? ''}
-            onChange={(v) => changeContext({ work_category: v })}
-            cols={2}
-          />
+          <fieldset className="dupload__worktypes" disabled={busySlot === 'work-context'}>
+            <legend>근로유형 선택</legend>
+            {checklist.work_categories.map((category, index) => {
+              const id = `work-category-${applicationId}-${index}`
+              return (
+                <label key={category} htmlFor={id}>
+                  <input
+                    id={id}
+                    type="radio"
+                    name={`work-category-${applicationId}`}
+                    value={category}
+                    checked={context.work_category === category}
+                    onChange={() => void changeContext({ work_category: category })}
+                  />
+                  <span>{category}</span>
+                </label>
+              )
+            })}
+          </fieldset>
           <div className="dupload__opts">
-            <label>
-              <input
-                type="checkbox"
-                checked={!!context.admin_fixed_term}
-                onChange={(e) => changeContext({ admin_fixed_term: e.target.checked })}
-              />
-              행정기관 기간제 근로자입니다 (근로계약서 사본 추가)
-            </label>
+            {context.work_category === '직장가입자' && (
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!context.admin_fixed_term}
+                  disabled={busySlot === 'work-context'}
+                  onChange={(e) => void changeContext({ admin_fixed_term: e.target.checked })}
+                />
+                행정기관 기간제 근로자입니다 (근로계약서 사본 추가)
+              </label>
+            )}
             <label>
               근무 사업장 수
               <select
                 value={`${context.workplace_count ?? 1}개`}
-                onChange={(e) => changeContext({ workplace_count: Number(e.target.value[0]) })}
+                disabled={busySlot === 'work-context'}
+                onChange={(e) => void changeContext({ workplace_count: Number(e.target.value[0]) })}
               >
                 {WORKPLACE_COUNTS.map((c) => (
                   <option key={c} value={c}>
@@ -372,14 +448,6 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
                   </option>
                 ))}
               </select>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={!!context.handwritten_admin_consent}
-                onChange={(e) => changeContext({ handwritten_admin_consent: e.target.checked })}
-              />
-              서식5를 자필서명 스캔본으로 제출하겠습니다
             </label>
           </div>
         </section>
@@ -419,15 +487,30 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
         ))}
       </ul>
 
-      {onlineItems.length > 0 && (
+      {(onlineItems.length > 0 || hasAdminConsent) && (
         <section className="dupload__online">
           <h3>업로드하지 않아도 되는 서류</h3>
           <ul>
-            {onlineItems.map((i) => (
+            {onlineItems.filter((i) => i.slot_key !== 'admin_info_consent').map((i) => (
               <li key={i.slot_key}>
                 <strong>{i.label}</strong> — {i.fulfilled_by}(으)로 대체되었습니다.
               </li>
             ))}
+            {hasAdminConsent && (
+              <li>
+                <strong>행정정보 공동이용 사전동의서 (서식5)</strong>
+                {' — '}{context.handwritten_admin_consent ? '자필서명 스캔본 업로드를 선택했습니다.' : '화면 전자서명으로 대체됩니다.'}
+                <label className="dupload__handwritten">
+                  <input
+                    type="checkbox"
+                    checked={!!context.handwritten_admin_consent}
+                    disabled={busySlot === 'work-context'}
+                    onChange={(e) => void changeContext({ handwritten_admin_consent: e.target.checked })}
+                  />
+                  서식5를 자필서명 스캔본으로 제출하겠습니다
+                </label>
+              </li>
+            )}
           </ul>
         </section>
       )}

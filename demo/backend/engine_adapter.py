@@ -25,7 +25,7 @@ if str(REPO_ROOT) not in sys.path:
 from engine import config as engine_config  # noqa: E402
 from engine import models as engine_models  # noqa: E402
 from engine.models import RequiredDocumentSpec  # noqa: E402
-from engine.pipeline import run_pipeline  # noqa: E402
+from engine.pipeline import run_pipeline as _run_pipeline  # noqa: E402
 from engine.stage1_document_check import (  # noqa: E402
     check_single_document as engine_check_single_document,
 )
@@ -216,6 +216,16 @@ def to_engine_documents(rows: list[dict[str, Any]]) -> list:
             )
         )
     return documents
+
+
+def run_pipeline(applicant, documents, requirements=None):
+    """신청서 버전에서 만든 체크리스트 기준을 엔진 1단계에 전달한다."""
+    specs = ([RequiredDocumentSpec(
+        doc_type=str(req.doc_type), required=req.required,
+        requires_signature=req.requires_signature, min_issue_date=req.min_issue_date,
+        max_issue_date=req.max_issue_date, check_declared_date=req.check_declared_date,
+    ) for req in requirements] if requirements is not None else None)
+    return _run_pipeline(applicant, documents, specs)
 
 
 def electronic_consent_row(agreed_at: date, signature_path: str | None) -> dict[str, Any]:

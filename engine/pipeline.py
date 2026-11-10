@@ -75,8 +75,8 @@ def build_review_payload(applicant: Applicant, documents: list[Document], final:
     }
 
 
-def run_pipeline(applicant: Applicant, documents: list[Document]) -> FinalResult:
-    stage1 = run_stage1(applicant, documents)
+def run_pipeline(applicant: Applicant, documents: list[Document], required_documents=None) -> FinalResult:
+    stage1 = run_stage1(applicant, documents, required_documents)
 
     # 서류 자체가 확정 FAIL이면 2단계(자격 심사)까지 굳이 안 돌려도 되지만,
     # "부적합 사유를 한 번에 다 안내"하는 게 재문의를 줄인다는 콜센터 데이터 근거(반복문의 다수)에 따라

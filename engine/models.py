@@ -27,6 +27,7 @@ class ReasonCode(str, Enum):
     LOW_IMAGE_QUALITY = "LOW_IMAGE_QUALITY"              # 화질 문제로 판독 불가
     LOW_OCR_CONFIDENCE = "LOW_OCR_CONFIDENCE"            # OCR 신뢰도 낮음 -> 검토 필요
     DOCUMENT_ISSUED_TOO_EARLY = "DOCUMENT_ISSUED_TOO_EARLY"  # 발급일이 인정 기준일(컷오프) 이전
+    DOCUMENT_ISSUED_AFTER_APPLICATION = "DOCUMENT_ISSUED_AFTER_APPLICATION"
     DECLARED_DATE_MISMATCH = "DECLARED_DATE_MISMATCH"    # 사용자가 직접 입력한 발급일 != 서류상 발급일
     DECLARED_DATE_UNCERTAIN = "DECLARED_DATE_UNCERTAIN"  # 위와 같으나 판독 신뢰도가 낮음 -> 오독일 수 있어 검토 필요
     UNREADABLE_FILE = "UNREADABLE_FILE"                  # 파일 자체가 손상/암호화 등
@@ -72,6 +73,7 @@ class RequiredDocumentSpec:
     required: bool = True
     requires_signature: bool = False
     min_issue_date: Optional[date] = None   # 이 날짜 '이후' 발급분만 인정 (예: 공고일/모집 시작일)
+    max_issue_date: Optional[date] = None   # 신청일 기준 기간 조건에서 미래 발급일 제외
     check_declared_date: bool = False       # True면 사용자 직접입력 발급일과 OCR값 대조
 
 

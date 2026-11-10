@@ -76,6 +76,47 @@
   margin-bottom: 16px;
 }
 
+.dupload__worktypes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.dupload__worktypes legend {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dupload__worktypes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.dupload__worktypes input,
+.dupload__opts input,
+.dupload__handwritten input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--brand);
+  flex: none;
+}
+
+.dupload__worktypes input:focus-visible,
+.dupload__opts input:focus-visible,
+.dupload__handwritten input:focus-visible,
+.dupload__opts select:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  outline-offset: 2px;
+}
+
 .dupload__opts {
   display: flex;
   flex-wrap: wrap;
@@ -88,6 +129,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  cursor: pointer;
+}
+
+.dupload__handwritten {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 6px;
   cursor: pointer;
 }
 
@@ -150,7 +199,7 @@
 }
 
 .dslot {
-  /* 상태 색. 왼쪽 가장자리 띠와 도장이 같은 색을 쓴다. */
+  /* 상태 색. 왼쪽 가장자리 띠와 배지가 같은 색 체계를 쓴다. */
   --state: transparent;
   position: relative;
   border: 1px solid var(--border);
@@ -170,6 +219,7 @@
 
 .dslot--fail {
   --state: var(--fail);
+  border-color: var(--fail);
 }
 
 .dslot--needs_review {
@@ -234,54 +284,6 @@
   font-size: 12.5px;
   color: var(--brand);
   text-underline-offset: 3px;
-}
-
-/* ---- 판정 도장 ---- */
-/* 서류 접수 도장. 이 화면에서 유일하게 힘을 주는 요소다. */
-
-.dstamp {
-  --stamp: var(--success);
-  flex: none;
-  width: 60px;
-  height: 60px;
-  margin: -6px -2px -8px 0;
-  border-radius: 50%;
-  border: 2px solid var(--stamp);
-  box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 4px var(--stamp);
-  color: var(--stamp);
-  display: grid;
-  place-items: center;
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  transform: rotate(-9deg);
-  animation: dstamp-in 260ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
-}
-
-.dstamp--fail {
-  --stamp: var(--fail);
-}
-
-.dstamp--needs_review {
-  --stamp: var(--warning);
-  font-size: 12px;
-}
-
-@keyframes dstamp-in {
-  from {
-    opacity: 0;
-    transform: rotate(-9deg) scale(1.5);
-  }
-  to {
-    opacity: 1;
-    transform: rotate(-9deg) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dstamp {
-    animation: none;
-  }
 }
 
 /* ---- 올리기 전: 발급일 → 파일 업로드 ---- */
@@ -374,6 +376,9 @@
   color: var(--muted);
 }
 
+.dslot__criteria { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.dslot__date-warning { flex-basis: 100%; margin: 4px 0; color: #b45309; font-size: 12px; }
+
 /* ---- 올린 뒤: 파일과 읽은 값 ---- */
 
 .dresult {
@@ -403,27 +408,74 @@
 }
 
 .dresult__kind {
+  position: relative;
   flex: none;
-  width: 38px;
-  height: 44px;
+  width: 56px;
+  height: 76px;
   border-radius: 4px;
   border: 1px solid var(--border-strong);
-  background: var(--surface-subtle);
-  color: #555;
-  font-size: 10.5px;
-  font-weight: 800;
-  display: grid;
-  place-items: end center;
-  padding: 0 0 6px;
+  background: #fff;
+  color: #fff;
+  padding: 0;
+  overflow: hidden;
   font-family: inherit;
   cursor: zoom-in;
-  transition: border-color var(--ease), color var(--ease), background var(--ease);
+  transition: border-color var(--ease);
 }
 
 .dresult__kind:hover {
   border-color: var(--brand);
-  color: var(--brand);
-  background: var(--brand-tint);
+}
+
+.dresult__image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
+.dresult__pages {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  overflow: hidden;
+}
+
+.dresult__pages .pdfpages__loading,
+.dresult__pages .pdfpages__error {
+  display: none;
+}
+
+.dresult__pages .pdfpages__page {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.dresult__badge {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 2px 4px;
+  background: rgb(31 56 100 / 82%);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.dresult__fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: end center;
+  padding-bottom: 6px;
+  background: var(--surface-subtle);
+  color: #555;
+  font-size: 10.5px;
+  font-weight: 800;
 }
 
 .dresult__body {

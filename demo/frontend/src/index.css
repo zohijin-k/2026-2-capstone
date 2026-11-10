@@ -45,23 +45,22 @@ body {
   line-height: 1.6;
 }
 
-/* 판정 배지 — 업로드·최종확인·마이페이지 세 화면이 같은 색을 쓴다.
-   같은 판정이 화면마다 다른 색으로 보이면 신청자가 다른 결과로 읽는다. */
-.dstatus {
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 11px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
-  padding: 2px 10px;
-  color: #fff;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
-.dstatus--pass {
-  background: var(--success);
-}
-
-.dstatus--fail {
-  background: var(--fail);
-}
-
-.dstatus--needs_review {
-  background: var(--warning);
-}
+.status-badge--pass { color: var(--success); background: var(--success-tint); }
+.status-badge--fail { color: var(--fail); background: var(--fail-tint); }
+.status-badge--needs_review { color: #805d00; background: var(--warning-tint); }
+.status-badge__icon { font-size: 13px; font-weight: 900; line-height: 1; }
+.status-badge--compact { gap: 4px; padding: 2px 7px; font-size: 11px; }

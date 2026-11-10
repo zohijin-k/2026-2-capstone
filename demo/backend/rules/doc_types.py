@@ -65,7 +65,10 @@ ISSUER_LINKS: dict[DocType, tuple[str, str]] = {
     DocType.DAILY_WORK_RECORD: ("고용산재보험 토탈서비스", "https://total.comwel.or.kr"),
     DocType.BIZ_REG_PROOF: ("정부24", "https://www.gov.kr"),
     DocType.FARM_BIZ_CERT: ("정부24", "https://www.gov.kr"),
-    DocType.FISHERY_BIZ_CERT: ("관할 수산청", ""),
+    DocType.FISHERY_BIZ_CERT: (
+        "정부24",
+        "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=11920000124",
+    ),
 }
 
 

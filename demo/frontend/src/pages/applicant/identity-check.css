@@ -49,6 +49,11 @@
   box-sizing: border-box;
 }
 
+.idcheck__phone-error {
+  color: #c00;
+  font-size: 12.5px;
+}
+
 .idcheck .form-date {
   display: inline-flex;
   align-items: center;

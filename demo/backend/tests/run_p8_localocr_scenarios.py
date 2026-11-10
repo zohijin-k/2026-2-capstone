@@ -30,6 +30,7 @@ from ..ocr import read_document
 from ..ocr.localocr import ENGINE_ENV
 from ..rules.doc_check import check_document
 from ..rules.doc_types import DocType
+from ..rules.identity import Identity, compare
 from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS
 from ..rules.required_docs import ApplicantDocInput, WorkCategory, build_checklist, find_slot
 
@@ -197,6 +198,98 @@ def test_title_with_parentheses(tmp: Path) -> None:
     check("등본 구분", ocr.detected_doc_type, DocType.RESIDENT_CERTIFICATE)
 
 
+def make_payment_text_pdf(path: Path) -> Path:
+    """열 정렬을 포함한 가상 텍스트 PDF. 추출기 위치는 이 테스트 문서에서만 정한다."""
+    import fitz
+
+    doc = fitz.open()
+    page = doc.new_page()
+    writer = fitz.TextWriter(page.rect)
+    font = fitz.Font("cjk")
+    rows = [
+        (60, 80, "건강보험료 납부확인서"),
+        (60, 110, "성명 김전북"),
+        (60, 140, "생년월일 1999.01.01"),
+        (60, 170, "발급일 2026.11.10"),
+        (60, 200, "가입구분 직장가입자"),
+        (60, 250, "년월"), (240, 250, "고지금액"), (420, 250, "납부금액"),
+    ]
+    for y, (month, billed, paid) in zip((280, 310, 340), (
+            ("2025.10", "100,000", "90,000"),
+            ("2025.11", "110,000", "100,000"),
+            ("2025.12", "120,000", "110,000"))):
+        rows.extend([(60, y, month), (240, y, billed), (420, y, paid)])
+    for x, y, text in rows:
+        writer.append((x, y), text, font, fontsize=11)
+    writer.write_text(page)
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_nhis_extractors_text_and_image_pdf(tmp: Path) -> None:
+    print("\n[9] 건강보험료 납부확인서 — 텍스트·이미지 PDF 모두 engine_v2")
+    text_pdf = make_payment_text_pdf(tmp / "synthetic_payment_text.pdf")
+    os.environ[ENGINE_ENV] = "off"
+    text_result = read_document(str(text_pdf), DocType.NHIS_PAYMENT)
+    check("텍스트 PDF 계층", text_result.tier, "localocr")
+    check("텍스트 PDF 판별", text_result.detected_doc_type, DocType.NHIS_PAYMENT)
+    check("텍스트 PDF 보험료 필드", text_result.fields.get("건강보험료"), "110000")
+    checked, mismatched = compare(Identity("김전북", date(1999, 1, 1)), text_result.fields)
+    check("텍스트 PDF 본인 대조 항목", checked, ["성명", "생년월일"])
+    check("텍스트 PDF 본인 대조 불일치", mismatched, [])
+
+    from engine_v2.tests.test_nhis_extractors import payment_pages
+
+    words = payment_pages()[0][1].words
+    sx, sy = 2066 / 1000, 2923 / 1400
+    ocr_words = [type(word)(word.text, word.confidence,
+                            (word.bbox_px[0] * sx, word.bbox_px[1] * sy,
+                             word.bbox_px[2] * sx, word.bbox_px[3] * sy)) for word in words]
+    image_pdf = make_image_pdf(tmp / "synthetic_payment_image.pdf", pages=1)
+    install_fake_ocr([ocr_words])
+    image_result = read_document(str(image_pdf), DocType.NHIS_PAYMENT)
+    check("이미지 PDF 계층", image_result.tier, "localocr")
+    check("이미지 PDF 판별", image_result.detected_doc_type, DocType.NHIS_PAYMENT)
+    check("이미지 PDF 보험료 필드", image_result.fields.get("건강보험료"), "110000")
+    checked, mismatched = compare(Identity("김전북", date(1999, 1, 1)), image_result.fields)
+    check("이미지 PDF 본인 대조 항목", checked, ["성명", "생년월일"])
+    check("이미지 PDF 본인 대조 불일치", mismatched, [])
+
+    acquisition_lines = [
+        "건강보험 자격득실확인서",
+        "성명 김전북",
+        "생년월일 1999.01.01",
+        "발급일 2026.11.10",
+        "조회기간 2020.01.01 ~ 2026.11.10",
+        "가입자구분 자격취득일 자격상실일 사업장명칭",
+        "직장가입자 2018.01.01 가상사업장",
+    ]
+    text_acquisition = make_text_pdf(tmp / "synthetic_acquisition_text.pdf", acquisition_lines)
+    os.environ[ENGINE_ENV] = "off"
+    acquisition_text_result = read_document(str(text_acquisition), DocType.NHIS_ACQUISITION_LOSS)
+    check("자격득실 텍스트 PDF 계층", acquisition_text_result.tier, "localocr")
+    check("자격득실 텍스트 PDF 판별", acquisition_text_result.detected_doc_type, DocType.NHIS_ACQUISITION_LOSS)
+    check("자격득실 텍스트 PDF 취득일", acquisition_text_result.fields.get("취득일"), "2018-01-01")
+    checked, mismatched = compare(Identity("김전북", date(1999, 1, 1)), acquisition_text_result.fields)
+    check("자격득실 텍스트 PDF 본인 대조", (checked, mismatched), (["성명", "생년월일"], []))
+
+    from engine_v2.tests.test_nhis_extractors import acquisition_pages
+
+    words = acquisition_pages()[0][1].words
+    ocr_words = [type(word)(word.text, word.confidence,
+                            (word.bbox_px[0] * sx, word.bbox_px[1] * sy,
+                             word.bbox_px[2] * sx, word.bbox_px[3] * sy)) for word in words]
+    image_acquisition = make_image_pdf(tmp / "synthetic_acquisition_image.pdf", pages=1)
+    install_fake_ocr([ocr_words])
+    acquisition_image_result = read_document(str(image_acquisition), DocType.NHIS_ACQUISITION_LOSS)
+    check("자격득실 이미지 PDF 계층", acquisition_image_result.tier, "localocr")
+    check("자격득실 이미지 PDF 판별", acquisition_image_result.detected_doc_type, DocType.NHIS_ACQUISITION_LOSS)
+    check("자격득실 이미지 PDF 취득일", acquisition_image_result.fields.get("취득일"), "2018-01-01")
+    checked, mismatched = compare(Identity("김전북", date(1999, 1, 1)), acquisition_image_result.fields)
+    check("자격득실 이미지 PDF 본인 대조", (checked, mismatched), (["성명", "생년월일"], []))
+
+
 def test_declared_date_second_check(tmp: Path) -> None:
     print("\n[7] 발급일 직접 입력 2차 검증")
     slot = abstract_slot()
@@ -257,6 +350,7 @@ def main() -> int:
         test_misread_goes_to_review(tmp)
         test_fallthrough(tmp)
         test_title_with_parentheses(tmp)
+        test_nhis_extractors_text_and_image_pdf(tmp)
         test_declared_date_second_check(tmp)
         test_applicant_payload()
     finally:

@@ -85,6 +85,14 @@ def test_identity_api(client) -> None:
     check("서약 없이 → 400", identify(client, app_id, "김전북", "1999-01-01", pledge=False).status_code, 400)
     check("서명 없이 → 400", identify(client, app_id, "김전북", "1999-01-01", signature_data_url="").status_code, 400)
     check("미래 생년월일 → 400", identify(client, app_id, "김전북", "2999-01-01").status_code, 400)
+    invalid_phone_message = "010으로 시작하는 휴대폰 번호를 입력해 주세요."
+    invalid_prefix = identify(client, app_id, "김전북", "1999-01-01", phone="011-1234-5678")
+    check("011 시작 → 400", invalid_prefix.status_code, 400)
+    check("011 시작 오류 안내", invalid_prefix.json()["detail"], invalid_phone_message)
+    check("011-123-4567 (10자리) → 400",
+          identify(client, app_id, "김전북", "1999-01-01", phone="011-123-4567").status_code, 400)
+    check("010 10자리 → 400",
+          identify(client, app_id, "김전북", "1999-01-01", phone="0101234567").status_code, 400)
     r = identify(client, app_id, "김 전북", "1999-01-01")
     check("인증 → 200", r.status_code, 200)
     ident = r.json()["identity"]
@@ -149,9 +157,9 @@ def test_matching(client, tmp: Path) -> None:
 
 
 def test_samples_and_no_identity(client, tmp: Path) -> None:
-    print("\n[5] 시연용 샘플은 대조 제외")
+    print("\n[5] 시연용 건강보험 서류 — 인증된 본인 명의는 통과")
     app_id = new_app(client)
-    identify(client, app_id, "조테스트", "2001-01-01")
+    identify(client, app_id, "홍길동", "1999-01-01")
     client.put(f"/api/applications/{app_id}/doc-context",
                json={"work_category": "직장가입자", "workplace_count": 1})
     for slot, filename in p4.S2_UPLOADS.items():

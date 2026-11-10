@@ -46,6 +46,8 @@ class ExtraDoc:
     required_fields: tuple[str, ...] = ()
     notes: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    #: 심사 기준 버전에서 바꿀 수 있는 날짜 종류.
+    date_basis: str = "issue_date"
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ class ItemLimit:
     #: True면 실비(영수증 금액과 한도 중 작은 값), False면 정액.
     actual_cost: bool
     extra_docs: tuple[ExtraDoc, ...]
+    count_scope: str = "application"
     note: str = ""
 
     @property
@@ -83,7 +86,6 @@ _RECEIPT = ExtraDoc(
     suffix="receipt",
     doc_type=DocType.PAYMENT_RECEIPT,
     label="결제영수증",
-    required_fields=("결제금액",),
     notes=("영수증 금액과 지원 한도 중 작은 금액을 지급합니다.",),
 )
 
@@ -168,9 +170,37 @@ PERFORMANCE_TARGETS: dict[SubsidyType, int] = {
 }
 
 
-def get_limit(item_type: str | SubsidyType) -> ItemLimit:
+def _limits_from_catalog(rows: list[dict[str, object]] | None = None) -> dict[SubsidyType, ItemLimit]:
+    if not rows:
+        return LIMITS
+    result: dict[SubsidyType, ItemLimit] = {}
+    for row in rows:
+        try:
+            key = SubsidyType(str(row["item_type"]))
+            docs = tuple(ExtraDoc(
+                suffix=str(doc["suffix"]),
+                doc_type=DocType(str(doc["doc_type"])),
+                label=str(doc["label"]),
+                accepted=tuple(DocType(str(value)) for value in doc.get("accepted", [])),
+                required_fields=tuple(str(value) for value in doc.get("required_fields", [])),
+                notes=tuple(str(value) for value in doc.get("notes", [])),
+                warnings=tuple(str(value) for value in doc.get("warnings", [])),
+                date_basis=str(doc.get("date_basis", "issue_date")),
+            ) for doc in row.get("extra_docs", []))
+            result[key] = ItemLimit(
+                key=key, label=str(row["label"]), description=str(row.get("description", "")),
+                unit_cap=int(row["unit_cap"]), max_count=int(row["max_count"]),
+                actual_cost=bool(row["actual_cost"]), extra_docs=docs, note=str(row.get("note", "")),
+                count_scope=str(row.get("count_scope", "application")),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return result or LIMITS
+
+
+def get_limit(item_type: str | SubsidyType, configured: list[dict[str, object]] | None = None) -> ItemLimit:
     try:
-        return LIMITS[SubsidyType(item_type)]
+        return _limits_from_catalog(configured)[SubsidyType(item_type)]
     except ValueError:
         raise ValueError(f"알 수 없는 지원 항목: {item_type}") from None
 
@@ -185,6 +215,7 @@ class Selection:
     item_type: SubsidyType
     count: int = 1
     receipts: list[int | None] = field(default_factory=list)
+    linked_interview_indices: list[int | None] = field(default_factory=list)
 
     def receipt_at(self, index: int) -> int | None:
         """1-based 회차의 영수증 금액."""
@@ -206,6 +237,7 @@ class GrantLine:
     granted_amount: int
     #: 계산 근거 한 줄. "영수증 70,000원 > 한도 50,000원 → 50,000원 지급"
     calculation: str
+    linked_interview_index: int | None = None
     #: 아직 지급액이 확정되지 않은 줄 (영수증 금액 미입력 등).
     pending: bool = False
 
@@ -219,6 +251,7 @@ class GrantLine:
             "receipt_amount": self.receipt_amount,
             "granted_amount": self.granted_amount,
             "calculation": self.calculation,
+            "linked_interview_index": self.linked_interview_index,
             "pending": self.pending,
         }
 
@@ -245,13 +278,14 @@ def _won(value: int) -> str:
     return f"{value:,}원"
 
 
-def granted_amount(item_type: str | SubsidyType, receipt_amount: int | None) -> int:
+def granted_amount(item_type: str | SubsidyType, receipt_amount: int | None,
+                   configured: list[dict[str, object]] | None = None) -> int:
     """실지급액 (R6.2).
 
     정액 항목(면접비)은 영수증과 무관하게 회당 한도를 지급한다. 실비 항목은
     영수증 금액과 한도 중 작은 값이며, 영수증 금액이 없으면 0이다.
     """
-    limit = get_limit(item_type)
+    limit = get_limit(item_type, configured)
     if not limit.actual_cost:
         return limit.unit_cap
     if receipt_amount is None or receipt_amount <= 0:
@@ -259,12 +293,13 @@ def granted_amount(item_type: str | SubsidyType, receipt_amount: int | None) -> 
     return min(int(receipt_amount), limit.unit_cap)
 
 
-def clamp_count(item_type: str | SubsidyType, count: int) -> int:
-    limit = get_limit(item_type)
+def clamp_count(item_type: str | SubsidyType, count: int,
+                configured: list[dict[str, object]] | None = None) -> int:
+    limit = get_limit(item_type, configured)
     return max(0, min(int(count), limit.max_count))
 
 
-def estimate(selections: list[Selection]) -> Estimate:
+def estimate(selections: list[Selection], configured: list[dict[str, object]] | None = None) -> Estimate:
     """선택한 항목들의 예상 지원금.
 
     항목을 복수로 고를 수 있고(사업계획서 "복수선택가능"), 항목마다 회차가 따로
@@ -275,8 +310,8 @@ def estimate(selections: list[Selection]) -> Estimate:
     warnings: list[str] = []
 
     for selection in selections:
-        limit = get_limit(selection.item_type)
-        count = clamp_count(selection.item_type, selection.count)
+        limit = get_limit(selection.item_type, configured)
+        count = clamp_count(selection.item_type, selection.count, configured)
         if selection.count > limit.max_count:
             warnings.append(
                 f"{limit.label}은(는) 최대 {limit.max_count}회까지 지원됩니다. "
@@ -284,7 +319,7 @@ def estimate(selections: list[Selection]) -> Estimate:
             )
         for index in range(1, count + 1):
             receipt = selection.receipt_at(index)
-            amount = granted_amount(selection.item_type, receipt)
+            amount = granted_amount(selection.item_type, receipt, configured)
             if not limit.actual_cost:
                 calculation = f"정액 {_won(limit.unit_cap)}(회당) → {_won(amount)} 지급"
                 pending = False
@@ -314,6 +349,11 @@ def estimate(selections: list[Selection]) -> Estimate:
                     receipt_amount=receipt,
                     granted_amount=amount,
                     calculation=calculation,
+                    linked_interview_index=(
+                        selection.linked_interview_indices[index - 1]
+                        if str(selection.item_type) == "suit" and index <= len(selection.linked_interview_indices)
+                        else None
+                    ),
                     pending=pending,
                 )
             )
@@ -326,7 +366,7 @@ def estimate(selections: list[Selection]) -> Estimate:
     )
 
 
-def parse_selections(raw: list[dict[str, object]]) -> list[Selection]:
+def parse_selections(raw: list[dict[str, object]], configured: list[dict[str, object]] | None = None) -> list[Selection]:
     """API 입력 → `Selection` 목록. 회차가 0이면 고르지 않은 것으로 본다."""
     selections: list[Selection] = []
     for entry in raw:
@@ -345,15 +385,18 @@ def parse_selections(raw: list[dict[str, object]]) -> list[Selection]:
                         receipts.append(int(value))
                     except (TypeError, ValueError):
                         receipts.append(None)
-        selections.append(Selection(item_type=item_type, count=count, receipts=receipts))
+        links_raw = entry.get("linked_interview_indices") or []
+        links = [int(value) if value not in (None, "") else None for value in links_raw] if isinstance(links_raw, list) else []
+        selections.append(Selection(item_type=item_type, count=count, receipts=receipts,
+                                    linked_interview_indices=links))
     return selections
 
 
-def catalog() -> list[dict[str, object]]:
+def catalog(configured: list[dict[str, object]] | None = None) -> list[dict[str, object]]:
     """화면이 읽는 지원 항목 목록. 금액·횟수·추가서류가 전부 여기서 나간다."""
     rows: list[dict[str, object]] = []
     for key in ITEM_ORDER:
-        limit = LIMITS[key]
+        limit = get_limit(key, configured)
         rows.append(
             {
                 "item_type": str(key),
@@ -361,6 +404,7 @@ def catalog() -> list[dict[str, object]]:
                 "description": limit.description,
                 "unit_cap": limit.unit_cap,
                 "max_count": limit.max_count,
+                "count_scope": limit.count_scope,
                 "actual_cost": limit.actual_cost,
                 "needs_receipt": limit.needs_receipt,
                 "max_amount": limit.max_amount,
@@ -371,10 +415,41 @@ def catalog() -> list[dict[str, object]]:
                     else f"{_won(limit.unit_cap)}(회당)"
                 ),
                 "count_label": (
-                    "1회" if limit.max_count == 1 else f"최대 {limit.max_count}회"
+                    f"최대 {limit.max_count}회"
                 ),
                 "extra_docs": [d.label for d in limit.extra_docs],
                 "performance_target": PERFORMANCE_TARGETS.get(key),
             }
         )
+    return rows
+
+
+def criteria_catalog_defaults() -> list[dict[str, object]]:
+    """초기 기준 버전에 저장할 지원 항목 카탈로그 스냅샷."""
+    rows: list[dict[str, object]] = []
+    for key in ITEM_ORDER:
+        limit = LIMITS[key]
+        rows.append({
+            "item_type": str(key),
+            "label": limit.label,
+            "description": limit.description,
+            "unit_cap": limit.unit_cap,
+            "max_count": limit.max_count,
+            "count_scope": limit.count_scope,
+            "actual_cost": limit.actual_cost,
+            "note": limit.note,
+            "extra_docs": [
+                {
+                    "suffix": doc.suffix,
+                    "doc_type": str(doc.doc_type),
+                    "label": doc.label,
+                    "accepted": [str(value) for value in doc.accepted],
+                    "required_fields": list(doc.required_fields),
+                    "notes": list(doc.notes),
+                    "warnings": list(doc.warnings),
+                    "date_basis": doc.date_basis,
+                }
+                for doc in limit.extra_docs
+            ],
+        })
     return rows

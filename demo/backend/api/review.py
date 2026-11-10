@@ -37,6 +37,7 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
+from ..rules.criteria import for_application, read_criteria, supplement_for_application
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
 from ..rules.scoring import ScoreSheet, score_application
@@ -140,7 +141,8 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
                 }
             )
         for row in rows:
-            limit = get_limit(row.item_type)
+            criteria = read_criteria(for_application(app))
+            limit = get_limit(row.item_type, criteria["subsidy_catalog"])
             if limit.actual_cost and not row.receipt_amount:
                 items.append(
                     {
@@ -171,6 +173,8 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
 
     checklist = checklist_for(app)
     documents = list_documents(app.id or 0)
+    criteria_version = for_application(app)
+    criteria = read_criteria(criteria_version)
     by_slot = {d.slot_key: d for d in documents}
 
     for req in upload_slots(checklist):
@@ -219,21 +223,21 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
 
 def _warnings(app: Application, documents: list[Any]) -> list[str]:
     """제출을 막지는 않지만 반드시 읽혀야 하는 경고."""
-    program = get_program(app.program_code)
+    supplement = supplement_for_application(app)
     notes: list[str] = []
-    if not program.allows_supplement:
+    if not supplement["allowed"]:
         notes.append(
             "이 사업은 서류 미비 시 별도의 보완(추가서류) 요청 없이 선발에서 제외됩니다. "
             "제출 전에 아래 내용을 반드시 확인해 주세요."
         )
     else:
         notes.append(
-            f"서류 미비 시 {program.supplement_days}일 내 보완 안내가 발송됩니다."
+            f"서류 미비 시 {supplement['days']}일 내 보완 안내가 발송됩니다."
         )
     review_count = sum(1 for d in documents if d.stage1_status == "NEEDS_REVIEW")
     if review_count:
         notes.append(
-            f"확인필요 서류가 {review_count}건 있습니다. 제출은 가능하지만 담당자가 원본을 "
+            f"담당자 확인 예정 서류가 {review_count}건 있습니다. 제출은 가능하지만 담당자가 원본을 "
             "직접 확인합니다. 더 선명한 파일이 있다면 교체하는 편이 안전합니다."
         )
     unassigned = sum(1 for d in documents if d.slot_key == UNASSIGNED_SLOT)
@@ -330,7 +334,8 @@ def _supplement(
     미보완시 지원대상자 제외 및 후순위자 선정"이므로, 남은 일수를 숫자로 보여줘야
     한다. 기한이 지나면 후순위자에게 자리가 넘어간다는 사실도 같이 적는다.
     """
-    if not program.allows_supplement:
+    policy = supplement_for_application(app)
+    if not policy["allowed"]:
         return None
     deadline = review.supplement_deadline if review else None
     if deadline is None:
@@ -353,7 +358,7 @@ def _supplement(
             targets.append({"label": req.label, "reason": reason})
 
     return {
-        "days": program.supplement_days,
+        "days": policy["days"],
         "deadline": deadline.isoformat(timespec="seconds"),
         "days_left": days_left,
         "hours_left": hours_left,
@@ -362,7 +367,7 @@ def _supplement(
         "notice": (
             "보완 기한이 지났습니다. 미보완 시 후순위자가 선정됩니다."
             if expired
-            else f"{program.supplement_days}일 내에 보완하지 않으면 지원대상에서 제외되고 "
+            else f"{policy['days']}일 내에 보완하지 않으면 지원대상에서 제외되고 "
             "후순위자가 선정됩니다."
         ),
     }
@@ -380,14 +385,15 @@ def final_check(application_id: int) -> dict[str, Any]:
     """제출 전 최종 확인 (계획서 3.1절 [5])."""
     app = load_application(application_id)
     program = get_program(app.program_code)
+    supplement = supplement_for_application(app)
     documents = list_documents(application_id)
     blockers = _blockers(app)
     return {
         "application_no": app.application_no,
         "program_code": program.code,
         "program_name": program.name,
-        "allows_supplement": program.allows_supplement,
-        "supplement_days": program.supplement_days,
+        "allows_supplement": supplement["allowed"],
+        "supplement_days": supplement["days"],
         "selection": program.selection,
         "first_come": _first_come(app, program),
         "subsidy": (
@@ -408,6 +414,8 @@ def _run_review(app: Application) -> Review:
     program = get_program(app.program_code)
     form1 = app.form1_json or {}
     documents = list_documents(app.id or 0)
+    criteria_version = for_application(app)
+    criteria = read_criteria(criteria_version)
 
     # 병합 PDF의 미배정 페이지는 심사 대상이 아니다. 담당자 확인용으로만 남는다.
     rows = [document_fact(d) for d in documents if d.slot_key != UNASSIGNED_SLOT]
@@ -428,12 +436,12 @@ def _run_review(app: Application) -> Review:
     #
     # 점수제 사업만 채점한다. 취업패키지는 **선착순**이라 심사표 자체가 없고,
     # 억지로 0점짜리 심사표를 만들면 담당자 목록에서 최하위로 줄을 서게 된다.
-    facts = build_facts(form1, rows)
+    facts = build_facts(form1, rows, criteria.get("nhis_payment_months"))
     sheet: ScoreSheet | None = None
     if program.selection == "scored":
         sheet = score_application(
             facts,
-            announcement_date=program.announcement_date,
+            announcement_date=datetime.fromisoformat(criteria["announcement_date"]).date(),
             age_basis_date=program.age_basis_date,
         )
 
@@ -450,7 +458,7 @@ def _run_review(app: Application) -> Review:
         # 검사를 건너뛴다.
         income_percent=sheet.income_percent if sheet else None,
     )
-    result = run_pipeline(applicant, to_engine_documents(rows))
+    result = run_pipeline(applicant, to_engine_documents(rows), checklist_for(app))
     payload = inject_file_refs(result.review_payload, rows)
 
     if payload is None:
@@ -479,8 +487,9 @@ def _run_review(app: Application) -> Review:
     # 보완이 허용되는 사업에서 미비가 남은 채로 접수되면, 그 순간부터 기한이 돈다.
     # (추진체계: 지원대상자 및 서류보완 안내(1차) → 7일 내 서류 보완안내)
     supplement_deadline: datetime | None = None
-    if program.allows_supplement and result.status.value != "PASS":
-        supplement_deadline = datetime.now() + timedelta(days=program.supplement_days or 0)
+    supplement = supplement_for_application(app)
+    if supplement["allowed"] and result.status.value != "PASS":
+        supplement_deadline = datetime.now() + timedelta(days=supplement["days"] or 0)
 
     return Review(
         application_id=app.id or 0,

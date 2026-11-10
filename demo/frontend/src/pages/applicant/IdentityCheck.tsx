@@ -11,13 +11,14 @@
  * 서명은 화면에 직접 하거나, 서명 파일(PNG·JPG·PDF, 5MB 이하)을 올린다.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { verifyIdentity, type Identity } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
 import PdfPages from '../../components/PdfPages.tsx'
 import SignaturePad from '../../components/SignaturePad.tsx'
 import { DateTriple } from '../../forms/FormSheet.tsx'
+import { formatPhone, isValidPhone, phoneCursorPosition } from '../../forms/phone.ts'
 import { EMPTY_YMD, ymdToISO, type YMD } from '../../forms/ymd.ts'
 import './identity-check.css'
 
@@ -65,6 +66,8 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [name, setName] = useState('')
   const [birth, setBirth] = useState<YMD>(EMPTY_YMD)
   const [phone, setPhone] = useState('')
+  const phoneInput = useRef<HTMLInputElement>(null)
+  const pendingPhoneCaret = useRef<number | null>(null)
   const [pledge, setPledge] = useState(false)
   const [signMode, setSignMode] = useState<SignMode>('직접 서명')
   const [drawn, setDrawn] = useState('')
@@ -73,6 +76,15 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [viewing, setViewing] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  useLayoutEffect(() => {
+    const input = phoneInput.current
+    const digits = pendingPhoneCaret.current
+    if (!input || digits === null) return
+    const position = phoneCursorPosition(phone, digits)
+    input.setSelectionRange(position, position)
+    pendingPhoneCaret.current = null
+  }, [phone])
 
   // 미리보기 URL은 파일을 바꾸거나 화면을 떠날 때 해제한다.
   useEffect(() => {
@@ -116,7 +128,10 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
 
   const birthISO = ymdToISO(birth)
   const signature = signMode === '직접 서명' ? drawn : (file?.dataUrl ?? '')
-  const ready = name.trim() && birthISO && phone.replace(/\D/g, '').length >= 10 && pledge && signature
+  const phoneDigits = phone.replace(/\D/g, '')
+  const phoneValid = isValidPhone(phone)
+  const phoneInvalid = phoneDigits.length === 11 && !phoneValid
+  const ready = Boolean(name.trim() && birthISO && phoneValid && pledge && signature)
 
   /** 서명 파일을 data URL로 읽는다. 형식·크기는 서버도 다시 확인한다. */
   const pickFile = (picked: File | undefined) => {
@@ -199,11 +214,51 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
             className="form-input"
             type="tel"
             inputMode="numeric"
+            autoComplete="tel"
+            maxLength={13}
             placeholder="010-0000-0000"
             value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            ref={phoneInput}
+            onChange={(e) => {
+              const input = e.currentTarget
+              const beforeCursor = input.value.slice(0, input.selectionStart ?? input.value.length)
+              let digitCount = beforeCursor.replace(/\D/g, '').length
+              if (beforeCursor.trimStart().startsWith('+82') && digitCount >= 2) digitCount -= 1
+              pendingPhoneCaret.current = digitCount
+              setPhone(formatPhone(input.value))
+            }}
+            onPaste={(e) => {
+              const pasted = e.clipboardData.getData('text')
+              if (!pasted) return
+              e.preventDefault()
+              const formatted = formatPhone(pasted)
+              pendingPhoneCaret.current = formatted.replace(/\D/g, '').length
+              setPhone(formatted)
+            }}
+            onKeyDown={(e) => {
+              const input = e.currentTarget
+              const cursor = input.selectionStart
+              if (
+                e.key !== 'Backspace' ||
+                cursor === null ||
+                cursor !== input.selectionEnd ||
+                cursor === 0 ||
+                input.value[cursor - 1] !== '-'
+              ) return
+              e.preventDefault()
+              const digitCount = input.value.slice(0, cursor).replace(/\D/g, '').length
+              const digits = phone.replace(/\D/g, '')
+              if (digitCount === 0) return
+              pendingPhoneCaret.current = digitCount - 1
+              setPhone(formatPhone(`${digits.slice(0, digitCount - 1)}${digits.slice(digitCount)}`))
+            }}
             aria-label="휴대폰 번호"
           />
+          {phoneInvalid && (
+            <small className="idcheck__phone-error">
+              010으로 시작하는 휴대폰 번호를 입력해 주세요.
+            </small>
+          )}
         </label>
       </div>
 

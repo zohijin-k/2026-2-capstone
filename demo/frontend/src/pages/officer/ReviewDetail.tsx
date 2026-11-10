@@ -21,8 +21,9 @@ import {
   type ReviewDetailData,
   type ScoreItemRow,
 } from '../../api.ts'
+import StatusBadge from '../../components/StatusBadge.tsx'
 import DocumentViewer from './DocumentViewer.tsx'
-import { badgeClass, dotClass } from './format.ts'
+import { dotClass } from './format.ts'
 import ScoreSheet6 from './ScoreSheet6.tsx'
 
 interface Props {
@@ -176,6 +177,7 @@ export default function ReviewDetail({
           ← 접수 목록
         </button>
         <span className="review__no">{detail.application_no}</span>
+        {detail.criteria_version != null && <span className="review__criteria">적용 기준 v{detail.criteria_version}</span>}
         <strong className="review__name">{detail.name}</strong>
         {detail.identity && (
           <span
@@ -198,7 +200,7 @@ export default function ReviewDetail({
           {detail.region} {detail.town}
         </span>
         <span className="review__when">접수 {detail.submitted_at ?? '-'}</span>
-        <span className={badgeClass(detail.ai.final_status)}>{detail.ai.final_status_label}</span>
+                {detail.ai.final_status && <StatusBadge status={detail.ai.final_status} audience="officer" />}
         {detail.score_sheet.items.length > 0 && (
           <span className="review__score">
             {detail.score_sheet.total} / {detail.score_sheet.max_total}점
@@ -259,9 +261,7 @@ export default function ReviewDetail({
         <section className="review__right">
           <Panel title="최종 판정">
             <div className="verdict">
-              <span className={badgeClass(detail.ai.final_status)}>
-                {detail.ai.final_status_label}
-              </span>
+              {detail.ai.final_status && <StatusBadge status={detail.ai.final_status} audience="officer" />}
               <span className="verdict__action">{detail.ai.recommended_action}</span>
             </div>
             <ul className="verdict__stages">
@@ -328,7 +328,7 @@ export default function ReviewDetail({
                 <tbody>
                   {detail.subsidy.lines.map((line) => (
                     <tr key={`${line.item_type}-${line.index}`}>
-                      <td>{line.label}</td>
+                      <td>{line.label}{line.linked_interview_index && <small className="subsidy__link-note">면접 {line.linked_interview_index}회차와 연결</small>}</td>
                       <td>
                         {line.actual_cost
                           ? line.receipt_amount === null

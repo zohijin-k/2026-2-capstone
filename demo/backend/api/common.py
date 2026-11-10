@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from sqlmodel import select
 
 from ..models import Application, Consent, Document, SubsidyItem, get_session
+from ..rules.criteria import for_application, issue_bounds, issue_rule_label, read_criteria
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ApplicantDocInput,
@@ -62,6 +63,7 @@ def subsidy_selections(application_id: int) -> list[Selection]:
                 item_type=key,
                 count=len(ordered),
                 receipts=[r.receipt_amount for r in ordered],
+                linked_interview_indices=[r.linked_interview_index for r in ordered],
             )
         )
     return selections
@@ -69,7 +71,9 @@ def subsidy_selections(application_id: int) -> list[Selection]:
 
 def subsidy_estimate(application_id: int) -> dict[str, Any]:
     """예상 지원금. 신청자 화면·최종 확인·담당자 화면이 같은 계산을 쓴다."""
-    return estimate_subsidy(subsidy_selections(application_id)).as_dict()
+    app = load_application(application_id)
+    criteria = read_criteria(for_application(app))
+    return estimate_subsidy(subsidy_selections(application_id), criteria["subsidy_catalog"]).as_dict()
 
 
 def doc_context(app: Application) -> ApplicantDocInput:
@@ -89,7 +93,43 @@ def doc_context(app: Application) -> ApplicantDocInput:
 
 
 def checklist_for(app: Application) -> list[DocRequirement]:
-    return build_checklist(get_program(app.program_code), doc_context(app))
+    criteria = read_criteria(for_application(app))
+    rows = build_checklist(
+        get_program(app.program_code), doc_context(app), criteria["subsidy_catalog"]
+    )
+    application_date = (app.submitted_at or app.created_at).date()
+    for req in rows:
+        basis = criteria["document_date_bases"].get(req.slot_key, req.date_basis)
+        if req.slot_key not in {"resident_abstract"} and not any(
+            req.slot_key.startswith(f"{item}_") for item in ("interview", "suit", "photo", "certificate")
+        ):
+            for key, value in criteria["document_date_bases"].items():
+                if req.slot_key == key or req.slot_key.endswith(f"_{key}"):
+                    basis = value
+                    break
+        req.date_basis = basis
+        req.check_declared_date = req.upload and basis != "none"
+        req.min_issue_date, req.max_issue_date = (
+            issue_bounds(criteria, req.slot_key, application_date) if basis != "none" else (None, None)
+        )
+        if req.slot_key == "nhis_payment":
+            req.premium_months = list(criteria["nhis_payment_months"])
+        if req.slot_key == "nhis_acquisition_loss":
+            req.recent_years = int(criteria["nhis_acquisition_loss_years"])
+        req.notes = [n for n in req.notes if not n.startswith(("최근 ", "조회기간에 "))]
+        req.notes.insert(0, issue_rule_label(criteria, req.slot_key, basis))
+        if req.slot_key == "nhis_payment":
+            months = criteria["nhis_payment_months"]
+            years = sorted({month[:4] for month in months})
+            prefix = f"{years[0]}년 " if len(years) == 1 else ""
+            req.label = f"{prefix}건강보험료 납부확인서"
+            req.notes.extend([
+                f"조회기간에 {', '.join(months)}월이 포함되어야 합니다.",
+                "실납부액이 아니라 고지금액 기준으로 심사합니다.",
+            ])
+        elif req.slot_key == "nhis_acquisition_loss":
+            req.notes.append(f"최근 {criteria['nhis_acquisition_loss_years']}년 변동내역이 포함되어야 합니다.")
+    return rows
 
 
 def list_documents(application_id: int) -> list[Document]:

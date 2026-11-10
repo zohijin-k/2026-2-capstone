@@ -11,11 +11,12 @@
 
 from dataclasses import dataclass, field
 from datetime import date
+import json
 
 from ..engine_adapter import engine_check_single_document, engine_config, engine_models
 from ..ocr.base import OcrResult
 from .doc_types import DocType, confusable_with
-from .identity import Identity, compare
+from .identity import Identity, compare, nhis_subscriber_assessment
 from .required_docs import DocRequirement
 from .scoring import ESTIMATE_LABEL
 
@@ -38,10 +39,14 @@ CODE_SCREEN_CAPTURE = "SCREEN_CAPTURE_SUSPECTED"
 CODE_MISSING_ADDRESS_HISTORY = "MISSING_ADDRESS_HISTORY"
 CODE_UNKNOWN_DOCUMENT_TYPE = "UNKNOWN_DOCUMENT_TYPE"
 CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
+CODE_RECEIPT_AMOUNT_UNREADABLE = "RECEIPT_AMOUNT_UNREADABLE"
 #: 서류의 성명·생년월일이 본인인증 정보와 다름 (판독 확실 → 부적합)
 CODE_IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
 #: 위와 같으나 판독이 불확실 → 오독일 수 있어 담당자 확인
 CODE_IDENTITY_UNCERTAIN = "IDENTITY_UNCERTAIN"
+CODE_MISSING_BILLING_MONTHS = "MISSING_BILLING_MONTHS"
+CODE_NHIS_DEPENDENT_INSURED_PERSON = "NHIS_DEPENDENT_INSURED_PERSON"
+CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW = "NHIS_SUBSCRIBER_IDENTITY_REVIEW"
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -49,6 +54,7 @@ HOW_TO_FIX: dict[str, str] = {
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
+    CODE_MISSING_BILLING_MONTHS: "조회기간에 {months}월이 포함되도록 다시 발급해 주세요.",
     "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
     "LOW_IMAGE_QUALITY": "글자가 또렷하게 보이도록 스캔본이나 밝은 곳에서 찍은 사진으로 다시 올려 주세요. pdf 파일을 권장합니다.",
@@ -59,6 +65,8 @@ HOW_TO_FIX: dict[str, str] = {
     CODE_MISSING_REQUIRED_FIELD: "{field}이(가) 표기된 서류로 다시 발급받아 올려 주세요. 발급 기관에 {field} 표기를 요청하시면 됩니다.",
     CODE_IDENTITY_MISMATCH: "본인 명의로 발급받은 서류만 인정됩니다. 가족이나 다른 사람 명의의 서류가 아닌지 확인하고 다시 올려 주세요.",
     CODE_IDENTITY_UNCERTAIN: "본인 서류가 맞다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
+    CODE_NHIS_DEPENDENT_INSURED_PERSON: "건강보험 가입자 명의 서류로 확인했습니다.",
+    CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW: "가입자 명의 확인이 필요해 담당자가 확인합니다.",
     CODE_UNKNOWN_DOCUMENT_TYPE: "자동으로 서류 종류를 판별하지 못했습니다. 담당자가 직접 확인하므로 그대로 두셔도 되고, 더 선명한 파일이 있다면 교체해 주세요.",
 }
 
@@ -72,6 +80,7 @@ REVIEW_ONLY_CODES = {
     CODE_IDENTITY_UNCERTAIN,
     CODE_SCREEN_CAPTURE,
     CODE_UNKNOWN_DOCUMENT_TYPE,
+    CODE_RECEIPT_AMOUNT_UNREADABLE,
 }
 
 
@@ -112,6 +121,7 @@ def to_engine_spec(req: DocRequirement):
         required=req.required,
         requires_signature=req.requires_signature,
         min_issue_date=req.min_issue_date,
+        max_issue_date=req.max_issue_date,
         check_declared_date=req.check_declared_date,
     )
 
@@ -121,19 +131,32 @@ def to_engine_document(
     ocr: OcrResult,
     declared_issue_date: date | None,
     file_format: str,
+    date_basis: str = "issue_date",
 ):
     """판독 결과 → 엔진 `Document`.
 
     `doc_type`에는 **요구된 서류 종류**를 넣는다. 엔진의 단건 검사는 doc_type을
     메시지 렌더링에만 쓰고, 오분류 판정은 데모 쪽에서 별도로 하기 때문이다.
     """
+    basis_field = {
+        "issue_date": "발급일", "payment_date": "결제일",
+        "interview_date": "면접일", "exam_date": "응시일",
+    }.get(date_basis)
+    effective_date = ocr.issue_date
+    if basis_field:
+        try:
+            effective_date = date.fromisoformat(str(ocr.fields.get(basis_field) or "")[:10])
+        except ValueError:
+            effective_date = None
+    elif date_basis == "none":
+        effective_date = None
     return engine_models.Document(
         doc_type=str(req.doc_type),
         file_format=file_format,
         ocr_confidence=ocr.confidence,
         image_quality_score=ocr.image_quality,
         has_signature=ocr.has_signature,
-        issue_date=ocr.issue_date,
+        issue_date=effective_date,
         declared_issue_date=declared_issue_date,
         extracted_fields=dict(ocr.fields),
         is_encrypted_or_corrupted=ocr.is_encrypted,
@@ -163,6 +186,7 @@ def check_document(
     declared_issue_date: date | None = None,
     file_format: str = "pdf",
     identity: Identity | None = None,
+    related_nhis_docs: list[tuple[str, dict[str, str]]] | None = None,
 ) -> CheckResult:
     """업로드된 서류 한 건을 적합/부적합/확인필요로 판정한다.
 
@@ -200,9 +224,16 @@ def check_document(
             )
 
     # 2) 엔진 단건 검사 — 암호/화질/서명/발급일/입력일 대조/신뢰도.
-    engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format)
+    engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format, req.date_basis)
     for f in engine_check_single_document(engine_doc, to_engine_spec(req)):
-        findings.append(_finding(f.code.value, f.message, req))
+        finding = _finding(f.code.value, f.message, req)
+        date_label = {
+            "payment_date": "결제일", "interview_date": "면접일", "exam_date": "응시일",
+        }.get(req.date_basis)
+        if date_label:
+            finding.message = finding.message.replace("발급일", date_label).replace("발급분", "기준 날짜")
+            finding.how_to_fix = finding.how_to_fix.replace("발급일", date_label).replace("발급분", "기준 날짜")
+        findings.append(finding)
 
     # 3) 데모가 얹는 항목.
     if ocr.is_screen_capture:
@@ -223,6 +254,14 @@ def check_document(
     if not ocr.is_encrypted and req.accepts(ocr.detected_doc_type):
         for name in req.required_fields:
             if not str(ocr.fields.get(name) or "").strip():
+                if name == "결제금액" and req.slot_key.endswith("_receipt"):
+                    findings.append(CheckFinding(
+                        code=CODE_RECEIPT_AMOUNT_UNREADABLE,
+                        message="영수증 결제금액을 자동으로 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                        how_to_fix="영수증에 표시된 결제금액을 확인할 수 있도록 담당자에게 원본을 제출해 주세요.",
+                        severity="NEEDS_REVIEW",
+                    ))
+                    continue
                 findings.append(
                     _finding(
                         CODE_MISSING_REQUIRED_FIELD,
@@ -233,6 +272,49 @@ def check_document(
                     )
                 )
 
+    if req.slot_key == "nhis_payment" and req.premium_months and ocr.fields.get("월별고지금액"):
+        try:
+            found = json.loads(ocr.fields["월별고지금액"])
+            missing = [month for month in req.premium_months if month not in found]
+        except (ValueError, TypeError):
+            missing = list(req.premium_months)
+        if missing:
+            rendered = ", ".join(missing)
+            findings.append(_finding(
+                CODE_MISSING_BILLING_MONTHS,
+                f"납부확인서에 심사 대상 고지월 {rendered}이(가) 없어 평균 보험료를 계산할 수 없습니다.",
+                req, months=rendered,
+            ))
+
+    if req.slot_key == "nhis_acquisition_loss" and req.recent_years and ocr.fields.get("자격이력자료"):
+        try:
+            data = json.loads(ocr.fields["자격이력자료"])
+            issue = ocr.issue_date
+            if issue is None:
+                issue = date.fromisoformat(ocr.fields.get("발급일", ""))
+            cutoff = issue.replace(year=issue.year - req.recent_years)
+            if cutoff.month == 2 and cutoff.day == 29:
+                cutoff = cutoff.replace(day=28)
+            period = data.get("period")
+            covered = bool(period and date.fromisoformat(period[0]) <= cutoff and date.fromisoformat(period[1]) >= issue)
+            if not covered:
+                covered = any(
+                    row.get("acquired") and date.fromisoformat(row["acquired"]) <= cutoff and
+                    (not row.get("lost") or date.fromisoformat(row["lost"]) >= issue)
+                    for row in data.get("rows", [])
+                )
+            if not covered:
+                findings.append(_finding(
+                    "NHIS_HISTORY_PERIOD_MISSING",
+                    f"자격득실확인서에 최근 {req.recent_years}년 변동내역이 포함되지 않았습니다.",
+                    req,
+                ))
+        except (ValueError, TypeError, KeyError):
+            findings.append(_finding(
+                "NHIS_HISTORY_PERIOD_UNREADABLE",
+                "자격득실확인서의 조회 기간을 확인하지 못했습니다. 담당자가 확인합니다.", req,
+            ))
+
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
     # 신청자 안내에는 서류에 적힌 남의 이름을 되읊지 않는다.
@@ -240,30 +322,38 @@ def check_document(
     # 읽은 서류(로컬 판독·텍스트 PDF)만 대상이다. 본인 초본 + 나머지는 샘플로 시연할 수 있게.
     if (
         identity is not None
-        and ocr.tier != "fixture"
         and not ocr.is_encrypted
         and req.accepts(ocr.detected_doc_type)
     ):
-        _, mismatched = compare(identity, ocr.fields)
-        if mismatched:
-            what = "·".join(mismatched)
-            if ocr.confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
-                findings.append(
-                    _finding(
-                        CODE_IDENTITY_MISMATCH,
-                        f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다릅니다.",
-                        req,
+        if ocr.detected_doc_type in (DocType.NHIS_PAYMENT, DocType.NHIS_QUALIFICATION):
+            assessment = nhis_subscriber_assessment(
+                identity, str(ocr.detected_doc_type), ocr.fields, related_nhis_docs or []
+            )
+            if assessment:
+                code, severity, message = assessment
+                applicant_message = HOW_TO_FIX.get(code, message)
+                findings.append(CheckFinding(code, message, applicant_message, severity=severity))
+        elif ocr.tier != "fixture":
+            _, mismatched = compare(identity, ocr.fields)
+            if mismatched:
+                what = "·".join(mismatched)
+                if ocr.confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+                    findings.append(
+                        _finding(
+                            CODE_IDENTITY_MISMATCH,
+                            f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다릅니다.",
+                            req,
+                        )
                     )
-                )
-            else:
-                findings.append(
-                    _finding(
-                        CODE_IDENTITY_UNCERTAIN,
-                        f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다르게 판독되었습니다. "
-                        "담당자가 원본에서 직접 확인합니다.",
-                        req,
+                else:
+                    findings.append(
+                        _finding(
+                            CODE_IDENTITY_UNCERTAIN,
+                            f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다르게 판독되었습니다. "
+                            "담당자가 원본에서 직접 확인합니다.",
+                            req,
+                        )
                     )
-                )
 
     if (
         req.doc_type is DocType.RESIDENT_ABSTRACT
@@ -279,7 +369,7 @@ def check_document(
 
     if any(f.severity == "FAIL" for f in findings):
         status = "FAIL"
-    elif findings:
+    elif any(f.severity == "NEEDS_REVIEW" for f in findings):
         status = "NEEDS_REVIEW"
     else:
         status = "PASS"

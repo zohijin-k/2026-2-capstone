@@ -16,7 +16,8 @@ import type {
   OfficerRow,
   OfficerRowDoc,
 } from '../../api.ts'
-import { badgeClass, dotClass, shortTime } from './format.ts'
+import StatusBadge from '../../components/StatusBadge.tsx'
+import { shortTime } from './format.ts'
 
 /** 서류 컬럼 키의 접두사. 서버의 `DOC_COLUMN_PREFIX`와 같은 값이다. */
 const DOC_PREFIX = 'doc:'
@@ -102,7 +103,7 @@ function DocMark({
       aria-label={title}
       onClick={() => onOpenDoc(row.application_id, cell.slot_key)}
     >
-      <span className={dotClass(cell.status)} />
+      <StatusBadge status={cell.status ?? 'NEEDS_REVIEW'} audience="officer" compact />
       {cell.short_label && <span className="docmark__name">{cell.short_label}</span>}
     </button>
   )
@@ -146,7 +147,7 @@ function Cell({
     case 'ai_status':
       return (
         <td>
-          <span className={badgeClass(row.ai_status)}>{row.ai_status_label}</span>
+          <StatusBadge status={row.ai_status ?? 'NEEDS_REVIEW'} audience="officer" />
         </td>
       )
     case 'total_score':

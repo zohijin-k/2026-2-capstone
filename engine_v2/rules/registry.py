@@ -25,6 +25,8 @@ class RuleContext:
     detected_type: DocType
     fields: dict[str, ExtractedField]
     validations: dict[str, tuple[bool, str]] = field(default_factory=dict)  # 이름 → (통과, 설명)
+    application_date: date | None = None
+    criteria: dict[str, Any] = field(default_factory=dict)
 
 
 RuleFn = Callable[[RuleContext, dict], tuple[CheckStatus, dict]]
@@ -105,6 +107,39 @@ def date_within_days(ctx, p):
     ok = 0 <= days <= p["max_days"] if p.get("not_after_reference", False) else days <= p["max_days"]
     return (PASS if ok else FAIL), {"value": d, "days": days, "max_days": p["max_days"],
                                      "reference_date": ctx.reference_date}
+
+
+@rule("settings_issue_date")
+def settings_issue_date(ctx, p):
+    d = _as_date(_val(ctx, p.get("field", "issue_date")))
+    if d is None:
+        return UNKNOWN, {}
+    rule = (ctx.criteria.get("document_issue_rules") or {}).get(
+        ctx.detected_type.value,
+        ctx.criteria.get("document_issue_fallback", {"mode": "none"}),
+    )
+    mode = rule.get("mode", "none")
+    if mode == "none":
+        return PASS, {"value": d, "mode": mode, "cutoff": "없음"}
+    if mode == "after_notice":
+        cutoff = ctx.reference_date
+        ok = d >= cutoff
+        return (PASS if ok else FAIL), {"value": d, "cutoff": cutoff, "mode": mode}
+    if mode == "after_date":
+        cutoff = _as_date(rule.get("date"))
+        if cutoff is None:
+            return UNKNOWN, {}
+        return (PASS if d >= cutoff else FAIL), {"value": d, "cutoff": cutoff, "mode": mode}
+    if mode == "within_days":
+        application_date = ctx.application_date
+        if application_date is None:
+            return UNKNOWN, {}
+        days = int(rule.get("days", 0))
+        cutoff = date.fromordinal(application_date.toordinal() - days)
+        ok = cutoff <= d <= application_date
+        return (PASS if ok else FAIL), {"value": d, "cutoff": cutoff, "mode": mode,
+                                        "application_date": application_date, "days": days}
+    return UNKNOWN, {"mode": mode}
 
 
 @rule("date_in_range")

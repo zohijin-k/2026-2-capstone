@@ -18,6 +18,50 @@
   line-height: 1.7;
 }
 
+.pcard__criteria {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--border, #d4d9e0);
+  border-radius: 8px;
+  color: var(--muted, #586174);
+  font-size: 12px;
+}
+.pcard__criteria strong { color: var(--ink, #172033); }
+.criteria-editor__backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: auto;
+  padding: 5vh 16px;
+  background: #11182788;
+}
+.criteria-editor {
+  width: min(900px, 100%);
+  margin: auto;
+  padding: 20px;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 16px 60px #0003;
+  color: #172033;
+}
+.criteria-editor__head { display: flex; justify-content: space-between; align-items: start; }
+.criteria-editor fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; padding: 12px; }
+.criteria-editor label { display: grid; gap: 4px; font-size: 13px; }
+.criteria-editor input, .criteria-editor select { min-height: 34px; padding: 5px 8px; }
+.criteria-editor__table, .criteria-editor__history { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+.criteria-editor th, .criteria-editor td { padding: 8px; border: 1px solid #d7dce3; text-align: left; }
+.criteria-editor__month-picker { display: grid; gap: 10px; min-width: min(100%, 320px); }
+.criteria-editor__month-year { display: flex; align-items: center; justify-content: center; gap: 18px; }
+.criteria-editor__month-grid { display: grid; grid-template-columns: repeat(4, minmax(56px, 1fr)); gap: 6px; }
+.criteria-editor__month-grid button, .criteria-editor__month-chips button { min-height: 34px; border: 1px solid #cbd3df; border-radius: 8px; background: #fff; color: #26354a; cursor: pointer; }
+.criteria-editor__month-grid button.is-selected { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 10%, white); color: var(--brand); font-weight: 700; }
+.criteria-editor__month-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.criteria-editor__month-chips button { padding: 5px 10px; min-height: 28px; }
+.criteria-editor__supplement-toggle { display: flex !important; align-items: center; gap: 8px !important; }
+.criteria-editor__supplement-toggle input { min-height: auto; }
+
 .ppick__list {
   list-style: none;
   margin: 0;

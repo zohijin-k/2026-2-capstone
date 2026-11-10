@@ -29,6 +29,7 @@ import {
   type Program,
   type SelfCheckResult,
   type SubmitResult,
+  type SubsidyState,
 } from '../../api.ts'
 import DocumentUpload from './DocumentUpload.tsx'
 import FinalCheck from './FinalCheck.tsx'
@@ -116,6 +117,7 @@ export default function ApplyFlow() {
   const [submitted, setSubmitted] = useState<SubmitResult | null>(null)
   /** 지원 항목이 바뀌면 업로드 화면의 체크리스트를 다시 읽게 하는 키. */
   const [checklistKey, setChecklistKey] = useState(0)
+  const [selectedSubsidyTypes, setSelectedSubsidyTypes] = useState(0)
 
   /** 사업을 고른 시점에 신청 건을 만든다. 이후 단계마다 부분 저장한다. */
   const pickProgram = (picked: Program) => {
@@ -123,6 +125,7 @@ export default function ApplyFlow() {
     setAnswers({})
     setCheckResult(null)
     setIdentity(null)
+    setSelectedSubsidyTypes(0)
     setForm1(EMPTY_FORM1)
     createApplication(picked.code)
       .then((a) => {
@@ -474,7 +477,10 @@ export default function ApplyFlow() {
           <div className="flow__gap" />
           <SubsidyItems
             applicationId={appId}
-            onChanged={() => setChecklistKey((k) => k + 1)}
+            onChanged={(state: SubsidyState) => {
+              setSelectedSubsidyTypes(state.selections.length)
+              setChecklistKey((k) => k + 1)
+            }}
           />
           <div className="flow__actions">
             <button type="button" className="btn" onClick={() => setStage('consent')}>
@@ -483,11 +489,15 @@ export default function ApplyFlow() {
             <button
               type="button"
               className="btn btn--primary"
+              disabled={selectedSubsidyTypes === 0}
               onClick={() => setStage('upload')}
             >
               서류 업로드로
             </button>
           </div>
+          {selectedSubsidyTypes === 0 && (
+            <p className="flow__validation" role="alert">지원받을 항목을 하나 이상 고르세요.</p>
+          )}
         </>
       )}
 

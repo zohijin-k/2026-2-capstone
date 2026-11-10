@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
+
+import pytest
 
 from ..engine import combine, evaluate_document, load_rulepack
 from ..schemas.models import (ApplicantInput, ApplicationInput, CheckStatus, DocType, DocumentInput,
@@ -94,6 +97,30 @@ def test_missing_document():
     a.documents = []
     res = combine(a, [], RP)
     assert res.status == Verdict.UNSUITABLE and res.missing_doc_types == [DocType.RESIDENT_ABSTRACT]
+
+
+def test_text_layer_words_are_converted_to_ocr_coordinates(tmp_path: Path):
+    import pymupdf
+
+    from ..engine import _load_pages
+
+    path = tmp_path / "synthetic-text.pdf"
+    pdf = pymupdf.open()
+    page = pdf.new_page(width=595, height=842)
+    page.insert_text((72, 100), "Synthetic health payment statement applicant Sample Name birth 1999.01.01")
+    page.insert_text((72, 130), "발급일 2026.11.10 텍스트 레이어 가짜 좌표 검사")
+    pdf.save(path)
+    pdf.close()
+
+    doc = DocumentInput(doc_id="synthetic", declared_type=DocType.NHIS_PAYMENT, file_path=str(path))
+    pages = _load_pages(doc, "unavailable-ocr")
+    assert not isinstance(pages, str)
+    image, ocr = pages[0]
+    assert image.source.value == "text_layer"
+    assert ocr.engine == "text_layer"
+    assert any("Sample" in word.text for word in ocr.words)
+    assert all(word.confidence == 1.0 for word in ocr.words)
+    assert image.px_to_pt(ocr.words[0].bbox_px[0], ocr.words[0].bbox_px[1])[0] == pytest.approx(72, abs=0.2)
 
 
 if __name__ == "__main__":

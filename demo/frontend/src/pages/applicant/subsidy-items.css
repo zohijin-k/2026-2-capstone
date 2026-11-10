@@ -157,6 +157,13 @@
   color: var(--muted);
 }
 
+.subsidy__link-note {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ---- 예상 지원금 ---- */
 
 .subsidy__sum {

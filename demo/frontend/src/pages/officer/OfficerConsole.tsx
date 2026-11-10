@@ -21,6 +21,7 @@ import {
 } from '../../api.ts'
 import ApplicationList from './ApplicationList.tsx'
 import ReviewDetail from './ReviewDetail.tsx'
+import CriteriaEditor from '../../components/CriteriaEditor.tsx'
 import './officer.css'
 
 const DEFAULT_QUERY: OfficerListQuery = { role: 'province', page: 1, page_size: 20 }
@@ -39,6 +40,8 @@ export default function OfficerConsole() {
   const [error, setError] = useState('')
   /** 목업으로 넘어갔는지는 목록을 한 번 읽어 봐야 안다 — 응답이 온 뒤에 다시 잰다. */
   const [mock, setMock] = useState(isOfficerMockActive())
+  const [showCriteria, setShowCriteria] = useState(false)
+  const [criteriaProgram, setCriteriaProgram] = useState('double_savings')
 
   useEffect(() => {
     fetchOfficerRoles()
@@ -66,6 +69,7 @@ export default function OfficerConsole() {
   /** 역할을 바꾸면 관할 선택은 백엔드가 다시 정해준다 — 여기서는 비워 보낸다. */
   const switchRole = (role: string) => {
     setOpen(null)
+    setShowCriteria(false)
     setQuery({ ...DEFAULT_QUERY, role })
     setSelected([])
   }
@@ -122,6 +126,9 @@ export default function OfficerConsole() {
             )}
           </p>
         )}
+        {query.role === 'province' && <button type="button" className="officer__criteria-tab" onClick={() => setShowCriteria((v) => !v)}>
+          {showCriteria ? '접수 목록' : '심사 기준'}
+        </button>}
         {activeRole && (
           <ul className="officer__notes">
             {activeRole.notes.map((n, i) => (
@@ -133,7 +140,17 @@ export default function OfficerConsole() {
 
       {error && <p className="officer__error">{error}</p>}
 
-      {open !== null ? (
+      {showCriteria && query.role === 'province' ? (
+        <>
+          <label className="officer__criteria-select">사업 선택
+            <select value={criteriaProgram} onChange={(e) => setCriteriaProgram(e.target.value)}>
+              <option value="double_savings">전북청년 함께 두배적금</option>
+              <option value="job_package">청년 취업지원 패키지</option>
+            </select>
+          </label>
+          <CriteriaEditor code={criteriaProgram} />
+        </>
+      ) : open !== null ? (
         <ReviewDetail
           // 같은 건의 다른 서류로 다시 들어올 때 초기 탭 선택이 확실히 다시 돌게
           // 하는 값싼 보험이다.

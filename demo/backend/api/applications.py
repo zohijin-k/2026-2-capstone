@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 
 from ..models import STATUS_DRAFT, Application, Consent, get_session
+from ..rules.criteria import latest as latest_criteria
 from ..rules.programs import get_program
 from ..rules.self_check import evaluate
 
@@ -135,6 +136,7 @@ def create(body: CreateRequest) -> dict[str, Any]:
     app = Application(
         application_no=_next_application_no(body.program_code),
         program_code=body.program_code,
+        criteria_version=latest_criteria(body.program_code).version,
     )
     with get_session() as s:
         s.add(app)
@@ -186,8 +188,8 @@ def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any
     if birth >= date.today():
         raise HTTPException(400, "생년월일을 확인해 주세요.")
     phone = re.sub(r"\D", "", body.phone)
-    if not 10 <= len(phone) <= 11:
-        raise HTTPException(400, "휴대폰 번호를 확인해 주세요.")
+    if len(phone) != 11 or not phone.startswith("010"):
+        raise HTTPException(400, "010으로 시작하는 휴대폰 번호를 입력해 주세요.")
     if not body.pledge:
         raise HTTPException(400, "본인 확인 서약에 동의해 주세요.")
     signature, ext = _decode_signature(body.signature_data_url, body.signature_kind)

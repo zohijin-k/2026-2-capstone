@@ -2424,6 +2424,7 @@ function subsidyEstimate(entry: MockEntry): ReviewDetailData['subsidy'] {
         receipt_amount: receipt,
         granted_amount: granted,
         calculation,
+        linked_interview_index: selection.key === 'suit' ? index : null,
         pending,
       })
     }

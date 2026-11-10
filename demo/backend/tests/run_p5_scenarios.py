@@ -86,7 +86,6 @@ S10_UPLOADS = {
     "resident_abstract": "S10_주민등록초본_취업패키지.pdf",
     "interview_1_confirmation": "S10_면접확인서_1회차.pdf",
     "interview_2_confirmation": "S10_면접확인서_2회차.pdf",
-    "suit_1_confirmation": "S10_면접확인서_정장.pdf",
     "suit_1_receipt": "S10_결제영수증_정장70000.pdf",
     "certificate_1_exam": "S10_응시확인서_적합.pdf",
     "certificate_1_receipt": "S10_결제영수증_응시료43000.pdf",
@@ -169,6 +168,9 @@ def test_program_branching(client) -> None:
     check("지원 항목표는 취업패키지에만", ds["subsidy_catalog"], None)
     check("지원 항목 4종", [c["item_type"] for c in jp["subsidy_catalog"]],
           ["interview", "suit", "photo", "certificate"])
+    check("횟수 표기 최대 1회/최대 2회",
+          [c["count_label"] for c in jp["subsidy_catalog"]],
+          ["최대 2회", "최대 2회", "최대 1회", "최대 2회"])
 
     print("\n  -- 사업계획서 지원내용 표와 숫자가 일치하는가")
     by_type = {c["item_type"]: c for c in jp["subsidy_catalog"]}
@@ -299,6 +301,13 @@ def test_checklist_assembly(client) -> None:
     )
     check("업로드가 필요한 공통서류는 초본 1종", [r.slot_key for r in base if r.upload],
           ["resident_abstract"])
+
+    empty_id = create_job_application(client, selections=[])
+    empty_final = client.get(f"/api/applications/{empty_id}/final-check").json()
+    check_true("선택 항목 0개가 제출 blocker에 포함",
+               any(b["target"] == "subsidy_items" for b in empty_final["blockers"]))
+    check("지원 항목 없이 최종 제출 거부",
+          client.post(f"/api/applications/{empty_id}/submit").status_code, 400)
     check(
         "신청서는 온라인 작성으로 갈음",
         next(r.fulfilled_by for r in base if r.slot_key == "application_form"),
@@ -330,15 +339,20 @@ def test_checklist_assembly(client) -> None:
             "resident_abstract",
             "interview_1_confirmation",
             "interview_2_confirmation",
-            "suit_1_confirmation",
             "suit_1_receipt",
             "certificate_1_exam",
             "certificate_1_receipt",
         ],
     )
-    check("업로드 슬롯 수", many["upload_total"], 7)
+    check("면접확인서는 연결 회차당 한 번만 업로드", many["upload_total"], 6)
     check("근로유형을 묻지 않는다", many["program"]["asks_work_category"], False)
     check("지원 항목이 있는 사업", many["program"]["has_subsidy_items"], True)
+
+    duplicate_app = create_job_application(client, selections=[])
+    duplicate_link = client.post(f"/api/applications/{duplicate_app}/subsidy-items", json={"items": [
+        {"item_type": "suit", "count": 2, "receipts": [30000, 30000], "linked_interview_indices": [1, 1]},
+    ]})
+    check("두 정장 회차를 같은 면접확인서에 연결하면 거부", duplicate_link.status_code, 400)
 
     exam = next(i for i in many["items"] if i["slot_key"] == "certificate_1_exam")
     check("응시확인서 또는 성적표 택1", exam["doc_type_choices"], ["응시확인서", "성적표"])
@@ -404,6 +418,13 @@ def test_exam_date_required(client) -> None:
     receipt = _upload(client, app_id, "certificate_1_receipt", "S10_결제영수증_응시료43000.pdf")
     check("영수증 판정", receipt["status"], "PASS")
     check("판독된 결제금액", receipt["extracted"].get("결제금액"), "43000")
+
+    mismatch_app = create_job_application(client, selections=[
+        {"item_type": "photo", "count": 1, "receipts": [17000]},
+    ])
+    mismatch = _upload(client, mismatch_app, "photo_1_receipt", "S10_결제영수증_사진18000.pdf")
+    check("입력 금액과 판독 금액 불일치는 확인필요", mismatch["status"], "NEEDS_REVIEW")
+    check_true("금액 불일치 코드", any(f["code"] == "RECEIPT_AMOUNT_MISMATCH" for f in mismatch["findings"]))
 
 
 # ---------------------------------------------------------------- 6. S10 e2e

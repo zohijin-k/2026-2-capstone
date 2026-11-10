@@ -214,7 +214,6 @@ S10_UPLOADS = {
     "resident_abstract": ("S10_주민등록초본_취업패키지.pdf", "2026-04-07"),
     "interview_1_confirmation": ("S10_면접확인서_1회차.pdf", ""),
     "interview_2_confirmation": ("S10_면접확인서_2회차.pdf", ""),
-    "suit_1_confirmation": ("S10_면접확인서_정장.pdf", ""),
     "suit_1_receipt": ("S10_결제영수증_정장70000.pdf", ""),
     "certificate_1_exam": ("S10_응시확인서_적합.pdf", ""),
     "certificate_1_receipt": ("S10_결제영수증_응시료43000.pdf", ""),
@@ -790,7 +789,7 @@ def main(argv: list[str] | None = None) -> int:
 
             print(f"\n[{index}회차 적재 결과]")
             check("신청 건", rows["application"], 5)
-            check("업로드 서류", rows["document"], 22)
+            check("업로드 서류", rows["document"], 21)
             check("심사 결과", rows["review"], 4)
             check("동의 기록", rows["consent"], 14)
             check("지원 항목 회차", rows["subsidy_item"], 4)
