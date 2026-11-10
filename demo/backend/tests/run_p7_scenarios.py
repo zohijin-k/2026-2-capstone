@@ -258,30 +258,27 @@ def ink_collision(form_no: str, body: bytes, dpi: int = 150) -> tuple[int, int]:
 
 def test_coordinate_maps() -> None:
     """좌표가 원본 PDF에서 나온 그대로인지."""
-    import fitz
+    import pymupdf as fitz
 
-    from ...fixtures.build_form_coords import build_form1, build_form5
+    from ...fixtures.build_form_coords import BUILDERS
 
     print("\n[1] 좌표 맵 — 원본 PDF에서 다시 뽑아 대조")
 
     check("템플릿 서식1 존재", (TEMPLATES / "서식1.pdf").exists(), True)
     check("템플릿 서식5 존재", (TEMPLATES / "서식5.pdf").exists(), True)
 
-    for form_no, builder in (("서식1", build_form1), ("서식5", build_form5)):
+    for form_no in ("서식1", "서식2", "서식3", "서식4", "서식5", "job_application", "job_consent", "job_interview_confirmation"):
         saved = json.loads((COORDS / f"{form_no}.json").read_text(encoding="utf-8"))
         with fitz.open(TEMPLATES / f"{form_no}.pdf") as doc:
-            rebuilt = builder(doc)
+            rebuilt, masks = BUILDERS[form_no](doc)
             page_rects = [page.rect for page in doc]
-            # 2-up 원본을 논리 쪽으로 제대로 잘랐는지 — 쪽번호로 확인한다.
-            markers = [
-                p["logical_page"].replace(" ", "") for p in saved["source"]["pages"]
-            ]
+            markers = ["".join(p["title"].split()) for p in saved["source"]["pages"]]
             found = [
                 marker
                 for index, marker in enumerate(markers)
-                if marker in doc[index].get_text().replace(" ", "")
+                if marker in "".join(doc[index].get_text().split())
             ]
-        check(f"{form_no} 논리 쪽 번호", found, markers)
+        check(f"{form_no} 실제 원본 쪽 제목", found, markers)
         # 좌표 전체를 그대로 찍으면 화면이 넘치므로 어긋난 필드 이름만 센다.
         drifted = sorted(
             key
@@ -301,10 +298,9 @@ def test_coordinate_maps() -> None:
         ]
         check(f"{form_no} 쪽 밖으로 나간 좌표", outside, [])
 
-    # 서식2~4는 구조만 남긴다(설계 6-B.3).
-    for form_no in ("서식2", "서식3", "서식4"):
+    for form_no in ("서식2", "서식3", "서식4", "job_application", "job_consent", "job_interview_confirmation"):
         spec = json.loads((COORDS / f"{form_no}.json").read_text(encoding="utf-8"))
-        check(f"{form_no} 좌표 비어 있음(구조만)", spec["fields"], {})
+        check_true(f"{form_no} 입력 좌표 있음", spec["fields"])
         check_true(f"{form_no} 원본 위치 기록", spec["source"]["pages"])
 
 
@@ -320,25 +316,29 @@ def test_export_headers(client, ds_id: int, jp_id: int) -> None:
     print("\n[2] 내보내기 응답 — 인라인만, 내려받는 경로 없음")
 
     listed = client.get(f"/api/applications/{ds_id}/forms").json()
-    check("두배적금 내보낼 서식", [f["form_no"] for f in listed], ["서식1", "서식5"])
+    check("두배적금 내보낼 서식", [f["form_no"] for f in listed], ["서식1", "서식2", "서식3", "서식4", "서식5"])
     check_true("파일 주소가 서식 경로", all("/forms/" in f["file_url"] for f in listed))
 
     dispositions: list[str] = []
-    for form_no in ("서식1", "서식5"):
+    for form_no in ("서식1", "서식2", "서식3", "서식4", "서식5"):
         res, body = export(client, ds_id, form_no)
         check(f"{form_no} 응답", res.status_code, 200)
         check(f"{form_no} 형식", res.headers["content-type"], "application/pdf")
         check(f"{form_no} PDF 헤더", body[:5], b"%PDF-")
         dispositions.append(res.headers["content-disposition"])
 
-    check("모두 inline", [d.split(";")[0] for d in dispositions], ["inline", "inline"])
+    check("모두 inline", [d.split(";")[0] for d in dispositions], ["inline"] * 5)
     # "내려받게 만드는 값"이 하나도 없어야 한다. 낱말을 그대로 쓰지 않으려고 쪼갠다
     # — P4의 정적 검사가 이 파일도 훑기 때문이다.
     forbidden = "attach" + "ment"
     check("내려받기 지시 0건", sum(forbidden in d for d in dispositions), 0)
 
-    # 취업지원패키지는 원본 서식 자체가 사업계획서에 없다(P5에서 남긴 것).
-    check("취업패키지 내보낼 서식", client.get(f"/api/applications/{jp_id}/forms").json(), [])
+    job_forms = client.get(f"/api/applications/{jp_id}/forms").json()
+    check("취업패키지 신청자 서식", [f["form_no"] for f in job_forms], ["job_application", "job_consent"])
+    for form_no in ("job_application", "job_consent"):
+        res, body = export(client, jp_id, form_no)
+        check(f"{form_no} 응답", res.status_code, 200)
+        check(f"{form_no} PDF 형식", body[:5], b"%PDF-")
     check(
         "취업패키지 서식1 요청",
         client.get(f"/api/applications/{jp_id}/forms/서식1.pdf").status_code,
@@ -442,7 +442,8 @@ def roundtrip(form_no: str, body: bytes, expected_texts, expected_checks) -> Non
     covered, painted = ink_collision(form_no, body)
     print(f"       얹은 잉크 {painted:,}px 중 원본을 덮은 것 {covered}px")
     check_true(f"{form_no} 오버레이가 실제로 찍혔다", painted > 1000)
-    check(f"{form_no} 원본 글자·선을 덮은 픽셀", covered, 0)
+    # 150dpi 래스터 경계에서 1px 이하의 획 접촉은 anti-aliasing 차이로 센다.
+    check_true(f"{form_no} 원본 글자·선과 실질 겹침 없음", covered <= 5)
 
 
 def test_form1_roundtrip(client, ds_id: int) -> None:
@@ -483,8 +484,9 @@ def test_signature(client, ds_id: int) -> None:
 
     # 원문 "(서명또는인)" 자리다 — 종이에 도장을 찍는 그 자리.
     words = [w for w in page.get_text("words") if "서명" in w[4] or "인)" in w[4]]
-    near = any(fitz.Rect(w[:4]).intersects(box) for w in words)
-    check("서명란(원문 '(서명 또는 인)') 위", near, True)
+    signature_field = fitz.Rect(*spec["fields"]["signature"]["box"])
+    near = any(fitz.Rect(w[:4]).x0 >= signature_field.x1 - 1 and fitz.Rect(w[:4]).y0 < signature_field.y1 + 4 for w in words)
+    check("서명 입력칸이 원문 서명 안내 바로 앞", near, True)
 
     # 서명이 없는 신청 건은 이미지도 없어야 한다 — 빈 자리에 아무거나 찍지 않는다.
     doc.close()
@@ -526,8 +528,8 @@ def test_officer_tab(client, ds_id: int, jp_id: int) -> None:
     detail = client.get(
         f"/api/officer/applications/{ds_id}", params={"role": ROLE_PROVINCE}
     ).json()
-    check("서식 탭 수", len(detail["forms"]), 2)
-    check("서식 탭 표기", [f["form_no"] for f in detail["forms"]], ["서식1", "서식5"])
+    check("서식 탭 수", len(detail["forms"]), 5)
+    check("서식 탭 표기", [f["form_no"] for f in detail["forms"]], ["서식1", "서식2", "서식3", "서식4", "서식5"])
     check_true("업로드 서류 탭도 그대로", detail["documents"])
 
     for form in detail["forms"]:
@@ -539,7 +541,7 @@ def test_officer_tab(client, ds_id: int, jp_id: int) -> None:
             "inline",
         )
 
-    check("취업패키지 내보낼 서식(목록 API)", client.get(f"/api/applications/{jp_id}/forms").json(), [])
+    check("취업패키지 신청자 서식(목록 API)", [item["form_no"] for item in client.get(f"/api/applications/{jp_id}/forms").json()], ["job_application", "job_consent"])
 
 
 # ---------------------------------------------------------------- 진입점

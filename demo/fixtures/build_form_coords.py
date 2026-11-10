@@ -1,4 +1,4 @@
-"""서식 템플릿 PDF → 필드 좌표 맵 JSON (P7).
+"""원본 서식 PDF → 필드 좌표 맵 JSON.
 
 저장소 루트에서:
 
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from .cut_templates import DEFERRED, GUIDELINE, TEMPLATES_SPEC
+from .cut_templates import TEMPLATES_SPEC
 
 FIXTURES = Path(__file__).resolve().parent
 TEMPLATES = FIXTURES / "templates"
@@ -128,11 +128,11 @@ class Sheet:
         out: list[tuple[Char, str]] = []
         for line in self.lines:
             for i, ch in enumerate(line.chars):
-                if ch.c != "□":
+                if ch.c not in {"□", "☐"}:
                     continue
                 label: list[str] = []
                 for nxt in line.chars[i + 1 :]:
-                    if nxt.c == "□":
+                    if nxt.c in {"□", "☐"}:
                         break
                     label.append(nxt.c)
                 out.append((ch, "".join(label).strip()))
@@ -283,20 +283,20 @@ class ImageField:
 # 같은 낱말이 여러 줄에 나오는 경우(이름·연락처·기간)를 가르는 데만 쓴다.
 
 FORM1_TEXTS_P0 = (
-    TextField("priorName", "(사업명:", mode="after", y_hint=177.3),
-    TextField("priorPeriod", "기간:", mode="after", y_hint=177.3),
-    TextField("priorAmount", "수령액:", mode="after", y_hint=177.3),
-    TextField("name", "신청자 이름", y_hint=210.7),
-    TextField("birth", "생년월일", y_hint=210.7),
-    TextField("address", "주 소", y_hint=232.1),
-    TextField("mobile", "휴대폰", y_hint=253.3),
-    TextField("email", "이메일", y_hint=253.3),
-    TextField("ecName", "이 름", y_hint=278.4),
-    TextField("ecRelation", "관 계", y_hint=278.4),
-    TextField("ecContact", "연락처", y_hint=278.4),
-    TextField("workplaceName", "근무처 명 :", mode="after", y_hint=499.6),
-    TextField("workplaceAddress", "근무처 주소 :", mode="after", y_hint=530.1),
-    TextField("workplaceContact", "근무처 연락처 :", mode="after", y_hint=540.3),
+    TextField("priorName", "사업명 :", mode="after", y_hint=243.5),
+    TextField("priorPeriod", "기간 :", mode="after", y_hint=243.5),
+    TextField("priorAmount", "수령액 :", mode="after", y_hint=243.5),
+    TextField("name", "신청자 이름", y_hint=296.6),
+    TextField("birth", "생년월일", y_hint=296.7),
+    TextField("address", "주   소", y_hint=326.6),
+    TextField("mobile", "휴대폰", y_hint=356.6),
+    TextField("email", "이메일", y_hint=356.6),
+    TextField("ecName", "이  름", y_hint=391.8),
+    TextField("ecRelation", "관  계", y_hint=391.8),
+    TextField("ecContact", "연락처", y_hint=391.8),
+    TextField("workplaceName", "근무처 명 :", mode="after", y_hint=703.0),
+    TextField("workplaceAddress", "근무처 주소 :", mode="after", y_hint=744.39),
+    TextField("workplaceContact", "근무처 연락처 :", mode="after", y_hint=758.65),
 )
 
 FORM1_CHECKS_P0 = (
@@ -326,7 +326,7 @@ FORM1_CHECKS_P0 = (
             "4년 이상 ~ 5년 미만",
             "5년 이상",
         ),
-        y_hint=320.2,
+        y_hint=427.7,
     ),
     CheckGroup(
         "householdType",
@@ -337,7 +337,7 @@ FORM1_CHECKS_P0 = (
         "householdSize",
         "가구원 수",
         ("1인", "2인", "3인", "4인", "5인", "6인", "7인", "8인", "9인", "10인 이상"),
-        y_hint=375.6,
+        y_hint=533.2,
     ),
     CheckGroup(
         "workType",
@@ -353,38 +353,38 @@ FORM1_CHECKS_P0 = (
         "workPeriod",
         "근로기간",
         ("1년 미만", "1년 이상 ~ 2년 미만", "2년 이상 ~ 3년 미만", "3년 이상"),
-        y_hint=470.4,
+        y_hint=647.5,
     ),
     CheckGroup(
         "workplaceRegion",
         "근 무 처",
         ("전북특별자치도 내 지역", "전북특별자치도 외 지역"),
-        y_hint=520.0,
+        y_hint=688.6,
     ),
     CheckGroup(
         "adminWorkForm",
         "근 무 처",
         ("무기계약 근로자", "기간제 근로자"),
-        y_hint=520.0,
+        y_hint=731.5,
     ),
 )
 
 FORM1_TEXTS_P1 = (
-    TextField("bankName", "(은행명 :", mode="after", y_hint=103.7),
-    TextField("accountNo", "계좌번호 :", mode="after", y_hint=103.7),
-    TextField("accountHolder", "예금주 :", mode="after", y_hint=103.7),
+    TextField("bankName", "은행명 :", mode="after", y_hint=146.0),
+    TextField("accountNo", "계좌번호 :", mode="after", y_hint=146.0),
+    TextField("accountHolder", "예금주 :", mode="after", y_hint=146.0),
     TextField(
-        "writtenMonth", "2026.", mode="after", y_hint=297.4, align="center",
+        "writtenMonth", "2026.", mode="after", y_hint=418.5, align="center",
         note="원문 '2026. . .' 의 첫 빈칸(월)",
     ),
     TextField(
-        "writtenDay", "2026..", mode="after", y_hint=297.4, align="center",
+        "writtenDay", "2026..", mode="after", y_hint=418.5, align="center",
         note="원문 '2026. . .' 의 둘째 빈칸(일)",
     ),
 )
 
 FORM1_CHECKS_P1 = (
-    CheckGroup("monthlyDeposit", "납입금액", ("월 10만원",)),
+    CheckGroup("monthlyDeposit", "납입금액", ("월 10만원",), same_cell=True),
     CheckGroup(
         "referralPaths",
         "기타사항",
@@ -403,11 +403,11 @@ FORM1_CHECKS_P1 = (
 # ---- 서식5 -----------------------------------------------------------------
 
 FORM5_TEXTS = (
-    TextField("writtenMonth", "2026 년", mode="after", align="center"),
-    TextField("writtenDay", "2026 년 월", mode="after", align="center"),
-    TextField("name", "성 명:", mode="after"),
-    TextField("birth", "생년월일:", mode="after"),
-    TextField("phone", "전화번호:", mode="after"),
+    TextField("writtenMonth", "2026 년", mode="after", y_hint=568.0, align="center"),
+    TextField("writtenDay", "2026 년 월", mode="after", y_hint=568.0, align="center"),
+    TextField("name", "성 명:", mode="after", y_hint=620.0),
+    TextField("birth", "생년월일:", mode="after", y_hint=668.0),
+    TextField("phone", "전화번호:", mode="after", y_hint=694.0),
 )
 
 FORM5_CHECKS = (
@@ -453,6 +453,15 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
         box = (tail.x1 + PAD, min(tail.y0, baseline - size), limit, max(tail.y1, baseline + 1))
         y = baseline
 
+    if box[2] - box[0] < 8 and spec.mode == "after":
+        # 원문에서 라벨 칸과 입력 칸이 별도 셀인 경우, 라벨 뒤의 첫 칸이 좁을 수
+        # 있다. 다음 실제 격자 칸을 값 칸으로 잡는다.
+        boundary = cell[2]
+        next_cell = sheet.cell_at(boundary + 1.0, baseline - size * 0.3)
+        if next_cell[2] - next_cell[0] >= 8:
+            box = (next_cell[0] + PAD, next_cell[1] + 1.0,
+                   next_cell[2] - PAD, next_cell[3] - 1.0)
+            y = (next_cell[1] + next_cell[3]) / 2 + size * 0.35
     if box[2] - box[0] < 8:
         raise ValueError(f"{spec.key}: 값을 넣을 폭이 너무 좁습니다 ({box})")
 
@@ -472,35 +481,19 @@ def _text_field(sheet: Sheet, spec: TextField) -> dict[str, Any]:
 
 def _check_group(sheet: Sheet, spec: CheckGroup) -> dict[str, dict[str, Any]]:
     line, first, last = sheet.find(spec.anchor, spec.y_hint)
-    head, tail = line.chars[first], line.chars[last]
-    probe_y = tail.oy - tail.size * 0.3
-    cell = sheet.cell_at((head.x0 + tail.x1) / 2, probe_y)
-    if not spec.same_cell:
-        cell = sheet.cell_at(cell[2] + 1.0, probe_y)
-
-    inside = [
-        (ch, label)
-        for ch, label in sheet.boxes()
-        if cell[0] - 0.5 <= ch.x0 and ch.x1 <= cell[2] + 0.5
-        and cell[1] - 0.5 <= ch.y0 and ch.y1 <= cell[3] + 0.5
-    ]
-    if not inside:
-        raise LookupError(f"{spec.key}: 칸 {cell} 안에 체크박스가 없습니다")
-
+    baseline = line.chars[last].oy
+    candidates = sheet.boxes()
     out: dict[str, dict[str, Any]] = {}
     for option in spec.options:
         target = norm(option)
         matches = [
             (len(norm(label)), ch, label)
-            for ch, label in inside
+            for ch, label in candidates
             if norm(label).startswith(target)
         ]
         if not matches:
-            raise LookupError(
-                f"{spec.key}: 보기 {option!r}에 해당하는 체크박스가 없습니다. "
-                f"칸 안 보기 = {[label for _, label in inside]}"
-            )
-        matches.sort(key=lambda m: m[0])  # 가장 짧게 들어맞는 것이 제 짝이다
+            raise LookupError(f"{spec.key}: 보기 {option!r} 체크 위치를 찾지 못했습니다.")
+        matches.sort(key=lambda m: (abs(m[1].oy - (spec.y_hint or baseline)), m[0]))
         _, ch, label = matches[0]
         out[f"{spec.key}.{option}"] = {
             "type": "check",
@@ -528,119 +521,228 @@ def _image_field(sheet: Sheet, spec: ImageField) -> dict[str, Any]:
     }
 
 
-def build_form1(doc: Any) -> dict[str, Any]:
-    p0 = read_sheet(doc[0], 0)
-    p1 = read_sheet(doc[1], 1)
-    fields: dict[str, Any] = {}
-    for spec in FORM1_TEXTS_P0:
-        fields[spec.key] = _text_field(p0, spec)
+def _choice_line(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, Any]]:
+    boxes = [(char, label) for char, label in sheet.boxes() if abs(char.oy - y_hint) <= 5.0]
+    out = {}
+    for option in ("동의함", "동의하지 않음"):
+        hit = next(((char, label) for char, label in boxes
+                    if norm(label).startswith(norm(option))), None)
+        if hit is None:
+            raise LookupError(f"{key}: '{option}' 선택 위치를 못 찾았습니다.")
+        char, label = hit
+        out[f"{key}.{option}"] = {
+            "type": "check", "page": sheet.number, "x": round(char.ox, 2),
+            "y": round(char.oy, 2), "size": round(char.size, 2),
+            "box": [round(char.x0, 2), round(char.y0, 2), round(char.x1, 2), round(char.y1, 2)],
+            "label": label,
+        }
+    return out
+
+
+def _radio_pair(sheet: Sheet, key: str, y_hint: float) -> dict[str, dict[str, Any]]:
+    line, first, last = sheet.find("예, 아니오", y_hint)
+    anchor_index = next((i for i, char_index in enumerate(line.index) if char_index == first), 0)
+    out = {}
+    for label in ("예", "아니오"):
+        at = line.text.find(label, anchor_index)
+        if at < 0:
+            raise LookupError(f"{key}: '{label}' 위치를 못 찾았습니다.")
+        char = line.chars[line.index[at]]
+        size = min(8.0, max(6.0, char.y1 - char.y0))
+        x1 = char.x0 - 2.5
+        x0 = x1 - size
+        y0 = (char.y0 + char.y1 - size) / 2
+        out[f"{key}.{label}"] = {
+            "type": "check", "page": sheet.number, "x": round(x0, 2),
+            "y": round(y0 + size * 0.82, 2), "size": round(size, 2),
+            "box": [round(x0, 2), round(y0, 2), round(x1, 2), round(y0 + size, 2)],
+            "label": label,
+        }
+    return out
+
+
+def _text_fields(sheet: Sheet, specs: tuple[TextField, ...]) -> dict[str, dict[str, Any]]:
+    return {spec.key: _text_field(sheet, spec) for spec in specs}
+
+
+def _mask_text(sheet: Sheet, marker: str, occurrence: int = 0) -> list[float]:
+    needle = norm(marker)
+    hits = []
+    for line in sheet.lines:
+        start = line.text.find(needle)
+        while start >= 0:
+            end = start + len(needle) - 1
+            hits.append([line.chars[line.index[i]] for i in range(start, end + 1)])
+            start = line.text.find(needle, start + 1)
+    if occurrence >= len(hits):
+        raise LookupError(f"가림 영역 문구 위치를 못 찾았습니다: {marker}")
+    chars = hits[occurrence]
+    return [round(min(c.x0 for c in chars) - .4, 2), round(min(c.y0 for c in chars) - .3, 2),
+            round(max(c.x1 for c in chars) + .4, 2), round(max(c.y1 for c in chars) + .3, 2)]
+
+
+def _build_self_check(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    fields = {}
+    for number, y in enumerate((193.9, 221.7, 256.9, 292.3, 320.0, 480.1, 640.1, 691.9), 1):
+        fields.update(_radio_pair(sheet, f"self_check.{number}", y))
+    return fields, []
+
+
+def _build_form3(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    fields = {}
+    fields.update(_choice_line(sheet, "consent.privacy", 494.6))
+    fields.update(_choice_line(sheet, "consent.uniqueId", 598.8))
+    fields.update(_text_fields(sheet, (
+        TextField("consent.form3.year", "20", mode="after", y_hint=740.1),
+        TextField("consent.form3.month", "년", mode="after", y_hint=740.1, align="center"),
+        TextField("consent.form3.day", "년 월", mode="after", y_hint=740.1, align="center"),
+    )))
+    return fields, []
+
+
+def _build_form4(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    fields = _choice_line(sheet, "consent.thirdParty", 545.8)
+    fields.update(_text_fields(sheet, (
+        TextField("consent.form4.year", "20", mode="after", y_hint=602.5),
+        TextField("consent.form4.month", "년", mode="after", y_hint=602.5, align="center"),
+        TextField("consent.form4.day", "년 월", mode="after", y_hint=602.5, align="center"),
+    )))
+    return fields, []
+
+
+def _build_form5(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    fields = _text_fields(sheet, FORM5_TEXTS)
+    fields.update(_choice_line(sheet, "agree", 442.8))
+    fields["name"]["box"][2] = 365.0
+    fields["signature"] = {
+        "type": "image", "page": sheet.number, "box": [369.5, 604.5, 401.9, 620.0],
+        "anchor": "(서명또는인)",
+    }
+    return fields, []
+
+
+def _build_job_application(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    specs = (
+        TextField("name", "성  명", y_hint=139.1), TextField("birth", "생년월일", y_hint=139.1),
+        TextField("address", "주  소", y_hint=170.7), TextField("mobile", "연락처", y_hint=189.3),
+        TextField("email", "이메일", y_hint=189.3), TextField("bankName", "은행", y_hint=210.1),
+        TextField("accountNo", "계좌번호", mode="after", y_hint=210.1),
+        TextField("job.photo.paymentDate", "결 제 일", y_hint=282.0),
+        TextField("job.photo.cost", "사진비용", y_hint=282.0),
+    )
+    fields = {spec.key: _text_field(sheet, spec) for spec in specs}
+    for item, rows, detail_rows, detail_label in (
+        ("interview", (310.9, 358.5), (329.7, 377.2), "응시직군"),
+        ("suit", (405.9, 453.5), (424.6, 472.2), "대여비용"),
+    ):
+        for turn in (1, 2):
+            prefix = f"job.{item}.{turn}"
+            for field_key, anchor, y in (("company", "면접기업", rows[turn - 1]),
+                                         ("location", "소재지", rows[turn - 1]),
+                                         ("date", "면접일", detail_rows[turn - 1]),
+                                         ("detail", detail_label, detail_rows[turn - 1])):
+                key = f"{prefix}.{field_key}"
+                fields[key] = _text_field(sheet, TextField(key, anchor, y_hint=y))
+    for turn, row_y, detail_y in ((1, 501.0, 519.7), (2, 548.5, 567.3)):
+        prefix = f"job.certificate.{turn}"
+        for field_key, anchor, y in (("exam", "시험명", row_y), ("organizer", "시행처", row_y),
+                                     ("date", "응시일", detail_y), ("cost", "시험비용", detail_y)):
+            key = f"{prefix}.{field_key}"
+            fields[key] = _text_field(sheet, TextField(key, anchor, y_hint=y))
+    fields.update(_text_fields(sheet, (
+        TextField("job.applicationYear", "2026년", mode="after", y_hint=647.0),
+        TextField("job.applicationMonth", "2026년 월", mode="after", y_hint=647.0, align="center"),
+        TextField("job.applicationDay", "2026년 월 일", mode="after", y_hint=647.0, align="center"),
+    )))
+    fields["job.signature"] = _image_field(sheet, ImageField(
+        "job.signature", "(인)", y_hint=688.6, grow=(70, 8, -25, 10)))
+    for key, option in zip(("subsidy.interview", "subsidy.suit", "subsidy.photo", "subsidy.certificate"),
+                           ("면접비", "면접정장비", "면접사진촬영비", "자격증 응시료")):
+        fields.update(_check_group(sheet, CheckGroup(key, "신청분야", (option,), same_cell=True)))
+    masks = []
+    for marker, count in (("OO시/군", 4), ("한국교통안전공단", 1), ("한국산업인력공단", 1)):
+        masks.extend({"page": sheet.number, "marker": marker, "box": _mask_text(sheet, marker, i)}
+                     for i in range(count))
+    return fields, masks
+
+
+def _build_job_consent(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    fields = {}
+    fields.update(_choice_line(sheet, "consent.privacy", 298.9))
+    fields.update(_choice_line(sheet, "consent.thirdParty", 439.5))
+    fields.update(_text_fields(sheet, (
+        TextField("consent.job.year", "2026년", mode="after", y_hint=664.0),
+        TextField("consent.job.month", "2026년 월", mode="after", y_hint=664.0, align="center"),
+        TextField("consent.job.day", "2026년 월 일", mode="after", y_hint=664.0, align="center"),
+    )))
+    return fields, []
+
+
+def _build_job_interview(doc: Any):
+    sheet = read_sheet(doc[0], 0)
+    specs = (TextField("name", "성  명", y_hint=173.3), TextField("birth", "생년월일", y_hint=173.3),
+             TextField("address", "주  소", y_hint=205.9), TextField("mobile", "연락처", y_hint=238.5),
+             TextField("email", "이메일", y_hint=238.5))
+    return {spec.key: _text_field(sheet, spec) for spec in specs}, []
+
+
+BUILDERS = {"서식1": lambda doc: (_build_form1_fields(doc), []), "서식2": _build_self_check,
+            "서식3": _build_form3, "서식4": _build_form4, "서식5": _build_form5,
+            "job_application": _build_job_application, "job_consent": _build_job_consent,
+            "job_interview_confirmation": _build_job_interview}
+
+
+def _build_form1_fields(doc: Any):
+    p0, p1 = read_sheet(doc[0], 0), read_sheet(doc[1], 1)
+    fields = {spec.key: _text_field(p0, spec) for spec in FORM1_TEXTS_P0}
     for group in FORM1_CHECKS_P0:
         fields.update(_check_group(p0, group))
-    for spec in FORM1_TEXTS_P1:
-        fields[spec.key] = _text_field(p1, spec)
+    fields.update({spec.key: _text_field(p1, spec) for spec in FORM1_TEXTS_P1})
     for group in FORM1_CHECKS_P1:
         fields.update(_check_group(p1, group))
     return fields
 
 
-def build_form5(doc: Any) -> dict[str, Any]:
-    p0 = read_sheet(doc[0], 0)
-    fields: dict[str, Any] = {}
-    for spec in FORM5_TEXTS:
-        fields[spec.key] = _text_field(p0, spec)
-    for group in FORM5_CHECKS:
-        fields.update(_check_group(p0, group))
-    for spec in FORM5_IMAGES:
-        fields[spec.key] = _image_field(p0, spec)
-    return fields
-
-
-BUILDERS = {"서식1": build_form1, "서식5": build_form5}
-
-
 def build_all(out_dir: Path = COORDS) -> list[Path]:
-    import fitz
+    import pymupdf
+    from .cut_templates import NOTICE_FORM_TO_INTERNAL, TEMPLATES_SPEC
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    written: list[Path] = []
-
-    for spec in TEMPLATES_SPEC:
-        template = TEMPLATES / f"{spec.form_no}.pdf"
+    specs = {spec.key: spec for spec in TEMPLATES_SPEC}
+    written = []
+    for key, builder in BUILDERS.items():
+        spec = specs[key]
+        template = TEMPLATES / f"{key}.pdf"
         if not template.exists():
-            raise FileNotFoundError(
-                f"템플릿이 없습니다: {template}\n"
-                "먼저 `python -m demo.fixtures.cut_templates` 를 돌리세요."
-            )
-        with fitz.open(template) as doc:
-            fields = BUILDERS[spec.form_no](doc)
+            raise FileNotFoundError(f"템플릿이 없습니다: {template}")
+        with pymupdf.open(template) as doc:
+            fields, masks = builder(doc)
             payload = {
-                "form_no": spec.form_no,
-                "title": spec.title,
-                "template": f"templates/{spec.form_no}.pdf",
-                "source": {
-                    "file": spec.source,
-                    "layout": "2-up (물리 1쪽 = 논리 2쪽)",
-                    "pages": [
-                        {
-                            "physical_page": cut.physical_page,
-                            "half": "오른쪽" if cut.half else "왼쪽",
-                            "logical_page": cut.marker,
-                        }
-                        for cut in spec.cuts
-                    ],
-                },
+                "form_no": key, "title": spec.title, "template": f"templates/{key}.pdf",
+                "public_form": spec.public_form,
+                "internal_form": NOTICE_FORM_TO_INTERNAL.get(spec.public_form) if spec.public_form else None,
+                "source": {"file": spec.source,
+                           "pages": [{"page": page.source_page, "title": page.title_marker}
+                                     for page in spec.pages]},
                 "generated_by": "demo/fixtures/build_form_coords.py",
-                "note": (
-                    "좌표는 원본 PDF의 표 선(get_drawings)과 글자 원점"
-                    "(get_text('rawdict'))에서 뽑았다. 손으로 적은 값이 아니다."
-                ),
-                "fields": fields,
+                "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+                "fields": fields, "masks": masks,
             }
-        target = out_dir / f"{spec.form_no}.json"
-        target.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
+        target = out_dir / f"{key}.json"
+        target.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         written.append(target)
-        checks = sum(1 for f in fields.values() if f["type"] == "check")
-        texts = sum(1 for f in fields.values() if f["type"] == "text")
-        images = sum(1 for f in fields.values() if f["type"] == "image")
-        print(f"  {spec.form_no}: 글자 {texts} · 체크 {checks} · 이미지 {images} → {target}")
-
-    for form_no, cut in DEFERRED.items():
-        target = out_dir / f"{form_no}.json"
-        payload = {
-            "form_no": form_no,
-            "template": None,
-            "source": {
-                "file": GUIDELINE,
-                "layout": "2-up (물리 1쪽 = 논리 2쪽)",
-                "pages": [
-                    {
-                        "physical_page": cut.physical_page,
-                        "half": "오른쪽" if cut.half else "왼쪽",
-                        "logical_page": cut.marker,
-                    }
-                ],
-            },
-            "note": (
-                "데모의 PDF 내보내기 대상은 서식1·서식5 2종이다(설계 6-B.3). "
-                "이 서식은 구조만 남겨 두었고 좌표는 비어 있다. 채우려면 "
-                "cut_templates.TEMPLATES_SPEC 에 위 원본 위치를 추가한 뒤 "
-                "build_form_coords.py 에 앵커 규격을 적으면 된다."
-            ),
-            "fields": {},
-        }
-        target.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
-        written.append(target)
-        print(f"  {form_no}: 빈 좌표 맵(구조만) → {target}")
-
+        print(f"  {key}: {len(fields)} 위치, {len(masks)} 가림 영역")
     return written
 
 
 def main() -> int:
-    print("서식 좌표 맵 만들기 (원본 표 선·글자 원점에서 추출)")
+    print("공식 원본에서 서식 좌표 맵 만들기 (문자 위치·표 선 기반)")
     build_all()
     return 0
 

@@ -1,0 +1,101 @@
+{
+  "form_no": "job_interview_confirmation",
+  "title": "면접확인서",
+  "template": "templates/job_interview_confirmation.pdf",
+  "public_form": null,
+  "internal_form": null,
+  "source": {
+    "file": "2026_취업패키지_신청서.pdf",
+    "pages": [
+      {
+        "page": 3,
+        "title": "면접확인서"
+      }
+    ]
+  },
+  "generated_by": "demo/fixtures/build_form_coords.py",
+  "note": "좌표는 공식 원본 PDF 문자 위치와 벡터 표 선에서 추출했습니다.",
+  "fields": {
+    "name": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 170.0,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        151.43,
+        322.14,
+        181.56
+      ],
+      "anchor": "성  명",
+      "mode": "cell_right"
+    },
+    "birth": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 170.0,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        151.43,
+        535.27,
+        181.56
+      ],
+      "anchor": "생년월일",
+      "mode": "cell_right"
+    },
+    "address": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 202.54,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        183.56,
+        535.27,
+        214.52
+      ],
+      "anchor": "주  소",
+      "mode": "cell_right"
+    },
+    "mobile": {
+      "type": "text",
+      "page": 0,
+      "x": 171.15,
+      "y": 235.15,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        171.15,
+        216.52,
+        322.14,
+        246.77
+      ],
+      "anchor": "연락처",
+      "mode": "cell_right"
+    },
+    "email": {
+      "type": "text",
+      "page": 0,
+      "x": 388.35,
+      "y": 235.15,
+      "size": 10.0,
+      "align": "left",
+      "box": [
+        388.35,
+        216.52,
+        535.27,
+        246.77
+      ],
+      "anchor": "이메일",
+      "mode": "cell_right"
+    }
+  },
+  "masks": []
+}
