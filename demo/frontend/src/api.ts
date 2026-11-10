@@ -504,6 +504,14 @@ export interface FormLayout {
   auto_date: string
 }
 
+export interface ApplicantFormSummary {
+  form_no: string
+  title: string
+  label: string
+  file_url: string
+  file_name: string
+}
+
 export const fetchFormLayout = async (id: number, formNo: string): Promise<FormLayout> => {
   const layout = await json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
   const bindings = FORM_FIELD_KEYS[formNo] || []
@@ -514,6 +522,9 @@ export const fetchFormLayout = async (id: number, formNo: string): Promise<FormL
     : { ...rule, field: (keyById[rule.field] || rule.field).split('.')[0], required: rule.required.map((key) => keyById[key] || key) })
   return { ...layout, fields, requirements }
 }
+
+export const fetchApplicantForms = (id: number) =>
+  json<ApplicantFormSummary[]>(`/api/applications/${id}/forms`)
 
 /** 본인인증 결과. 서류 본인 대조의 기준이 된다 (연락처는 가려서 돌아온다). */
 export interface Identity {

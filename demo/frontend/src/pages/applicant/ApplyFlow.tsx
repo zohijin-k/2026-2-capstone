@@ -17,7 +17,7 @@
  *
  */
 
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 import {
   createApplication,
@@ -51,7 +51,17 @@ type Stage =
   | 'subsidy'
   | 'upload'
   | 'final'
+  | 'complete'
   | 'mypage'
+
+type Step = { key: 'identity' | 'forms' | 'upload' | 'final'; label: string }
+type StepperProgress = { completed: number; total: number }
+const APPLY_STEPS: Step[] = [
+  { key: 'identity', label: '본인인증' },
+  { key: 'forms', label: '서식 작성' },
+  { key: 'upload', label: '서류 업로드' },
+  { key: 'final', label: '확인 및 제출' },
+]
 
 type ConsentType = ConsentPayload['consent_type']
 
@@ -81,6 +91,7 @@ export default function ApplyFlow() {
   const [appId, setAppId] = useState<number | null>(null)
   const [appNo, setAppNo] = useState('')
   const [stage, setStage] = useState<Stage>('program')
+  const [stageBeforeMypage, setStageBeforeMypage] = useState<Stage>('identity')
   const [error, setError] = useState('')
   const [identity, setIdentity] = useState<Identity | null>(null)
 
@@ -99,7 +110,16 @@ export default function ApplyFlow() {
   const [selectedSubsidyTypes, setSelectedSubsidyTypes] = useState(0)
   const [formContinuing, setFormContinuing] = useState(false)
   const [formError, setFormError] = useState('')
+  const [formProgress, setFormProgress] = useState<StepperProgress>({ completed: 0, total: 0 })
+  const [uploadProgress, setUploadProgress] = useState<StepperProgress>({ completed: 0, total: 0 })
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
+
+  const reportFormProgress = useCallback((completed: number, total: number) => {
+    setFormProgress({ completed, total })
+  }, [])
+  const reportUploadProgress = useCallback((completed: number, total: number) => {
+    setUploadProgress({ completed, total })
+  }, [])
 
   /** 사업을 고른 시점에 신청 건을 만든다. 이후 단계마다 부분 저장한다. */
   const pickProgram = (picked: Program) => {
@@ -109,6 +129,9 @@ export default function ApplyFlow() {
     setIdentity(null)
     setSelectedSubsidyTypes(0)
     setForm1(EMPTY_FORM1)
+    setFormProgress({ completed: 0, total: 0 })
+    setUploadProgress({ completed: 0, total: 0 })
+    setSubmitted(null)
     createApplication(picked.code)
       .then((a) => {
         setAppId(a.id)
@@ -167,16 +190,10 @@ export default function ApplyFlow() {
     }
   }
 
-  /**
-   * 상단 단계 표시를 눌러 바로 그 단계로 간다.
-   *
-   * 시연에서는 앞 단계를 다 통과해야만 다음 화면을 볼 수 있으면 곤란하다.
-   * 신청 건은 사업을 고른 시점에 이미 만들어져 있으므로, 어느 단계로 건너뛰든
-   * 그 화면이 필요로 하는 `appId`는 준비돼 있다. 각 화면의 저장·판정은 그대로
-   * 동작하고, 최종 제출 시점의 검증(최종 확인)이 미비를 잡아 준다.
-   */
+  /** 최종 확인의 수정 링크는 이미 도달한 단계로만 돌아가게 한다. */
   const jumpTo = (next: Stage) => {
     if (next === stage) return
+    if (next === 'identity' && identity !== null) return
     setStage(next)
     window.scrollTo({ top: 0 })
   }
@@ -211,15 +228,49 @@ export default function ApplyFlow() {
       (form5.agree === '동의함' &&
         (signMode === '전자서명' ? !!form5.signature : form5.signatureScanUploaded)))
 
-  const stageNames: [Stage, string][] = [
-    ['identity', '본인인증'],
-    ['forms', '서식 작성'],
-    ...(program.has_subsidy_items ? ([['subsidy', '지원 항목']] as [Stage, string][]) : []),
-    ['upload', '서류 업로드'],
-    ['final', '최종 확인'],
-    ['mypage', '마이페이지'],
-  ]
-  const currentIndex = stageNames.findIndex(([key]) => key === stage)
+  const submittedDone = submitted !== null
+  const uploadComplete = uploadProgress.total > 0 && uploadProgress.completed >= uploadProgress.total
+  const viewedStage = stage === 'mypage' && !submittedDone ? stageBeforeMypage : stage
+  const currentIndex = viewedStage === 'identity' ? 0
+    : viewedStage === 'forms' || viewedStage === 'subsidy' ? 1
+      : viewedStage === 'upload' ? 2 : 3
+
+  const openMyPage = () => {
+    if (stage !== 'mypage') setStageBeforeMypage(stage)
+    setStage('mypage')
+    window.scrollTo({ top: 0 })
+  }
+
+  const stepProgress = (index: number): number => {
+    if (submittedDone) return 1
+    if (index === 2) {
+      if (uploadProgress.total === 0) return 0
+      return Math.max(0, Math.min(1, uploadProgress.completed / uploadProgress.total))
+    }
+    if (index < currentIndex) return 1
+    if (index > currentIndex) return 0
+    const current = index === 1 ? formProgress : index === 2 ? uploadProgress : null
+    return current && current.total > 0 ? Math.max(0, Math.min(1, current.completed / current.total)) : 0
+  }
+
+  const stepStatus = (index: number): string => {
+    if (submittedDone) return index === 3 ? '접수 완료' : '완료'
+    if (index === 2) {
+      return uploadProgress.total > 0 ? `${uploadProgress.completed} / ${uploadProgress.total}` : '대기'
+    }
+    if (index < currentIndex) return '완료'
+    if (index > currentIndex) return '대기'
+    if (index === 1 && formProgress.total > 0) return `${formProgress.completed} / ${formProgress.total} 작성`
+    return ''
+  }
+
+  const stepperNavigate = (index: number) => {
+    const previouslyReachedUpload = index === 2 && uploadProgress.total > 0
+    if (submittedDone || stage === 'mypage' || index === 0) return
+    if (index >= currentIndex && !previouslyReachedUpload) return
+    setStage(index === 1 ? 'forms' : 'upload')
+    window.scrollTo({ top: 0 })
+  }
 
   /** 신청서 저장. 본인인증을 마쳤으면 성명·생년월일은 인증 값으로 고정된다. */
   const onForm1 = (next: Form1Value) => {
@@ -235,37 +286,55 @@ export default function ApplyFlow() {
           <h1>{program.name} 신청</h1>
           <p className="flow__sub">작성 내용은 단계마다 자동 저장됩니다</p>
         </div>
-        <dl className="flow__meta">
-          <div>
-            <dt>신청번호</dt>
-            <dd>{appNo || '발급 중…'}</dd>
-          </div>
-          {program.is_first_come && (
+        <div className="flow__head-meta">
+          <dl className="flow__meta">
             <div>
-              <dt>접수 방식</dt>
-              <dd>선착순</dd>
+              <dt>신청번호</dt>
+              <dd>{appNo || '발급 중…'}</dd>
             </div>
-          )}
-        </dl>
+            {program.is_first_come && (
+              <div>
+                <dt>접수 방식</dt>
+                <dd>선착순</dd>
+              </div>
+            )}
+          </dl>
+          <button type="button" className="flow__mypage" onClick={openMyPage} disabled={stage === 'mypage'}>마이페이지</button>
+        </div>
       </header>
       <ol className="flow__stages" aria-label="신청 단계">
-        {stageNames.map(([key, label], i) => (
+        {APPLY_STEPS.map(({ key, label }, i) => {
+          const complete = submittedDone || (i === 2 ? uploadComplete : i < currentIndex)
+          const current = i === currentIndex
+          const canNavigate = !submittedDone && stage !== 'mypage' && i !== 0 &&
+            (i < currentIndex || (i === 2 && uploadProgress.total > 0))
+          const status = stepStatus(i)
+          return (
           <li
             key={key}
-            className={i === currentIndex ? 'is-current' : i < currentIndex ? 'is-past' : undefined}
+            className={complete ? 'is-complete' : current ? 'is-current' : 'is-waiting'}
           >
             <button
               type="button"
-              aria-current={stage === key ? 'step' : undefined}
-              onClick={() => jumpTo(key)}
+              aria-current={current ? 'step' : undefined}
+              aria-disabled={!canNavigate}
+              title={i === 0 && identity ? '본인인증은 완료되었습니다' : undefined}
+              onClick={() => stepperNavigate(i)}
             >
               <span className="flow__stage-no" aria-hidden="true">
-                {i + 1}
+                {complete ? <span className="flow__stage-check" aria-hidden="true">✓</span> : i + 1}
               </span>
               <span className="flow__stage-label">{label}</span>
+              <span className="flow__stage-status">{status}</span>
             </button>
+            {i < APPLY_STEPS.length - 1 && (
+              <span className="flow__stage-connector" aria-hidden="true">
+                <span style={{ width: `${stepProgress(i) * 100}%` }} />
+              </span>
+            )}
           </li>
-        ))}
+          )
+        })}
       </ol>
 
       {/* ── 본인인증 (데모) ── */}
@@ -324,6 +393,7 @@ export default function ApplyFlow() {
           continuing={formContinuing}
           error={formError}
           readOnly={!!submitted}
+          onProgress={reportFormProgress}
         />
       )}
 
@@ -379,7 +449,7 @@ export default function ApplyFlow() {
               </p>
             </div>
           )}
-          <DocumentUpload key={checklistKey} applicationId={appId} />
+          <DocumentUpload key={checklistKey} applicationId={appId} onProgress={reportUploadProgress} />
           <div className="flow__actions">
             <button
               type="button"
@@ -402,7 +472,7 @@ export default function ApplyFlow() {
             applicationId={appId}
             onSubmitted={(result) => {
               setSubmitted(result)
-              setStage('mypage')
+              setStage('complete')
               window.scrollTo({ top: 0 })
             }}
             onBack={() => jumpTo('upload')}
@@ -411,37 +481,39 @@ export default function ApplyFlow() {
         </>
       )}
 
-      {/* ── [7] 제출 완료 · 마이페이지 ── */}
+      {/* ── 제출 완료 ── */}
+      {stage === 'complete' && submitted && (
+        <>
+          <div className="flow-block flow-block--ok">
+            <strong>{submitted.message}</strong>
+            <p>신청번호 {submitted.application_no}</p>
+            {submitted.first_come && (
+              <p className="flow-queue">
+                접수 순번 <strong>{submitted.first_come.position}번</strong>
+                {submitted.first_come.quota !== null &&
+                  ` / 총 지원규모 ${submitted.first_come.quota.toLocaleString('ko-KR')}건`}
+              </p>
+            )}
+            {submitted.subsidy && submitted.subsidy.lines.length > 0 && (
+              <p className="flow-queue">
+                신청하신 항목의 지급 예정액{' '}
+                <strong>{submitted.subsidy.total_granted.toLocaleString('ko-KR')}원</strong>
+              </p>
+            )}
+            <ol className="flow-steps-list">
+              {submitted.next_steps.map((s) => <li key={s}>{s}</li>)}
+            </ol>
+            <p className="flow-alt">{submitted.notice}</p>
+            <button type="button" className="btn btn--primary" onClick={openMyPage}>마이페이지</button>
+          </div>
+        </>
+      )}
+
       {stage === 'mypage' && appId !== null && (
         <>
-          {submitted && (
-            <div className="flow-block flow-block--ok">
-              <strong>{submitted.message}</strong>
-              <p>신청번호 {submitted.application_no}</p>
-              {submitted.first_come && (
-                <p className="flow-queue">
-                  접수 순번 <strong>{submitted.first_come.position}번</strong>
-                  {submitted.first_come.quota !== null &&
-                    ` / 총 지원규모 ${submitted.first_come.quota.toLocaleString('ko-KR')}건`}
-                </p>
-              )}
-              {submitted.subsidy && submitted.subsidy.lines.length > 0 && (
-                <p className="flow-queue">
-                  신청하신 항목의 지급 예정액{' '}
-                  <strong>
-                    {submitted.subsidy.total_granted.toLocaleString('ko-KR')}원
-                  </strong>
-                </p>
-              )}
-              <ol className="flow-steps-list">
-                {submitted.next_steps.map((s) => (
-                  <li key={s}>{s}</li>
-                ))}
-              </ol>
-              <p className="flow-alt">{submitted.notice}</p>
-            </div>
-          )}
-          <div className="flow__gap" />
+          <div className="flow__mypage-return">
+            <button type="button" className="btn" onClick={() => setStage(stageBeforeMypage)}>신청 화면으로 돌아가기</button>
+          </div>
           <MyPage applicationId={appId} />
         </>
       )}

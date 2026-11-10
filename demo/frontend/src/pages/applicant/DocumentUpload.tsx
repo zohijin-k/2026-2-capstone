@@ -352,7 +352,13 @@ function SlotCard({
   )
 }
 
-export default function DocumentUpload({ applicationId }: { applicationId: number }) {
+export default function DocumentUpload({
+  applicationId,
+  onProgress,
+}: {
+  applicationId: number
+  onProgress: (uploaded: number, total: number) => void
+}) {
   const [checklist, setChecklist] = useState<Checklist | null>(null)
   const [declared, setDeclared] = useState<Record<string, YMD>>({})
   const [busySlot, setBusySlot] = useState('')
@@ -360,9 +366,12 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
 
   useEffect(() => {
     fetchChecklist(applicationId)
-      .then(setChecklist)
+      .then((next) => {
+        setChecklist(next)
+        onProgress(next.upload_done, next.upload_total)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [applicationId])
+  }, [applicationId, onProgress])
 
   const context = checklist?.context ?? {}
 
@@ -387,7 +396,9 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
       if (proofDocs.length > 0) {
         for (const doc of proofDocs) await deleteDocument(applicationId, doc.document_id)
       }
-      setChecklist(await putDocContext(applicationId, { ...context, ...patch }))
+      const next = await putDocContext(applicationId, { ...context, ...patch })
+      setChecklist(next)
+      onProgress(next.upload_done, next.upload_total)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
       await refresh()
@@ -396,7 +407,10 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
     }
   }
 
-  const refresh = () => fetchChecklist(applicationId).then(setChecklist)
+  const refresh = () => fetchChecklist(applicationId).then((next) => {
+    setChecklist(next)
+    onProgress(next.upload_done, next.upload_total)
+  })
 
   const upload = async (item: DocRequirementRow, file: File) => {
     setBusySlot(item.slot_key)

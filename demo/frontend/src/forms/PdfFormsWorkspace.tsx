@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 
 import {
   fetchFormLayout,
+  fetchApplicantForms,
   fetchSubsidyItems,
   saveSubsidyItems,
   uploadSignatureScan,
@@ -49,6 +50,7 @@ interface Props {
   continuing: boolean
   error: string
   readOnly?: boolean
+  onProgress: (completed: number, total: number) => void
 }
 
 function truthy(value: unknown): boolean {
@@ -125,11 +127,12 @@ function fieldGroup(key: string): string {
 export default function PdfFormsWorkspace({
   applicationId, program, identity, form1, answers, consent, form5, signMode,
   checkResult, onForm1, onAnswers, onConsent, onForm5, onSignMode,
-  onFlush, onChangedSubsidy, onContinue, continuing, error, readOnly = false,
+  onFlush, onChangedSubsidy, onContinue, continuing, error, readOnly = false, onProgress,
 }: Props) {
   const isJob = program.has_subsidy_items
   const formNos = isJob ? JOB_FORMS : SAVINGS_FORMS
   const [layouts, setLayouts] = useState<Record<string, FormLayout>>({})
+  const [availableFormCount, setAvailableFormCount] = useState(0)
   const [active, setActive] = useState<ActiveForm | null>(null)
   const [page, setPage] = useState(0)
   const [localError, setLocalError] = useState('')
@@ -147,9 +150,15 @@ export default function PdfFormsWorkspace({
 
   useEffect(() => {
     let alive = true
-    Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo)))
-      .then((items) => {
-        if (alive) setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
+    Promise.all([
+      Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo))),
+      fetchApplicantForms(applicationId),
+    ])
+      .then(([items, availableForms]) => {
+        if (alive) {
+          setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
+          setAvailableFormCount(availableForms.length)
+        }
       })
       .catch((e: unknown) => {
         if (alive) setLocalError(e instanceof Error ? e.message : String(e))
@@ -276,6 +285,9 @@ export default function PdfFormsWorkspace({
 
   const allReady = formNos.every((formNo) => !!layouts[formNo] && missing(formNo).length === 0) &&
     (isJob ? selfCheckItems.every((item) => !!answers[item.no]) : true)
+  const completedFormCount = formNos.filter(
+    (formNo) => !!layouts[formNo] && missing(formNo).length === 0,
+  ).length
 
   const setText = (key: string, value: string) => {
     if (key === 'name' && identity) return
@@ -618,6 +630,11 @@ export default function PdfFormsWorkspace({
     if (hasStarted(formNo)) return { state: 'draft', label: `작성 중 · 남은 항목 ${remaining}개`, remaining }
     return { state: 'empty', label: '미작성', remaining }
   }
+
+  useEffect(() => {
+    if (availableFormCount === 0) return
+    onProgress(completedFormCount, availableFormCount)
+  }, [availableFormCount, completedFormCount, onProgress])
 
   const formLabel = (formNo: string) => {
     const layout = layouts[formNo]
