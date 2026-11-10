@@ -16,9 +16,9 @@ from typing import Any, Callable
 
 import yaml
 
-from .extractors import resident_abstract
+from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract
 from .extractors.resident_abstract import kst_today
-from .pipeline.ocr import OcrResult, run_ocr
+from .pipeline.ocr import OcrResult, OcrWord, run_ocr
 from .pipeline.preprocess import PageImage, PageSource, preprocess
 from .rules.registry import RULES, RuleContext
 from .schemas.models import (ApplicationInput, ApplicationResult, CheckResult, CheckStatus,
@@ -34,6 +34,8 @@ REVIEW_MSG = "담당자가 확인한 뒤 결과를 알려드릴게요."
 EXTRACTORS: dict[DocType, Callable] = {
     DocType.RESIDENT_ABSTRACT: resident_abstract.extract,
     DocType.RESIDENT_REGISTER: resident_abstract.extract,  # 등본을 올려도 같은 부품이 판별
+    DocType.NHIS_PAYMENT: nhis_payment.extract,
+    DocType.NHIS_ACQUISITION_LOSS: nhis_acquisition_loss.extract,
 }
 
 # 규칙 params 중 '필드 이름'을 담는 키 → 신뢰도 판단에 쓸 관련 필드
@@ -135,14 +137,33 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
 def _load_pages(doc: DocumentInput, ocr_engine: str) -> list[tuple[PageImage, OcrResult]] | str:
     try:
         pages = []
-        for p in preprocess(doc.file_path):
-            if p.source == PageSource.TEXT_LAYER:
-                continue  # TODO: 텍스트 레이어 페이지를 OcrResult 형태로 변환
-            r = run_ocr(ocr_engine, p.png, p.pixel_size)
-            if r.error:
-                return f"OCR 실패: {r.error}"
-            pages.append((p, r))
-        return pages
+        pdf = None
+        try:
+            for p in preprocess(doc.file_path):
+                if p.source == PageSource.TEXT_LAYER:
+                    if pdf is None:
+                        import pymupdf
+
+                        pdf = pymupdf.open(doc.file_path)
+                    page = pdf[p.page]
+                    scale = 300 / 72
+                    p.pixel_size = (round(p.page_size_pt[0] * scale), round(p.page_size_pt[1] * scale))
+                    words = []
+                    for item in page.get_text("words", sort=True):
+                        x0, y0, x1, y1, text = item[:5]
+                        if text.strip():
+                            words.append(OcrWord(text, 1.0,
+                                (x0 * scale, y0 * scale, x1 * scale, y1 * scale)))
+                    pages.append((p, OcrResult("text_layer", words)))
+                    continue
+                r = run_ocr(ocr_engine, p.png, p.pixel_size)
+                if r.error:
+                    return f"OCR 실패: {r.error}"
+                pages.append((p, r))
+            return pages
+        finally:
+            if pdf is not None:
+                pdf.close()
     except ValueError as e:
         return str(e)
 

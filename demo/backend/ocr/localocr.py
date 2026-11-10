@@ -8,10 +8,11 @@ Tier2(pdftext)는 텍스트 레이어가 있는 PDF만 읽는다. 그런데 실�
   - 서류 이미지를 **외부로 보내지 않고** 이 서버 안에서 OCR한다 (개인정보).
   - 초본/등본은 engine_v2 추출기로 구조를 읽는다: 성명·생년월일·발급일·주소이력,
     그리고 쪽 간 일치·순번 연속 같은 **서류 내부 검증**으로 신뢰도를 매긴다.
+  - 건강보험료 납부·자격득실확인서는 텍스트 PDF와 이미지 PDF 모두 engine_v2 추출기를 쓴다.
   - 그 밖의 서류는 OCR 텍스트에 Tier2의 정규식 추출을 그대로 적용한다.
 
 처리하지 않는 파일(→ None, 다음 계층으로):
-  - 텍스트 레이어가 있는 PDF: Tier2가 더 빠르고 정확하다
+  - 건강보험 서류 외 텍스트 레이어 PDF: Tier2가 더 빠르고 정확하다
   - 암호 PDF·없는 파일: Tier2가 공고문 문구로 '미비'를 낸다
   - OCR 엔진이 설치돼 있지 않은 서버: 조용히 건너뛴다 (데모가 멈추지 않는 원칙)
 
@@ -48,11 +49,13 @@ def _import_v2():
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
     from engine_v2.extractors import resident_abstract
+    from engine_v2.extractors import nhis_acquisition_loss, nhis_payment
+    from engine_v2.engine import _load_pages
     from engine_v2.pipeline.ocr import run_ocr
     from engine_v2.pipeline.preprocess import PageSource, preprocess
-    from engine_v2.schemas.models import DocType as V2DocType
+    from engine_v2.schemas.models import DocType as V2DocType, DocumentInput
 
-    return resident_abstract, run_ocr, PageSource, preprocess, V2DocType
+    return resident_abstract, nhis_payment, nhis_acquisition_loss, run_ocr, PageSource, preprocess, V2DocType, DocumentInput, _load_pages
 
 
 def _quality(pages) -> float:
@@ -136,6 +139,47 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     )
 
 
+def _from_nhis(ex, pages, v2types) -> OcrResult:
+    """engine_v2 건강보험 판독 결과를 신청자·담당자 화면 계약으로 옮긴다."""
+    fields: dict[str, str] = {}
+    bboxes: dict[str, BBox] = {}
+    for key, value in ex.fields.items():
+        rendered = value.value.isoformat() if isinstance(value.value, date) else str(value.value)
+        fields[key] = rendered
+        if (box := _demo_bbox(value.bbox)) is not None:
+            bboxes[key] = box
+    validations = ex.validations
+    fields["판독검증"] = f"{sum(v.passed for v in validations)}/{len(validations)} 통과"
+    failed = [v.name for v in validations if not v.passed]
+    if failed:
+        fields["판독검증실패"] = ", ".join(failed)
+    if ex.warnings:
+        fields["판독경고"] = " ".join(ex.warnings)
+    confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    detected_map = {
+        v2types.NHIS_PAYMENT: DocType.NHIS_PAYMENT,
+        v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
+    }
+    detected = detected_map.get(ex.detected_type)
+    issue = ex.fields.get("발급일")
+    issue_date = None
+    if issue:
+        try:
+            issue_date = date.fromisoformat(str(issue.value)[:10])
+        except ValueError:
+            pass
+    return OcrResult(
+        detected_doc_type=detected,
+        confidence=round(min(confidence, ex.type_confidence), 2),
+        image_quality=_quality([page for page, _ in pages]),
+        issue_date=issue_date,
+        fields=fields,
+        bboxes=bboxes,
+        page_count=len(pages),
+        tier=NAME,
+    )
+
+
 def _generic(pages, path: Path) -> OcrResult | None:
     """초본·등본이 아닌 서류: OCR 텍스트에 Tier2 정규식을 적용한다.
 
@@ -184,20 +228,34 @@ class LocalOcr:
     name = NAME
 
     def read(self, file_path: str, expected: DocType | None) -> OcrResult | None:
-        del expected  # 기대값과 무관하게 있는 그대로 읽는다 (오분류를 잡아야 하므로)
         engine = _engine_name()
-        if engine == "off":
-            return None
         path = Path(file_path)
         if not path.exists() or path.suffix.lower() not in {".pdf", ".jpg", ".jpeg", ".png"}:
             return None
 
-        if path.suffix.lower() == ".pdf" and _tier2_can_read(path):
+        text_pdf = path.suffix.lower() == ".pdf" and _tier2_can_read(path)
+        nhis_types = {DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS}
+        nhis_expected = expected in nhis_types
+        if engine == "off" and not (nhis_expected and text_pdf):
+            return None
+        if text_pdf and not nhis_expected:
             return None  # 텍스트 PDF·암호 PDF → Tier2
 
         try:
-            ra, run_ocr, PageSource, preprocess, v2types = _import_v2()
+            ra, payment_extractor, acquisition_extractor, run_ocr, PageSource, preprocess, v2types, V2DocumentInput, load_pages = _import_v2()
         except ImportError:
+            return None
+
+        if nhis_expected:
+            v2type = v2types.NHIS_PAYMENT if expected == DocType.NHIS_PAYMENT else v2types.NHIS_ACQUISITION_LOSS
+            input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
+            pages = load_pages(input_doc, engine)
+            if isinstance(pages, str):
+                return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
+            extractor = payment_extractor if expected == DocType.NHIS_PAYMENT else acquisition_extractor
+            return _from_nhis(extractor.extract(pages), pages, v2types)
+
+        if engine == "off":
             return None
         try:
             page_images = preprocess(path)
