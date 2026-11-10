@@ -37,7 +37,7 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
-from ..rules.criteria import for_application
+from ..rules.criteria import for_application, read_criteria
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
 from ..rules.required_docs import upload_slots
 from ..rules.scoring import ScoreSheet, score_application
@@ -173,7 +173,7 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
     checklist = checklist_for(app)
     documents = list_documents(app.id or 0)
     criteria_version = for_application(app)
-    criteria = criteria_version.criteria_json
+    criteria = read_criteria(criteria_version)
     by_slot = {d.slot_key: d for d in documents}
 
     for req in upload_slots(checklist):
@@ -412,7 +412,7 @@ def _run_review(app: Application) -> Review:
     form1 = app.form1_json or {}
     documents = list_documents(app.id or 0)
     criteria_version = for_application(app)
-    criteria = criteria_version.criteria_json
+    criteria = read_criteria(criteria_version)
 
     # 병합 PDF의 미배정 페이지는 심사 대상이 아니다. 담당자 확인용으로만 남는다.
     rows = [document_fact(d) for d in documents if d.slot_key != UNASSIGNED_SLOT]

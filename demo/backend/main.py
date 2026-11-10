@@ -82,9 +82,9 @@ def get_program_detail(code: str) -> dict:
 def _serialize(code: str) -> dict:
     program = get_program(code)
     data = asdict(program)
-    from .rules.criteria import latest
+    from .rules.criteria import latest, read_criteria
 
-    current = latest(code).criteria_json
+    current = read_criteria(latest(code))
     data["announcement_date"] = current["announcement_date"]
     default_rule = current.get("document_issue_fallback", {"mode": "none"})
     data["document_cutoff"] = (

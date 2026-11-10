@@ -7,9 +7,10 @@ from datetime import date
 from pathlib import Path
 
 from . import run_p4_scenarios as p4
-from ..rules.criteria import for_application, issue_bounds
+from ..rules.criteria import for_application, issue_bounds, read_criteria
 from ..rules.facts import build_facts
-from ..models import Application
+from ..models import Application, ProgramCriteriaVersion, get_session
+from sqlmodel import select
 from engine.models import Document as EngineDocument, RequiredDocumentSpec, ReasonCode
 from engine.stage1_document_check import check_single_document
 
@@ -59,8 +60,8 @@ def run(client) -> None:
     officer = client.get(path, params={"role": "province"}).json()
     check("버전 이력 보존", len(officer["history"]) >= 2, True)
     check("새 고지월 기준", officer["current"]["nhis_payment_months"], body["nhis_payment_months"])
-    old_snapshot = for_application(Application.model_validate(existing)).criteria_json
-    new_snapshot = for_application(Application.model_validate(new_app)).criteria_json
+    old_snapshot = read_criteria(for_application(Application.model_validate(existing)))
+    new_snapshot = read_criteria(for_application(Application.model_validate(new_app)))
     check("기존 신청서 기준 이력 고정", old_snapshot["nhis_payment_months"], ["2025-10", "2025-11", "2025-12"])
     old_cutoff = issue_bounds(old_snapshot, "resident_abstract", date(2026, 11, 10))[0]
     new_cutoff = issue_bounds(new_snapshot, "resident_abstract", date(2026, 11, 10))[0]
@@ -82,6 +83,40 @@ def run(client) -> None:
     new_avg = build_facts({}, [fact], new_snapshot["nhis_payment_months"]).monthly_premium
     check("기본 기준의 평균", old_avg, 200)
     check("변경 기준의 평균", new_avg, 2000)
+
+    # 구형 저장 형식을 DB에 직접 넣어도 공개/담당자 조회와 신청서 판정이 유지되는지 확인.
+    legacy_version = new_version + 1
+    legacy_raw = {"announcement_date": "2026-03-03"}
+    with get_session() as session:
+        session.add(ProgramCriteriaVersion(
+            program_code=code, version=legacy_version, criteria_json=legacy_raw,
+            changed_role="system",
+        ))
+        session.commit()
+
+    legacy_public = client.get(f"/api/programs/{code}/criteria")
+    check("구형 기준 신청자 조회", legacy_public.status_code, 200)
+    check("구형 기준 신청 기간 기본값 보정", len(legacy_public.json().get("application_period", [])), 2)
+    check("구형 기준 스키마 보정", legacy_public.json().get("schema_version"), 2)
+    legacy_officer = client.get(path, params={"role": "province"})
+    check("구형 기준 담당자 조회", legacy_officer.status_code, 200)
+    check("구형 기준 이력도 보정", legacy_officer.json()["current"].get("nhis_payment_months"),
+          ["2025-10", "2025-11", "2025-12"])
+
+    legacy_app = client.post("/api/applications", json={"program_code": code}).json()
+    check("구형 기준에 신청서 버전 고정", legacy_app["criteria_version"], legacy_version)
+    legacy_snapshot = read_criteria(for_application(Application.model_validate(legacy_app)))
+    legacy_cutoff = issue_bounds(legacy_snapshot, "resident_abstract", date(2026, 11, 10))[0]
+    legacy_findings = check_single_document(
+        same_doc, RequiredDocumentSpec("주민등록초본", min_issue_date=legacy_cutoff)
+    )
+    check("구형 기준 신청서 판정 정상", len(legacy_findings), 0)
+    with get_session() as session:
+        saved_legacy = session.exec(select(ProgramCriteriaVersion).where(
+            ProgramCriteriaVersion.program_code == code,
+            ProgramCriteriaVersion.version == legacy_version,
+        )).first()
+    check("읽기 보정 시 구형 기록 보존", saved_legacy.criteria_json, legacy_raw)
 
 
 def main() -> int:

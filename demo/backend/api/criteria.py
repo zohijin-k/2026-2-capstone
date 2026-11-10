@@ -11,7 +11,13 @@ from pydantic import BaseModel, Field as PydanticField
 from sqlmodel import select
 
 from ..models import ProgramCriteriaVersion, get_session
-from ..rules.criteria import history, latest, officer_criteria, public_criteria
+from ..rules.criteria import (
+    CRITERIA_SCHEMA_VERSION,
+    history,
+    latest,
+    officer_criteria,
+    public_criteria,
+)
 from ..rules.programs import PROGRAMS
 from ..rules.roles import ROLE_PROVINCE
 
@@ -87,6 +93,7 @@ def _validated(body: CriteriaUpdate) -> dict[str, Any]:
     if not 1 <= body.nhis_acquisition_loss_years <= 10:
         raise HTTPException(400, "자격득실 포함 기간은 1~10년이어야 합니다.")
     return {
+        "schema_version": CRITERIA_SCHEMA_VERSION,
         "announcement_date": body.announcement_date,
         "application_period": [value.isoformat() for value in period],
         "application_period_2": [value.isoformat() for value in period_2] if period_2 else None,

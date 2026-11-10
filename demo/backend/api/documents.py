@@ -22,7 +22,7 @@ from ..rules.identity import identity_of
 from ..ocr.base import OcrResult
 from ..rules.doc_check import THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
-from ..rules.criteria import for_application
+from ..rules.criteria import for_application, read_criteria
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ACCEPTED_FORMATS,
@@ -96,7 +96,7 @@ def _checklist_response(app: Application) -> dict[str, Any]:
     checklist = _checklist(app)
     program = get_program(app.program_code)
     criteria_version = for_application(app)
-    criteria = criteria_version.criteria_json
+    criteria = read_criteria(criteria_version)
     uploaded = _list_documents(app.id or 0)
     items = [_requirement_dict(r, uploaded) for r in checklist]
     upload_items = [i for i in items if i["upload"]]

@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlmodel import select
 
 from ..models import Application, Consent, Document, SubsidyItem, get_session
-from ..rules.criteria import for_application, issue_bounds, issue_rule_label
+from ..rules.criteria import for_application, issue_bounds, issue_rule_label, read_criteria
 from ..rules.programs import get_program
 from ..rules.required_docs import (
     ApplicantDocInput,
@@ -91,7 +91,7 @@ def doc_context(app: Application) -> ApplicantDocInput:
 
 def checklist_for(app: Application) -> list[DocRequirement]:
     rows = build_checklist(get_program(app.program_code), doc_context(app))
-    criteria = for_application(app).criteria_json
+    criteria = read_criteria(for_application(app))
     application_date = (app.submitted_at or app.created_at).date()
     for req in rows:
         req.min_issue_date, req.max_issue_date = issue_bounds(criteria, req.slot_key, application_date)

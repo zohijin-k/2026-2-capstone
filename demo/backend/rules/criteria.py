@@ -10,6 +10,8 @@ from sqlmodel import select
 from ..models import Application, ProgramCriteriaVersion, get_session
 from .programs import PROGRAMS
 
+CRITERIA_SCHEMA_VERSION = 2
+
 
 def default_criteria(program_code: str) -> dict[str, Any]:
     program = PROGRAMS[program_code]
@@ -34,6 +36,7 @@ def default_criteria(program_code: str) -> dict[str, Any]:
     for key in doc_keys:
         rules.setdefault(key, dict(fallback))
     return {
+        "schema_version": CRITERIA_SCHEMA_VERSION,
         "announcement_date": program.announcement_date.isoformat(),
         "application_period": [d.isoformat() for d in program.apply_period],
         "application_period_2": [d.isoformat() for d in program.apply_period_2] if program.apply_period_2 else None,
@@ -42,6 +45,24 @@ def default_criteria(program_code: str) -> dict[str, Any]:
         "nhis_payment_months": ["2025-10", "2025-11", "2025-12"],
         "nhis_acquisition_loss_years": 5,
     }
+
+
+def read_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
+    """읽을 때만 저장 형식을 현재 스키마로 보정한다. DB 스냅샷은 변경하지 않는다."""
+    defaults = default_criteria(row.program_code)
+    stored = row.criteria_json if isinstance(row.criteria_json, dict) else {}
+    merged = {**defaults, **stored, "schema_version": CRITERIA_SCHEMA_VERSION}
+
+    # 구버전에서 문서별 규칙이 일부만 저장된 경우 기본 문서 규칙도 유지한다.
+    merged["document_issue_rules"] = {
+        **defaults["document_issue_rules"],
+        **(stored.get("document_issue_rules") or {}),
+    }
+    merged["document_issue_fallback"] = {
+        **defaults["document_issue_fallback"],
+        **(stored.get("document_issue_fallback") or {}),
+    }
+    return merged
 
 
 def ensure_defaults() -> None:
@@ -147,9 +168,10 @@ def issue_rule_label(criteria: dict[str, Any], slot_key: str) -> str:
 
 
 def public_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
-    data = row.criteria_json
+    data = read_criteria(row)
     return {
         "version": row.version,
+        "schema_version": data["schema_version"],
         "announcement_date": data["announcement_date"],
         "application_period": data["application_period"],
         "application_period_2": data.get("application_period_2"),
