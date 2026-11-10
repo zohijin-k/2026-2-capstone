@@ -15,7 +15,7 @@
 
 개인정보 최소화
   - 주민등록번호 원문은 결과에 남기지 않는다. 생년월일과 성별 자리만 쓴다.
-  - 병역사항, 담당자 연락처, 신청인 정보는 읽지 않는다.
+  - 병역사항, 담당자 연락처는 읽지 않는다. 첫 쪽의 신청인 성명·생년월일은 본인 대조용으로 읽는다.
 """
 
 from __future__ import annotations
@@ -34,6 +34,10 @@ from ..schemas.models import BBox, DocType, ExtractedField, FieldSource
 # --- 패턴 ---------------------------------------------------------------
 ISO_DATE = re.compile(r"(\d{4})\s*[-.]\s*(\d{1,2})\s*[-.]\s*(\d{1,2})")
 KOR_DATE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+APPLICANT_DATE = re.compile(
+    r"(\d{4}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}|"
+    r"\d{4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일|\d{8})"
+)
 RRN = re.compile(r"(\d{6})\s*-\s*([0-9])")
 DOC_NO = re.compile(r"\d{4}-\d{4}-\d{4}-\d{4,5}")
 PAGE_NO = re.compile(r"^\s*(\d{1,2})\s*/\s*(\d{1,2})\s*$")
@@ -196,6 +200,31 @@ def _parse_header(lines: list[list[Word]]) -> dict:
     return out
 
 
+def _parse_applicant(lines: list[list[Word]]) -> dict:
+    """첫 쪽 머리 상자의 '신청인: 성명 (생년월일)'을 읽는다."""
+    for line in lines:
+        flat = squash(line_text(line))
+        marker = re.search(r"신청인[:：]?", flat)
+        if not marker:
+            continue
+        remainder = flat[marker.end():]
+        date_match = APPLICANT_DATE.search(remainder)
+        if not date_match:
+            continue
+        name = re.sub(r"[^가-힣]", "", remainder[:date_match.start()])
+        if not re.fullmatch(r"[가-힣]{2,6}", name):
+            continue
+        date_digits = re.sub(r"\D", "", date_match.group(1))
+        try:
+            if len(date_digits) != 8:
+                continue
+            birth = date(int(date_digits[:4]), int(date_digits[4:6]), int(date_digits[6:8]))
+        except ValueError:
+            continue
+        return {"name": name, "birth": birth, "words": line}
+    return {"name": None, "birth": None, "words": []}
+
+
 def _table_bounds(lines: list[list[Word]]) -> tuple[float, float] | None:
     start = None
     for line in lines:
@@ -266,6 +295,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     today = today or kst_today()
     page_map = {p.page: p for p, _ in pages}
     headers = []
+    first_page_lines: list[list[Word]] = []
     entries: list[HistoryEntry] = []
     pending: list[str] = []
     note_numbers: list[int] = []
@@ -273,6 +303,8 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
 
     for p, r in pages:
         lines = group_lines(normalize(r.words, p.page, p.pixel_size))
+        if p.page == 0:
+            first_page_lines = lines
         headers.append(_parse_header(lines))
         bounds = _table_bounds(lines)
         if bounds:
@@ -354,6 +386,19 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             value=birth, raw_text=f"{birth:%y%m%d}-{g}******", source=FieldSource.OCR,
             confidence=_confidence([birth_same, birth <= today], consistent=birth_same), bbox=_bbox(bw, page_map))
 
+    # --- 첫 쪽 신청인 대조 정보 ---
+    applicant = _parse_applicant(first_page_lines)
+    if applicant["name"]:
+        fields["applicant_name"] = ExtractedField(
+            value=applicant["name"], raw_text=applicant["name"], source=FieldSource.OCR,
+            confidence=0.9, bbox=_bbox(applicant["words"], page_map))
+    if applicant["birth"]:
+        fields["applicant_birth_date"] = ExtractedField(
+            value=applicant["birth"], raw_text=applicant["birth"].isoformat(), source=FieldSource.OCR,
+            confidence=0.9, bbox=_bbox(applicant["words"], page_map))
+    if not applicant["name"] or not applicant["birth"]:
+        warnings.append("첫 쪽 신청인 성명·생년월일을 모두 읽지 못함")
+
     # --- 주소 이력 ---
     entry_nos = [e.no for e in entries if e.no is not None]
     nos = sorted(entry_nos + note_numbers)
@@ -372,6 +417,9 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
 
     hist_checks = [v.passed for v in validations if v.name.startswith(("history", "occurred"))]
     if entries:
+        fields["address_history_count"] = ExtractedField(
+            value=len(entries), raw_text=f"{len(entries)}건", source=FieldSource.OCR,
+            confidence=_confidence(hist_checks))
         fields["address_history"] = ExtractedField(
             value=[{"no": e.no, "sido": resolved_sido(entries, i), "address": e.address_text,
                     "occurred": e.occurred, "reported": e.reported,

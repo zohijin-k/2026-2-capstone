@@ -27,6 +27,7 @@ from pathlib import Path
 
 from ..engine_adapter import apply_runtime_overrides
 from ..ocr import read_document
+from ..ocr.base import OcrResult
 from ..ocr.localocr import ENGINE_ENV
 from ..rules.doc_check import check_document
 from ..rules.doc_types import DocType
@@ -69,6 +70,7 @@ def fake_abstract_words(**kw) -> list:
     """engine_v2 테스트의 가짜 초본 3쪽 (실측 좌표 기반, 이름·주소는 가상)."""
     from engine_v2.tests.test_resident_abstract import build
 
+    kw.setdefault("applicant", "신청인: 김전북 (1999-01-01)")
     return [r.words for _, r in build(**kw)]
 
 
@@ -328,6 +330,54 @@ def test_declared_date_second_check(tmp: Path) -> None:
                "담당자가 원본에서 직접 확인" in (uncertain.message + uncertain.how_to_fix))
 
 
+def test_abstract_applicant_identity_and_history() -> None:
+    print("\n[10] 초본 신청인 대조와 과거 주소 누락 의심")
+    slot = abstract_slot()
+    identity = Identity("김전북", date(1999, 1, 1))
+
+    def result(fields: dict[str, str]) -> OcrResult:
+        return OcrResult(
+            detected_doc_type=DocType.RESIDENT_ABSTRACT,
+            confidence=0.99,
+            issue_date=date(2026, 11, 10),
+            fields=fields,
+            tier="localocr",
+        )
+
+    base = {
+        "발급일": "2026-11-10",
+        "성명": "김전북",
+        "생년월일": "1999-01-01",
+        "초본신청인성명": "김전북",
+        "초본신청인생년월일": "1999-01-01",
+        "주소이력건수": "2",
+        "주소변동내역": "포함",
+    }
+    check("신청인 = 본인", check_document(slot, result(base), identity=identity).status, "PASS")
+
+    other = dict(base, 초본신청인성명="이남산", 초본신청인생년월일="1998-02-03")
+    mismatch = check_document(slot, result(other), identity=identity)
+    check("신청인 불일치 → 부적합", mismatch.status, "FAIL")
+    mismatch_finding = next(f for f in mismatch.findings if f.code == "IDENTITY_MISMATCH")
+    check_true("신청자 안내 문구", mismatch_finding.message.startswith("본인이 직접 발급받은 초본이 아닙니다."))
+    check_true("신청자 문구에 타인 이름 없음", "이남산" not in mismatch_finding.message)
+    check_true("담당자 상세에 대조 근거", "이남산" in mismatch_finding.detail and "신청인 칸" in mismatch_finding.detail)
+
+    unreadable = dict(base)
+    unreadable.pop("초본신청인생년월일")
+    review = check_document(slot, result(unreadable), identity=identity)
+    check("신청인 정보 누락 → 확인필요", review.status, "NEEDS_REVIEW")
+    check_true("신청인 정보 누락 사유", "RESIDENT_APPLICANT_UNREADABLE" in review.codes)
+    check("인증 전 신청인 미판독도 확인필요", check_document(slot, result(unreadable)).status, "NEEDS_REVIEW")
+
+    one_entry = dict(base, 주소이력건수="1")
+    review = check_document(slot, result(one_entry), identity=identity)
+    check("주소 이력 1건 → 확인필요", review.status, "NEEDS_REVIEW")
+    finding = next(f for f in review.findings if f.code == "PAST_ADDRESS_OMISSION_SUSPECTED")
+    check_true("과거 주소 다시 포함 안내", "과거의 주소 변동사항" in finding.message and "정부24" in finding.message)
+    check("주소 이력 여러 건 → 기존 동작", check_document(slot, result(base), identity=identity).status, "PASS")
+
+
 def test_slot_independent_classification(tmp: Path) -> None:
     print("\n[9] 기대 칸과 무관한 본문 서류 종류 판별")
     from engine_v2.tests.test_nhis_extractors import acquisition_pages
@@ -466,6 +516,7 @@ def main() -> int:
         test_title_with_parentheses(tmp)
         test_nhis_extractors_text_and_image_pdf(tmp)
         test_declared_date_second_check(tmp)
+        test_abstract_applicant_identity_and_history()
         test_slot_independent_classification(tmp)
         test_header_only_field_filter()
         test_month_rendering()

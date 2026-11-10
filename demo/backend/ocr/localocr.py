@@ -92,7 +92,12 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     fields: dict[str, str] = {}
     bboxes: dict[str, BBox] = {}
 
-    for v2key, label in (("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일")):
+    for v2key, label in (
+        ("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일"),
+        ("applicant_name", "초본신청인성명"),
+        ("applicant_birth_date", "초본신청인생년월일"),
+        ("address_history_count", "주소이력건수"),
+    ):
         if v2key in f:
             v = f[v2key].value
             fields[label] = v.isoformat() if isinstance(v, date) else str(v)
@@ -112,6 +117,8 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     if ex.history:
         fields["현주소시도"] = ra.resolved_sido(ex.history, len(ex.history) - 1) or "판별불가"
         fields["주소이력건수"] = str(len(ex.history))
+        if len(ex.history) == 1:
+            fields["과거주소미포함의심"] = "true"
         # 이력이 2건 이상이면 '주소변동내역 포함'으로 본다. 1건 이하는 단정하지 않는다
         # (미포함으로 단정하면 doc_check가 부적합을 낸다 — 오독일 때 신청자가 억울해진다).
         if len(ex.history) >= 2:

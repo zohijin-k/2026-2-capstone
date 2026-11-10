@@ -56,6 +56,10 @@ _TRANSFER_RE = re.compile(
     r"(?:최종전입일|전입일자?|신고일)\s*[:：]?\s*"
     r"(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?"
 )
+_APPLICANT_RE = re.compile(
+    r"신청인[:：]?([가-힣]{2,6})[（(]?"
+    r"(\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{4}년\d{1,2}월\d{1,2}일|\d{8})"
+)
 #: "가구원수 4명" / "세대원수: 4"
 _HOUSEHOLD_RE = re.compile(r"(?:가구원\s*수|세대원\s*수|세대원수)\s*[:：]?\s*(\d{1,2})")
 #: 건강보험료 고지금액. 세 자리 콤마 표기를 그대로 잡는다.
@@ -126,6 +130,22 @@ def extract_transfer_in(text: str) -> date | None:
     if labeled:
         return _to_date(labeled.groups())  # type: ignore[arg-type]
     return None
+
+
+def extract_applicant(text: str) -> tuple[str, date] | None:
+    """초본 첫 쪽의 신청인 성명·생년월일. 라벨이 없거나 형식이 불명확하면 비운다."""
+    match = _APPLICANT_RE.search(_squeeze(text))
+    if not match:
+        return None
+    name, raw_date = match.groups()
+    digits = re.sub(r"\D", "", raw_date)
+    if len(digits) != 8:
+        return None
+    try:
+        birth = date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+    except ValueError:
+        return None
+    return name, birth
 
 
 def extract_household_size(text: str) -> str | None:
@@ -226,6 +246,11 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
 
     if doc_type is DocType.RESIDENT_ABSTRACT:
         fields["주소변동내역"] = "포함" if has_address_history(text) else "미포함"
+        applicant = extract_applicant(text)
+        if applicant:
+            name, birth = applicant
+            fields["초본신청인성명"] = name
+            fields["초본신청인생년월일"] = birth.isoformat()
 
     # 취업지원패키지 추가서류. 응시일이 없으면 체크리스트의 `required_fields`
     # 검사에서 부적합으로 떨어진다 — 사업계획서 "(응시일 표기 필수)".

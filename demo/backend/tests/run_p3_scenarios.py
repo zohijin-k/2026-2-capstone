@@ -27,6 +27,7 @@ from sqlmodel import create_engine, select
 
 from .. import models
 from ..rules.facts import build_facts, extract_region, parse_ymd
+from ..rules.doc_types import DocType
 from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS
 from ..rules.scoring import (
     ESTIMATE_LABEL,
@@ -34,6 +35,7 @@ from ..rules.scoring import (
     ScoringFacts,
     income_percent,
     korean_age_at,
+    premium_limit_140,
     score_application,
 )
 
@@ -69,10 +71,52 @@ def test_income_table() -> None:
     check("4인 직장 200,000원 → 중위소득 %", round(percent, 1), 90.0)
 
     # 표에 없는 가구원수·가입구분은 대체값을 쓰고 그 사실을 남긴다.
-    _, _, note8 = income_percent(9, 200_000, "직장")
+    _, _, note8 = income_percent(11, 200_000, "직장")
     check_true("8인 이상 가구 대체 근거 문구", ESTIMATE_LABEL in note8)
     _, _, note_mix = income_percent(1, 100_000, "혼합")
     check_true("1인 혼합 대체 근거 문구", ESTIMATE_LABEL in note_mix)
+    check("1인 혼합은 직장 기준으로 대체", premium_limit_140(1, "혼합")[0], 118_821)
+
+    print("\n  -- 8~10인 상한 경계")
+    expected = {
+        8: {"직장": 506_004, "지역": 496_008, "혼합": 552_230},
+        9: {"직장": 552_230, "지역": 545_971, "혼합": 599_810},
+        10: {"직장": 599_810, "지역": 591_277, "혼합": 673_463},
+    }
+    for household_size, limits in expected.items():
+        for insurance_type, limit in limits.items():
+            check(f"{household_size}인 {insurance_type} 상한값", premium_limit_140(household_size, insurance_type)[0], limit)
+            under = score_application(
+                ScoringFacts(household_size=household_size, monthly_premium=limit, insurance_type=insurance_type),
+                announcement_date=PROGRAM.announcement_date,
+                age_basis_date=PROGRAM.age_basis_date,
+            )
+            over_limit = score_application(
+                ScoringFacts(household_size=household_size, monthly_premium=limit + 1, insurance_type=insurance_type),
+                announcement_date=PROGRAM.announcement_date,
+                age_basis_date=PROGRAM.age_basis_date,
+            )
+            check(f"{household_size}인 {insurance_type} 상한 이하 통과", under.income_over_limit, False)
+            check(f"{household_size}인 {insurance_type} 상한 초과 부적합", over_limit.income_over_limit, True)
+
+    _, _, note_11 = income_percent(11, 500_000, "직장")
+    check_true("11인 이상 10인 상한·담당자 확인 사유", "10인 기준" in note_11 and "담당자 확인" in note_11)
+
+    residence_facts = build_facts(
+        {"birth": "1999-01-01", "employedAt": "2023-01-01"},
+        [{"doc_type": str(DocType.RESIDENT_ABSTRACT), "fields": {
+            "전입일": "2023-08-30", "주소이력건수": "1",
+        }}],
+    )
+    residence_sheet = score_application(
+        residence_facts,
+        announcement_date=PROGRAM.announcement_date,
+        age_basis_date=PROGRAM.age_basis_date,
+    )
+    residence_item = next(item for item in residence_sheet.items if item.key == "residence")
+    check("주소 이력 의심을 거주기간 계산에 기록", residence_facts.residence_history_incomplete_suspected, True)
+    check_true("점수 근거에 주소 이력 의심 기록", "과거 주소 미포함 의심" in residence_item.basis)
+    check_true("점수 출처에 담당자 확인 기록", "담당자 확인 필요" in residence_item.source.origin)
 
     over, _, _ = income_percent(4, 340_000, "직장")
     check("4인 직장 340,000원 → 중위소득 %", round(over, 1), 153.0)

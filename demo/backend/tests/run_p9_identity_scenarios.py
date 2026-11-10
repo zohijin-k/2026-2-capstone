@@ -276,13 +276,16 @@ def test_matching(client, tmp: Path) -> None:
     check_true("사유: IDENTITY_MISMATCH", "IDENTITY_MISMATCH" in codes(doc))
     msg = " ".join(f["message"] + f["how_to_fix"] for f in doc["findings"])
     check_true("안내에 서류 속 이름 미노출", "김전북" not in msg)
-    check_true("안내에 다른 항목 명시", "성명·생년월일" in msg)
+    check_true("초본 신청인 불일치의 정해진 안내",
+               msg == "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요.")
 
     namesake = new_app(client)
     identify(client, namesake, "김전북", "2000-02-02")
     doc = upload_abstract(client, namesake, tmp, fake_abstract_words(), "동명이인")
     check("동명이인(생년월일 다름) → 판정", doc["status"], "FAIL")
-    check_true("다른 항목은 생년월일만", any("생년월일이(가)" in f["message"] for f in doc["findings"]))
+    check_true("생년월일이 다른 신청인 안내",
+               any(f["message"] == "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요."
+                   for f in doc["findings"]))
 
     print("\n[4] 판독 불확실 → 확인필요")
     shaky = new_app(client)

@@ -38,6 +38,8 @@ THRESHOLD_NOTES: list[str] = [
 #: 진과 합의되면 엔진 쪽으로 옮긴다 (design.md 9절 E-목록의 후속).
 CODE_SCREEN_CAPTURE = "SCREEN_CAPTURE_SUSPECTED"
 CODE_MISSING_ADDRESS_HISTORY = "MISSING_ADDRESS_HISTORY"
+CODE_PAST_ADDRESS_OMISSION_SUSPECTED = "PAST_ADDRESS_OMISSION_SUSPECTED"
+CODE_RESIDENT_APPLICANT_UNREADABLE = "RESIDENT_APPLICANT_UNREADABLE"
 CODE_UNKNOWN_DOCUMENT_TYPE = "UNKNOWN_DOCUMENT_TYPE"
 CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
 CODE_RECEIPT_AMOUNT_UNREADABLE = "RECEIPT_AMOUNT_UNREADABLE"
@@ -387,6 +389,27 @@ def check_document(
                 "자격득실확인서의 조회 기간을 확인하지 못했습니다. 담당자가 확인합니다.", req,
             ))
 
+    abstract_applicant_name = ocr.fields.get("초본신청인성명")
+    abstract_applicant_birth = ocr.fields.get("초본신청인생년월일")
+    abstract_applicant_birth_date = None
+    try:
+        abstract_applicant_birth_date = date.fromisoformat((abstract_applicant_birth or "")[:10])
+    except ValueError:
+        pass
+    abstract_applicant_missing = (
+        req.doc_type is DocType.RESIDENT_ABSTRACT
+        and ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT
+        and ocr.tier != "fixture"
+        and (not abstract_applicant_name or abstract_applicant_birth_date is None)
+    )
+    if abstract_applicant_missing:
+        findings.append(CheckFinding(
+            CODE_RESIDENT_APPLICANT_UNREADABLE,
+            "초본의 신청인 정보를 읽지 못해 담당자가 확인합니다.",
+            severity="NEEDS_REVIEW",
+            detail="첫 쪽 신청인 성명과 생년월일을 모두 판독해야 본인인증 정보와 대조할 수 있습니다.",
+        ))
+
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
     # 신청자 안내에는 서류에 적힌 남의 이름을 되읊지 않는다.
@@ -410,6 +433,38 @@ def check_document(
                     severity=severity,
                     detail=officer_detail,
                 ))
+        elif req.doc_type is DocType.RESIDENT_ABSTRACT and ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT and ocr.tier != "fixture":
+            if abstract_applicant_missing:
+                pass  # 신청인 칸 미판독은 위에서 인증 여부와 무관하게 확인필요로 기록했다.
+            elif (abstract_applicant_name or "").replace(" ", "") != identity.name or abstract_applicant_birth_date != identity.birth:
+                findings.append(CheckFinding(
+                    CODE_IDENTITY_MISMATCH,
+                    "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요.",
+                    severity="FAIL",
+                    detail=(
+                        f"초본 첫 쪽 신청인 칸 판독: 성명={abstract_applicant_name}, 생년월일={abstract_applicant_birth_date.isoformat()}; "
+                        f"본인인증 정보와 일치하지 않음."
+                    ),
+                ))
+            else:
+                # 기존 주민등록표 성명·생년월일 대조도 유지한다. 신청인 칸이 본인과
+                # 맞더라도 초본 본문에서 읽은 대상자 정보가 다르면 기존 신뢰도 규칙을 쓴다.
+                _, mismatched = compare(identity, ocr.fields)
+                if mismatched:
+                    what = "·".join(mismatched)
+                    if ocr.confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+                        findings.append(_finding(
+                            CODE_IDENTITY_MISMATCH,
+                            f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다릅니다.",
+                            req,
+                        ))
+                    else:
+                        findings.append(_finding(
+                            CODE_IDENTITY_UNCERTAIN,
+                            f"올리신 '{req.label}'의 {what}이(가) 본인인증 정보와 다르게 판독되었습니다. "
+                            "담당자가 원본에서 직접 확인합니다.",
+                            req,
+                        ))
         elif ocr.tier != "fixture":
             _, mismatched = compare(identity, ocr.fields)
             if mismatched:
@@ -443,6 +498,17 @@ def check_document(
                 req,
             )
         )
+
+    if (
+        req.doc_type is DocType.RESIDENT_ABSTRACT
+        and ocr.fields.get("주소이력건수") == "1"
+    ):
+        findings.append(CheckFinding(
+            CODE_PAST_ADDRESS_OMISSION_SUSPECTED,
+            "과거 주소 변동사항이 빠진 초본으로 보입니다. 정부24에서 '과거의 주소 변동사항'을 포함해 다시 발급받으면 거주기간이 정확히 계산됩니다.",
+            severity="NEEDS_REVIEW",
+            detail="판독한 주소 이력이 1건뿐이어서 과거 주소 변동사항이 생략됐을 가능성이 있습니다. 부적합으로 단정하지 않습니다.",
+        ))
 
     if any(f.severity == "FAIL" for f in findings):
         status = "FAIL"

@@ -92,6 +92,7 @@ def make_screenshot(path: Path) -> Path:
 
 ABSTRACT_LINES = [
     "주민등록표 초본",
+    "신청인 : 홍길동 (1999-01-01)",
     "성명 : 홍길동",
     "주소변동 사항",
     "2020년 11월 20일 전입 전라북도 전주시 완산구",
@@ -266,6 +267,8 @@ def test_pdftext(tmp: Path) -> None:
     check("Tier 확인", ocr.tier, "pdftext")
     check("문서종류 판별", str(ocr.detected_doc_type), str(DocType.RESIDENT_ABSTRACT))
     check("발급일 추출", ocr.issue_date, date(2026, 3, 5))
+    check("신청인 성명", ocr.fields.get("초본신청인성명"), "홍길동")
+    check("신청인 생년월일", ocr.fields.get("초본신청인생년월일"), "1999-01-01")
     check("주소변동내역", ocr.fields.get("주소변동내역"), "포함")
     check_true("발급일 bbox 확보", ocr.bboxes.get("발급일"))
     check("5초 이내 판독", ocr.elapsed_ms < 5000, True)

@@ -27,7 +27,8 @@ def app(name="김전북", birth=date(1999, 1, 1), issue="2026-11-10", announce=d
 
 
 def evaluate(a, pages=None):
-    d = evaluate_document(a.documents[0], pages or build(), a, RP, today=TODAY)
+    synthetic_applicant = f"신청인: {a.applicant.name} ({a.applicant.birth_date.isoformat()})"
+    d = evaluate_document(a.documents[0], pages or build(applicant=synthetic_applicant), a, RP, today=TODAY)
     return d, combine(a, [d], RP)
 
 
