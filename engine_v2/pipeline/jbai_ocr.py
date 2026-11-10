@@ -83,6 +83,8 @@ class JBAIPageResult:
     text_lines: list[str]
     tables: list[JBAITable]
     elapsed_sec: float
+    raw_content: str = ""
+    table_content: str = ""
 
 
 @dataclass(frozen=True)
@@ -147,6 +149,84 @@ def parse_html_tables(content: str) -> list[JBAITable]:
         if parser.rows:
             tables.append(JBAITable(rows=parser.rows))
     return tables
+
+
+_OTSL_TOKEN = re.compile(r"<(fcel|ecel|lcel|ucel|xcel|nl)>", re.I)
+
+
+@dataclass
+class _OTSLAnchor:
+    text: str
+    row: int
+    col: int
+    rowspan: int = 1
+    colspan: int = 1
+
+
+def parse_otsl_tables(content: str) -> list[JBAITable]:
+    """OTSL 구조 토큰을 셀 격자로 바꾸고 가로·세로 병합을 복원한다."""
+    matches = list(_OTSL_TOKEN.finditer(content))
+    if not matches:
+        return []
+
+    anchors: list[_OTSLAnchor] = []
+    occupancy: dict[tuple[int, int], _OTSLAnchor] = {}
+    previous: dict[tuple[int, int], _OTSLAnchor] = {}
+    row = col = max_row = 0
+    for index, match in enumerate(matches):
+        token = match.group(1).lower()
+        if token == "nl":
+            max_row = max(max_row, row)
+            row += 1
+            col = 0
+            previous, occupancy = occupancy, {}
+            continue
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        value = re.sub(r"\s+", " ", content[match.end():end]).strip()
+        if token in {"fcel", "ecel"}:
+            anchor = _OTSLAnchor(value if token == "fcel" else "", row, col)
+            anchors.append(anchor)
+            occupancy[(row, col)] = anchor
+        elif token == "lcel":
+            anchor = occupancy.get((row, col - 1))
+            if anchor is None:
+                anchor = _OTSLAnchor("", row, col)
+                anchors.append(anchor)
+            anchor.colspan += 1
+            if value:
+                anchor.text = (anchor.text + " " + value).strip()
+            occupancy[(row, col)] = anchor
+        elif token == "ucel":
+            anchor = previous.get((row - 1, col))
+            if anchor is None:
+                anchor = _OTSLAnchor("", row, col)
+                anchors.append(anchor)
+            elif anchor.row + anchor.rowspan == row:
+                anchor.rowspan += 1
+            occupancy[(row, col)] = anchor
+        else:  # xcel — 같은 상단 셀의 가로·세로 연장
+            anchor = previous.get((row - 1, col)) or occupancy.get((row, col - 1))
+            if anchor is None:
+                anchor = _OTSLAnchor("", row, col)
+                anchors.append(anchor)
+            if anchor.row + anchor.rowspan == row:
+                anchor.rowspan += 1
+            if anchor.col + anchor.colspan == col:
+                anchor.colspan += 1
+            if value:
+                anchor.text = (anchor.text + " " + value).strip()
+            occupancy[(row, col)] = anchor
+        col += 1
+
+    max_row = max(max_row, row)
+    rows: list[list[JBAITableCell]] = [[] for _ in range(max_row + 1)]
+    for anchor in sorted(anchors, key=lambda cell: (cell.row, cell.col)):
+        rows[anchor.row].append(JBAITableCell(
+            text=anchor.text, rowspan=anchor.rowspan, colspan=anchor.colspan,
+            header=anchor.row < 2,
+        ))
+    rows = [cells for cells in rows if cells]
+    return [JBAITable(rows=rows)] if rows else []
 
 
 class _PlainTextParser(HTMLParser):
@@ -354,8 +434,9 @@ def run_jbai_ocr(png: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
             raise JBAIResponseError("전북AI OCR 응답이 JSON이 아닙니다.") from None
         content = _response_content(body)
         return JBAIPageResult(
-            page=page, text_lines=_text_lines(content), tables=parse_html_tables(content),
-            elapsed_sec=time.monotonic() - started,
+            page=page, text_lines=_text_lines(content),
+            tables=parse_html_tables(content) or parse_otsl_tables(content),
+            elapsed_sec=time.monotonic() - started, raw_content=content,
         )
     raise JBAIRateLimitError("전북AI OCR 요청이 재시도 한도를 넘었습니다.")
 
@@ -389,3 +470,41 @@ def run_jbai_pdf(file_path: str | Path, *, task: str = TASK_OCR,
         for index, png, size in rendered
     ]
     return JBAIDocumentResult(pages=results, elapsed_sec=time.monotonic() - started)
+
+
+def run_jbai_image_pair(png: bytes, size: tuple[int, int], *, page: int = 0,
+                        source_path: str | Path | None = None,
+                        is_demo_upload: bool = False,
+                        sleep: Callable[[float], None] = time.sleep) -> JBAIPageResult:
+    """한 쪽에 OCR과 표 인식을 각각 호출해 텍스트·표를 함께 보존한다."""
+    text_result = run_jbai_ocr(png, size, task=TASK_OCR, page=page,
+                               source_path=source_path, is_demo_upload=is_demo_upload, sleep=sleep)
+    table_result = run_jbai_ocr(png, size, task=TASK_TABLE, page=page,
+                                source_path=source_path, is_demo_upload=is_demo_upload, sleep=sleep)
+    return JBAIPageResult(
+        page=page, text_lines=text_result.text_lines, tables=table_result.tables,
+        elapsed_sec=text_result.elapsed_sec + table_result.elapsed_sec,
+        raw_content=text_result.raw_content, table_content=table_result.raw_content,
+    )
+
+
+def run_jbai_pdf_pair(file_path: str | Path, *, is_demo_upload: bool = False,
+                      sleep: Callable[[float], None] = time.sleep) -> JBAIDocumentResult:
+    """PDF를 쪽마다 200dpi PNG로 렌더링해 OCR·표 인식을 모두 실행한다."""
+    import pymupdf
+
+    path = Path(file_path)
+    ensure_external_allowed(path, is_demo_upload=is_demo_upload)
+    started = time.monotonic()
+    pages = []
+    scale = 200 / 72
+    with pymupdf.open(path) as document:
+        if document.needs_pass:
+            raise JBAIRequestError("암호화된 PDF는 전북AI OCR 입력으로 사용할 수 없습니다.")
+        for index, page in enumerate(document):
+            pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+            pages.append(run_jbai_image_pair(
+                pix.tobytes("png"), (pix.width, pix.height), page=index,
+                source_path=path, is_demo_upload=is_demo_upload, sleep=sleep,
+            ))
+    return JBAIDocumentResult(pages=pages, elapsed_sec=time.monotonic() - started)

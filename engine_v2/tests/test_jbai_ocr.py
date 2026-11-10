@@ -143,3 +143,33 @@ def test_table_html_keeps_rowspan_and_colspan():
     assert rows[0][1] == jbai_ocr.JBAITableCell("BILLED AMOUNT", rowspan=1, colspan=2, header=True)
     assert [cell.text for cell in rows[1]] == ["HEALTH", "CARE"]
     assert [cell.text for cell in rows[2]] == ["2025-10", "10000", "500"]
+
+
+def test_otsl_restores_horizontal_vertical_and_cross_merged_cells():
+    otsl = """<fcel>월별<fcel>고지금액<lcel><nl>
+    <ucel><fcel>건강보험료<fcel>장기요양보험료<nl>
+    <fcel>2025년 10월<fcel>12000<fcel>900<nl>
+    <fcel>큰 병합<lcel><nl><ucel><xcel><nl>"""
+
+    tables = jbai_ocr.parse_otsl_tables(otsl)
+
+    assert len(tables) == 1
+    rows = tables[0].rows
+    assert rows[0] == [
+        jbai_ocr.JBAITableCell("월별", rowspan=2, header=True),
+        jbai_ocr.JBAITableCell("고지금액", colspan=2, header=True),
+    ]
+    assert [cell.text for cell in rows[1]] == ["건강보험료", "장기요양보험료"]
+    assert [cell.text for cell in rows[2]] == ["2025년 10월", "12000", "900"]
+    assert rows[3] == [jbai_ocr.JBAITableCell("큰 병합", rowspan=2, colspan=2)]
+
+
+def test_jbai_page_result_keeps_otls_content_for_replay(monkeypatch):
+    configure(monkeypatch)
+    content = "<fcel>월별<fcel>금액<nl><fcel>10월<fcel>100<nl>"
+    monkeypatch.setattr(jbai_ocr, "_http_post", lambda *_: openai_response(content))
+
+    page = jbai_ocr.run_jbai_ocr(b"fake png", (10, 10))
+
+    assert page.raw_content == content
+    assert [[cell.text for cell in row] for row in page.tables[0].rows] == [["월별", "금액"], ["10월", "100"]]
