@@ -20,6 +20,8 @@ interface Props {
   maxHeight?: number
   /** 앞에서부터 이 쪽 수까지만 그린다 (미리보기 썸네일용) */
   maxPages?: number
+  /** 주면 지정 쪽만 그린다. 작성 팝업의 쪽 이동에 쓴다. */
+  pageNo?: number
   /** 총 쪽 수를 알게 되면 알려준다 */
   onPageCount?: (count: number) => void
   onReady?: () => void
@@ -32,6 +34,7 @@ export default function PdfPages({
   width,
   maxHeight,
   maxPages,
+  pageNo,
   onPageCount,
   onReady,
   onError,
@@ -75,14 +78,16 @@ export default function PdfPages({
   if (error) return <p className="pdfpages__error">PDF를 열 수 없습니다.</p>
   if (!pdf) return <p className="pdfpages__loading">불러오는 중…</p>
 
-  const count = Math.min(pdf.numPages, maxPages ?? pdf.numPages)
+  const pages = pageNo === undefined
+    ? Array.from({ length: Math.min(pdf.numPages, maxPages ?? pdf.numPages) }, (_, i) => i + 1)
+    : pageNo >= 1 && pageNo <= pdf.numPages ? [pageNo] : []
   return (
     <div className={className ? `pdfpages ${className}` : 'pdfpages'}>
-      {Array.from({ length: count }, (_, i) => (
+      {pages.map((currentPage) => (
         <PdfPage
-          key={i}
+          key={currentPage}
           pdf={pdf}
-          pageNo={i + 1}
+          pageNo={currentPage}
           width={width}
           maxHeight={maxHeight}
           onReady={onReady}

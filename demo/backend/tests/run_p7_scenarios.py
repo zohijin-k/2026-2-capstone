@@ -544,6 +544,68 @@ def test_officer_tab(client, ds_id: int, jp_id: int) -> None:
     check("취업패키지 신청자 서식(목록 API)", [item["form_no"] for item in client.get(f"/api/applications/{jp_id}/forms").json()], ["job_application", "job_consent"])
 
 
+def test_layout_and_interview_form(client, jp_id: int, tmp: Path) -> None:
+    print("\n[8] 취업패키지 좌표 응답·면접확인서 미리 채움")
+    client.patch(f"/api/applications/{jp_id}", json={"form1": {
+        "name": "김가상", "birth": {"y": "1999", "m": "1", "d": "1"},
+        "address": "전북특별자치도 전주시", "mobile": "010-1111-2222", "email": "test@example.invalid",
+    }})
+    layout = client.get(f"/api/applications/{jp_id}/forms/layouts/job_application")
+    check("레이아웃 응답", layout.status_code, 200)
+    check_true("레이아웃에 신청자 이름 좌표", "name" in layout.json()["fields"])
+    template = client.get(f"/api/applications/{jp_id}/forms/templates/job_application.pdf")
+    check("원본 템플릿 응답", template.status_code, 200)
+    check("원본 템플릿 PDF", template.content[:5], b"%PDF-")
+    filled = client.get(f"/api/applications/{jp_id}/forms/interview-confirmation/filled.pdf")
+    check("면접확인서 응답", filled.status_code, 200)
+    check("면접확인서 PDF", filled.content[:5], b"%PDF-")
+    import pymupdf
+    with pymupdf.open(stream=filled.content, filetype="pdf") as document:
+        text = " ".join(page.get_text() for page in document)
+    check_true("신청인 성명 미리 채움", "김가상" in text)
+    check_true("회사 정보는 회사 작성 칸으로 남음", "면접기업" in text or "회사명" in text)
+
+    client.patch(f"/api/applications/{jp_id}", json={"form1": {
+        "consent.job.signature": signature_png(tmp / "job-consent-signature.png"),
+        "job.suit.1.company": "가상정장회사", "job.suit.1.location": "전북특별자치도 전주시",
+        "job.suit.1.date": "2026. 3. 5.",
+    }})
+    consent_pdf = client.get(f"/api/applications/{jp_id}/forms/job_consent.pdf")
+    with pymupdf.open(stream=consent_pdf.content, filetype="pdf") as document:
+        check("취업패키지 동의서 서명 이미지", len(document[0].get_images()), 1)
+
+    suit_only = client.post(f"/api/applications/{jp_id}/subsidy-items", json={"items": [
+        {"item_type": "suit", "count": 1, "receipts": [30000], "linked_interview_indices": [1]},
+    ]})
+    check("면접비 없이 정장비만 선택", suit_only.status_code, 200)
+    suit_pdf = client.get(f"/api/applications/{jp_id}/forms/job_application.pdf")
+    with pymupdf.open(stream=suit_pdf.content, filetype="pdf") as document:
+        check_true("정장비 단독 신청 정보를 서식에 표시", "가상정장회사" in " ".join(page.get_text() for page in document))
+
+    linked = client.post(f"/api/applications/{jp_id}/subsidy-items", json={"items": [
+        {"item_type": "interview", "count": 1, "receipts": [None]},
+        {"item_type": "suit", "count": 1, "receipts": [30000], "linked_interview_indices": [1]},
+    ]})
+    check("정장비-면접 회차 연결 선택", linked.status_code, 200)
+    client.patch(f"/api/applications/{jp_id}", json={"form1": {
+        "job.interview.1.company": "가상면접회사",
+        "job.interview.1.location": "전북특별자치도 익산시",
+        "job.interview.1.date": "2026. 3. 6.",
+    }})
+    linked_pdf = client.get(f"/api/applications/{jp_id}/forms/job_application.pdf")
+    with pymupdf.open(stream=linked_pdf.content, filetype="pdf") as document:
+        text = " ".join(page.get_text() for page in document)
+    check_true("연결된 면접기업 정보를 정장비 회차에 채움", text.count("가상면접회사") >= 2)
+    check_true("연결된 면접 소재지를 정장비 회차에 채움", text.count("익산시") >= 2)
+
+
+def test_submitted_forms_locked(client, ds_id: int) -> None:
+    print("\n[9] 제출 후 서식 수정 API 잠금")
+    check("제출 후 신청서 수정 거부", client.patch(f"/api/applications/{ds_id}", json={"form1": {"name": "변경 시도"}}).status_code, 409)
+    check("제출 후 자가진단 수정 거부", client.post(f"/api/applications/{ds_id}/self-check", json={"answers": {"1": "예"}}).status_code, 409)
+    check("제출 후 동의 수정 거부", client.post(f"/api/applications/{ds_id}/consents", json={"consents": []}).status_code, 409)
+
+
 # ---------------------------------------------------------------- 진입점
 
 
@@ -655,6 +717,8 @@ def main() -> int:
             test_signature(client, ds_id)
             test_without_signature(client)
             _submit(client, ds_id, DS_UPLOADS)
+            test_layout_and_interview_form(client, jp_id, tmp)
+            test_submitted_forms_locked(client, ds_id)
             test_officer_tab(client, ds_id, jp_id)
     finally:
         models.engine.dispose()

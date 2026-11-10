@@ -72,13 +72,13 @@
       ],
       "label": "동의하지 않음                       ※ 해당사항에 체크"
     },
-    "consent.job.year": {
+    "consent.job.month": {
       "type": "text",
       "page": 0,
       "x": 266.14,
       "y": 663.95,
       "size": 10.0,
-      "align": "left",
+      "align": "center",
       "box": [
         266.14,
         653.6,
@@ -88,7 +88,7 @@
       "anchor": "2026년",
       "mode": "after"
     },
-    "consent.job.month": {
+    "consent.job.day": {
       "type": "text",
       "page": 0,
       "x": 317.95,
@@ -104,21 +104,32 @@
       "anchor": "2026년 월",
       "mode": "after"
     },
-    "consent.job.day": {
+    "name": {
       "type": "text",
       "page": 0,
-      "x": 376.24,
-      "y": 663.95,
+      "x": 397.29,
+      "y": 705.43,
       "size": 10.0,
-      "align": "center",
+      "align": "left",
       "box": [
-        376.24,
-        653.6,
-        592.0,
-        666.55
+        397.29,
+        695.07,
+        445.0,
+        708.02
       ],
-      "anchor": "2026년 월 일",
+      "anchor": "신청인 :",
       "mode": "after"
+    },
+    "consent.job.signature": {
+      "type": "image",
+      "page": 0,
+      "box": [
+        452.28,
+        695.07,
+        510.25,
+        708.02
+      ],
+      "anchor": "(인)"
     }
   },
   "masks": []

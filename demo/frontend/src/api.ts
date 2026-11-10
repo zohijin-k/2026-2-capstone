@@ -454,6 +454,29 @@ export const patchApplication = (
     body: JSON.stringify(body),
   })
 
+export interface FormFieldLayout {
+  type: 'text' | 'check' | 'image'
+  page: number
+  box: [number, number, number, number]
+  x?: number
+  y?: number
+  size?: number
+  align?: 'left' | 'center'
+  anchor?: string
+  label?: string
+}
+
+export interface FormLayout {
+  form_no: string
+  title: string
+  public_form: string | null
+  page_sizes: { width: number; height: number }[]
+  fields: Record<string, FormFieldLayout>
+}
+
+export const fetchFormLayout = (id: number, formNo: string) =>
+  json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
+
 /** 본인인증 결과. 서류 본인 대조의 기준이 된다 (연락처는 가려서 돌아온다). */
 export interface Identity {
   name: string

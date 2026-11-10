@@ -99,33 +99,33 @@
     "bankName": {
       "type": "text",
       "page": 0,
-      "x": 541.27,
-      "y": 424.0,
+      "x": 178.19,
+      "y": 207.73,
       "size": 10.0,
       "align": "left",
       "box": [
-        541.27,
-        1.0,
-        592.0,
-        840.0
+        178.19,
+        197.73,
+        215.6,
+        210.13
       ],
-      "anchor": "은행",
-      "mode": "cell_right"
+      "anchor": "계좌번호(",
+      "mode": "after"
     },
     "accountNo": {
       "type": "text",
       "page": 0,
-      "x": 171.15,
-      "y": 206.32,
+      "x": 247.87,
+      "y": 207.73,
       "size": 10.0,
       "align": "left",
       "box": [
-        171.15,
-        193.39,
+        247.87,
+        197.73,
         535.27,
-        212.25
+        210.13
       ],
-      "anchor": "계좌번호",
+      "anchor": "은행)",
       "mode": "after"
     },
     "job.photo.paymentDate": {

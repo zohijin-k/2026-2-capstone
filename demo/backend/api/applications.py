@@ -130,6 +130,11 @@ def _load(application_id: int) -> Application:
         return app
 
 
+def _require_draft(app: Application) -> None:
+    if app.status != STATUS_DRAFT:
+        raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+
+
 @router.post("")
 def create(body: CreateRequest) -> dict[str, Any]:
     get_program(body.program_code)  # 잘못된 사업 코드면 여기서 걸린다
@@ -157,6 +162,7 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
         app = s.get(Application, application_id)
         if app is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
+        _require_draft(app)
         if body.form1 is not None:
             app.form1_json = _lock_identity(body.form1, app.identity_json or {})
         if body.self_check is not None:
@@ -231,6 +237,7 @@ def self_check(application_id: int, body: SelfCheckRequest) -> dict[str, Any]:
     문항 수는 사업에서 나온다 — 두배적금 8문항, 취업지원패키지 2문항(나이·거주지).
     """
     app = _load(application_id)
+    _require_draft(app)
     result = evaluate(body.answers, app.program_code)
     with get_session() as s:
         row = s.get(Application, application_id)
@@ -258,6 +265,7 @@ def save_consents(application_id: int, body: ConsentRequest, request: Request) -
     함께 저장한다. 서식5 전자서명은 PNG로 떨어뜨리고 경로만 DB에 남긴다.
     """
     app = _load(application_id)
+    _require_draft(app)
     SIGNATURES.mkdir(parents=True, exist_ok=True)
     saved: list[dict[str, Any]] = []
 

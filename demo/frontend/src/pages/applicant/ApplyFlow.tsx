@@ -37,40 +37,21 @@ import IdentityCheck from './IdentityCheck.tsx'
 import MyPage from './MyPage.tsx'
 import ProgramPicker from './ProgramPicker.tsx'
 import SubsidyItems from './SubsidyItems.tsx'
-import Form1Application from '../../forms/Form1Application.tsx'
-import Form2SelfCheck from '../../forms/Form2SelfCheck.tsx'
-import FormJobApplication from '../../forms/FormJobApplication.tsx'
-import { Form3PrivacyConsent, Form4ThirdPartyConsent } from '../../forms/Form34Consent.tsx'
-import Form5AdminInfoConsent from '../../forms/Form5AdminInfoConsent.tsx'
+import PdfFormsWorkspace from '../../forms/PdfFormsWorkspace.tsx'
 import { EMPTY_CONSENT, type ConsentValue } from '../../forms/consent-model.ts'
 import { EMPTY_FORM1, type Form1Value } from '../../forms/form1-model.ts'
 import { EMPTY_FORM5, type Form5Value, type SignMode } from '../../forms/form5-model.ts'
-import {
-  JOB_PACKAGE_SELF_CHECK_FOOTER,
-  JOB_PACKAGE_SELF_CHECK_ITEMS,
-  SELF_CHECK_ITEMS,
-  allAnswered,
-  type SelfCheckAnswers,
-} from '../../forms/form2-model.ts'
+import type { SelfCheckAnswers } from '../../forms/form2-model.ts'
 import './apply-flow.css'
 
 type Stage =
   | 'program'
   | 'identity'
-  | 'selfCheck'
-  | 'form1'
-  | 'consent'
+  | 'forms'
   | 'subsidy'
   | 'upload'
   | 'final'
   | 'mypage'
-
-/** 서식1의 절 구조를 그대로 스텝 경계로 쓴다. */
-const FORM1_STEPS = [
-  { key: 'top' as const, label: '저축목적·유사사업' },
-  { key: 'basic' as const, label: 'Ⅰ. 기본정보' },
-  { key: 'tail' as const, label: 'Ⅱ~Ⅳ. 납입·계좌·기타' },
-]
 
 type ConsentType = ConsentPayload['consent_type']
 
@@ -107,8 +88,6 @@ export default function ApplyFlow() {
   const [checkResult, setCheckResult] = useState<SelfCheckResult | null>(null)
 
   const [form1, setForm1] = useState<Form1Value>(EMPTY_FORM1)
-  const [step, setStep] = useState(0)
-  const [wholeSheet, setWholeSheet] = useState(false)
 
   const [consent, setConsent] = useState<ConsentValue>(EMPTY_CONSENT)
   const [form5, setForm5] = useState<Form5Value>(EMPTY_FORM5)
@@ -118,6 +97,8 @@ export default function ApplyFlow() {
   /** 지원 항목이 바뀌면 업로드 화면의 체크리스트를 다시 읽게 하는 키. */
   const [checklistKey, setChecklistKey] = useState(0)
   const [selectedSubsidyTypes, setSelectedSubsidyTypes] = useState(0)
+  const [formContinuing, setFormContinuing] = useState(false)
+  const [formError, setFormError] = useState('')
 
   /** 사업을 고른 시점에 신청 건을 만든다. 이후 단계마다 부분 저장한다. */
   const pickProgram = (picked: Program) => {
@@ -143,18 +124,19 @@ export default function ApplyFlow() {
     })
   }
 
-  const runSelfCheck = async () => {
-    if (appId === null) return
-    const payload = Object.fromEntries(
-      Object.entries(answers).filter(([, v]) => v),
-    ) as Record<string, string>
-    const result = await postSelfCheck(appId, payload)
-    setCheckResult(result)
-    if (result.eligible) setStage('form1')
-  }
-
-  const submitConsents = async () => {
+  const continueFromForms = async () => {
     if (appId === null || program === null) return
+    setFormContinuing(true)
+    setFormError('')
+    try {
+      const payload = Object.fromEntries(Object.entries(answers).filter(([, v]) => v)) as Record<string, string>
+      const result = await postSelfCheck(appId, payload)
+      setCheckResult(result)
+      if (!result.eligible) return
+      if (!consentReady) {
+        setFormError('필수 동의와 서명을 모두 마쳐 주세요.')
+        return
+      }
     const types = consentTypesOf(program)
     const values: Record<ConsentType, ConsentPayload> = {
       privacy: { consent_type: 'privacy', agreed: consent.privacy === '동의함' },
@@ -171,12 +153,17 @@ export default function ApplyFlow() {
       },
     }
     // 어느 동의를 받아야 하는지는 사업이 정한다. 취업패키지에는 서식5가 없다.
-    await postConsents(
+      await postConsents(
       appId,
       types.map((t) => values[t]),
     )
     if (types.includes('admin_info')) save({ form5 })
     setStage(program.has_subsidy_items ? 'subsidy' : 'upload')
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setFormContinuing(false)
+    }
   }
 
   /**
@@ -211,9 +198,6 @@ export default function ApplyFlow() {
     )
   }
 
-  const selfCheckItems = program.has_subsidy_items
-    ? JOB_PACKAGE_SELF_CHECK_ITEMS
-    : SELF_CHECK_ITEMS
   const consentTypes = consentTypesOf(program)
   const needsAdminConsent = consentTypes.includes('admin_info')
   const needsUniqueId = consentTypes.includes('unique_id')
@@ -228,9 +212,7 @@ export default function ApplyFlow() {
 
   const stageNames: [Stage, string][] = [
     ['identity', '본인인증'],
-    ['selfCheck', '자가진단'],
-    ['form1', '신청서 작성'],
-    ['consent', '동의'],
+    ['forms', '서식 작성'],
     ...(program.has_subsidy_items ? ([['subsidy', '지원 항목']] as [Stage, string][]) : []),
     ['upload', '서류 업로드'],
     ['final', '최종 확인'],
@@ -290,177 +272,45 @@ export default function ApplyFlow() {
         <IdentityCheck
           appId={appId}
           identity={identity}
-          onVerified={(verified) => {
+          onVerified={(verified, mobile) => {
             setIdentity(verified)
-            setForm1((prev) => lockIdentity(prev, verified))
-            setStage('selfCheck')
+            const locked = lockIdentity({ ...form1, mobile }, verified)
+            setForm1(locked)
+            save({ form1: locked })
+            setStage('forms')
             window.scrollTo({ top: 0 })
           }}
-          onNext={() => setStage('selfCheck')}
+          onNext={() => setStage('forms')}
         />
       )}
 
       {/* ── [1] 자가진단 ── */}
-      {stage === 'selfCheck' && (
-        <>
-          <Form2SelfCheck
-            answers={answers}
-            items={selfCheckItems}
-            formNo={program.has_subsidy_items ? '자가진단' : '서식1'}
-            title={
-              program.has_subsidy_items
-                ? '신청자격 자가진단 (나이·거주지)'
-                : '신청자격 자가진단 및 필수사항 확인·동의서'
-            }
-            notices={
-              program.has_subsidy_items
-                ? [
-                    `아래 2개 항목을 확인해 주세요. 『${program.name}』의 자격요건은 나이와 거주지입니다.`,
-                    '소득 요건은 없으며, 근로 여부와 무관하게 신청할 수 있습니다.',
-                  ]
-                : undefined
-            }
-            footer={program.has_subsidy_items ? JOB_PACKAGE_SELF_CHECK_FOOTER : undefined}
-            onChange={(next) => {
-              setAnswers(next)
-              setCheckResult(null)
-              save({ self_check: next })
-            }}
-          />
-          {checkResult && !checkResult.eligible && checkResult.failed_item && (
-            <div className="flow-block flow-block--stop">
-              <strong>{checkResult.failed_item}번 문항 — 신청 자격을 충족하지 않습니다.</strong>
-              <p>{checkResult.reason}</p>
-              {checkResult.alternative && <p className="flow-alt">{checkResult.alternative}</p>}
-            </div>
-          )}
-          <div className="flow__actions">
-            <button type="button" className="btn" onClick={() => setStage('program')}>
-              사업 다시 고르기
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={!allAnswered(answers, selfCheckItems)}
-              onClick={runSelfCheck}
-            >
-              {allAnswered(answers, selfCheckItems)
-                ? '자가진단 결과 확인'
-                : `${selfCheckItems.length}문항에 모두 답해 주세요`}
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ── [2] 신청서 ── */}
-      {stage === 'form1' && (
-        <>
-          {program.has_subsidy_items ? (
-            <FormJobApplication
-              value={form1}
-              onChange={onForm1}
-              identityLocked={identity !== null}
-            />
-          ) : (
-            <>
-              <div className="flow__steps">
-                {FORM1_STEPS.map((s, i) => (
-                  <button
-                    key={s.key}
-                    type="button"
-                    className={i === step && !wholeSheet ? 'step is-current' : 'step'}
-                    onClick={() => {
-                      setStep(i)
-                      setWholeSheet(false)
-                    }}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-                <label className="flow__whole">
-                  <input
-                    type="checkbox"
-                    checked={wholeSheet}
-                    onChange={(e) => setWholeSheet(e.target.checked)}
-                  />
-                  서식2 전체 보기
-                </label>
-              </div>
-
-              <Form1Application
-                value={form1}
-                onChange={onForm1}
-                only={wholeSheet ? undefined : FORM1_STEPS[step].key}
-                identityLocked={identity !== null}
-              />
-            </>
-          )}
-
-          <div className="flow__actions">
-            <button
-              type="button"
-              className="btn"
-              onClick={() =>
-                program.has_subsidy_items || step === 0
-                  ? setStage('selfCheck')
-                  : setStep(step - 1)
-              }
-            >
-              이전
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              onClick={() =>
-                program.has_subsidy_items || step === FORM1_STEPS.length - 1 || wholeSheet
-                  ? setStage('consent')
-                  : setStep(step + 1)
-              }
-            >
-              {program.has_subsidy_items ||
-              step === FORM1_STEPS.length - 1 ||
-              wholeSheet
-                ? '동의 단계로'
-                : '다음'}
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ── [3] 동의 ── */}
-      {stage === 'consent' && (
-        <>
-          <Form3PrivacyConsent value={consent} onChange={setConsent} />
-          <div className="flow__gap" />
-          <Form4ThirdPartyConsent value={consent} onChange={setConsent} />
-          {needsAdminConsent && (
-            <>
-              <div className="flow__gap" />
-              <Form5AdminInfoConsent
-                value={form5}
-                onChange={(v) => {
-                  setForm5(v)
-                  save({ form5: v })
-                }}
-                signMode={signMode}
-                onSignModeChange={setSignMode}
-              />
-            </>
-          )}
-          <div className="flow__actions">
-            <button type="button" className="btn" onClick={() => setStage('form1')}>
-              이전
-            </button>
-            <button
-              type="button"
-              className="btn btn--primary"
-              disabled={!consentReady}
-              onClick={submitConsents}
-            >
-              {consentReady ? '동의 완료' : '모든 동의 항목이 필요합니다'}
-            </button>
-          </div>
-        </>
+      {stage === 'forms' && appId !== null && (
+        <PdfFormsWorkspace
+          applicationId={appId}
+          program={program}
+          identity={identity}
+          form1={form1}
+          answers={answers}
+          consent={consent}
+          form5={form5}
+          signMode={signMode}
+          checkResult={checkResult}
+          onForm1={onForm1}
+          onAnswers={(next) => { setAnswers(next); setCheckResult(null); save({ self_check: next }) }}
+          onConsent={setConsent}
+          onForm5={(next) => { setForm5(next); save({ form5: next }) }}
+          onSignMode={setSignMode}
+          onFlush={async () => {
+            if (appId === null) return
+            await patchApplication(appId, { form1, self_check: answers, form5 })
+          }}
+          onChangedSubsidy={(state) => { setSelectedSubsidyTypes(state.selections.length); setChecklistKey((key) => key + 1) }}
+          onContinue={() => void continueFromForms()}
+          continuing={formContinuing}
+          error={formError}
+          readOnly={!!submitted}
+        />
       )}
 
       {/* ── [4] 지원 항목 (취업지원패키지) ── */}
@@ -483,7 +333,7 @@ export default function ApplyFlow() {
             }}
           />
           <div className="flow__actions">
-            <button type="button" className="btn" onClick={() => setStage('consent')}>
+            <button type="button" className="btn" onClick={() => setStage('forms')}>
               이전
             </button>
             <button
@@ -520,7 +370,7 @@ export default function ApplyFlow() {
             <button
               type="button"
               className="btn"
-              onClick={() => setStage(program.has_subsidy_items ? 'subsidy' : 'consent')}
+              onClick={() => setStage(program.has_subsidy_items ? 'subsidy' : 'forms')}
             >
               이전
             </button>

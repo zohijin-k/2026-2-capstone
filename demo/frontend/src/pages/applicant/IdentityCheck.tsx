@@ -58,7 +58,7 @@ interface Props {
   appId: number
   /** 이미 인증을 마쳤으면 결과만 보여준다 */
   identity: Identity | null
-  onVerified: (identity: Identity) => void
+  onVerified: (identity: Identity, mobile: string) => void
   onNext: () => void
 }
 
@@ -178,7 +178,7 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
         signature_data_url: signature,
         signature_kind: signMode === '직접 서명' ? 'electronic' : 'uploaded',
       })
-      onVerified(result)
+      onVerified(result, phone)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {

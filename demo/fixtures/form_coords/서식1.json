@@ -818,6 +818,22 @@
       ],
       "label": "기간제 근로자"
     },
+    "householdSizeCount": {
+      "type": "text",
+      "page": 0,
+      "x": 373.32,
+      "y": 541.45,
+      "size": 10.0,
+      "align": "center",
+      "box": [
+        373.32,
+        531.45,
+        383.99,
+        542.99
+      ],
+      "anchor": "10인 이상(",
+      "mode": "after"
+    },
     "bankName": {
       "type": "text",
       "page": 1,

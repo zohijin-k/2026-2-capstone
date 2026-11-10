@@ -220,6 +220,7 @@ function SlotInfoModal({ item, onClose }: { item: DocRequirementRow; onClose: ()
 
 function SlotCard({
   item,
+  applicationId,
   busy,
   declared,
   onDeclaredChange,
@@ -227,6 +228,7 @@ function SlotCard({
   onRetry,
 }: {
   item: DocRequirementRow
+  applicationId: number
   busy: boolean
   declared: YMD
   onDeclaredChange: (v: YMD) => void
@@ -235,6 +237,8 @@ function SlotCard({
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [infoOpen, setInfoOpen] = useState(false)
+  const [interviewFormOpen, setInterviewFormOpen] = useState(false)
+  const [interviewPdfReady, setInterviewPdfReady] = useState(false)
   const doc = item.documents[0]
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
@@ -282,6 +286,12 @@ function SlotCard({
 
       <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
 
+      {/^(interview|suit)_\d+_confirmation$/.test(item.slot_key) && (
+        <button type="button" className="btn btn--small" onClick={() => { setInterviewPdfReady(false); setInterviewFormOpen(true) }}>
+          면접확인서 양식 보기
+        </button>
+      )}
+
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
       {!doc && (
         <div className="dslot__action">
@@ -319,6 +329,24 @@ function SlotCard({
 
       {doc && <DocumentResult doc={doc} onRetry={() => onRetry(doc)} />}
       {infoOpen && <SlotInfoModal item={item} onClose={() => setInfoOpen(false)} />}
+      {interviewFormOpen && (
+        <Modal
+          title="면접확인서 양식 보기"
+          onClose={() => setInterviewFormOpen(false)}
+          variant="printable-viewer"
+          footer={<button type="button" className="btn btn--primary" disabled={!interviewPdfReady} onClick={() => window.print()}>인쇄</button>}
+        >
+          <div className="dupload__form-preview">
+            <p>신청자 정보가 미리 들어 있습니다. 회사에서 면접 내용과 확인 서명을 작성합니다.</p>
+            <PdfPages
+              url={`/api/applications/${applicationId}/forms/interview-confirmation/filled.pdf`}
+              width={820}
+              onReady={() => setInterviewPdfReady(true)}
+              onError={() => setInterviewPdfReady(false)}
+            />
+          </div>
+        </Modal>
+      )}
     </li>
   )
 }
@@ -478,6 +506,7 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
           <SlotCard
             key={item.slot_key}
             item={item}
+            applicationId={applicationId}
             busy={busySlot === item.slot_key}
             declared={declared[item.slot_key] ?? EMPTY_YMD}
             onDeclaredChange={(v) => setDeclared({ ...declared, [item.slot_key]: v })}

@@ -106,13 +106,17 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         spec = coords.field(key)
         if spec is None or spec["type"] != "image":
             continue
-        source = Path(image_path)
-        if not source.exists():
-            continue
         rect = fitz.Rect(*spec["box"])
-        doc[int(spec["page"])].insert_image(
-            rect, filename=str(source), keep_proportion=True, overlay=True
-        )
+        if isinstance(image_path, bytes):
+            doc[int(spec["page"])].insert_image(
+                rect, stream=image_path, keep_proportion=True, overlay=True
+            )
+        else:
+            source = Path(image_path)
+            if source.exists():
+                doc[int(spec["page"])].insert_image(
+                    rect, filename=str(source), keep_proportion=True, overlay=True
+                )
 
     # 내장 CJK 폰트를 통째로 싣면 서식 한 장이 1.8MB가 된다. 실제로 찍은 글자만
     # 남기면 200KB대로 떨어진다 — 심사 화면에서 탭을 옮길 때마다 받는 파일이다.
