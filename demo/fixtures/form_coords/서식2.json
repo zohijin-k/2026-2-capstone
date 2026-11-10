@@ -28,7 +28,8 @@
         487.07,
         192.97
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.1.아니오": {
       "type": "check",
@@ -42,7 +43,8 @@
         501.35,
         192.97
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.2.예": {
       "type": "check",
@@ -56,7 +58,8 @@
         487.07,
         220.78
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.2.아니오": {
       "type": "check",
@@ -70,7 +73,8 @@
         501.35,
         220.78
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.3.예": {
       "type": "check",
@@ -84,7 +88,8 @@
         487.07,
         256.02
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.3.아니오": {
       "type": "check",
@@ -98,7 +103,8 @@
         501.35,
         256.02
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.4.예": {
       "type": "check",
@@ -112,7 +118,8 @@
         487.07,
         291.38
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.4.아니오": {
       "type": "check",
@@ -126,7 +133,8 @@
         501.35,
         291.38
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.5.예": {
       "type": "check",
@@ -140,7 +148,8 @@
         487.07,
         319.07
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.5.아니오": {
       "type": "check",
@@ -154,7 +163,8 @@
         501.35,
         319.07
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.6.예": {
       "type": "check",
@@ -168,7 +178,8 @@
         487.07,
         479.21
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.6.아니오": {
       "type": "check",
@@ -182,7 +193,8 @@
         501.35,
         479.21
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.7.예": {
       "type": "check",
@@ -196,7 +208,8 @@
         487.07,
         639.24
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.7.아니오": {
       "type": "check",
@@ -210,7 +223,8 @@
         501.35,
         639.24
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     },
     "self_check.8.예": {
       "type": "check",
@@ -224,7 +238,8 @@
         487.07,
         691.02
       ],
-      "label": "예"
+      "label": "예",
+      "source_mark": "text-choice"
     },
     "self_check.8.아니오": {
       "type": "check",
@@ -238,7 +253,8 @@
         501.35,
         691.02
       ],
-      "label": "아니오"
+      "label": "아니오",
+      "source_mark": "text-choice"
     }
   },
   "masks": []

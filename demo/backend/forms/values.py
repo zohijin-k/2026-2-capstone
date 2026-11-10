@@ -182,8 +182,8 @@ def build_job_application(
     ):
         _put(filled.texts, key, form1.get(key))
     _put(filled.texts, "birth", format_date(form1.get("birth")))
-    year, month, day = _written_values(app.submitted_at or app.updated_at or datetime.now())
-    for key, value in (("job.applicationYear", year), ("job.applicationMonth", month), ("job.applicationDay", day)):
+    _, month, day = _written_values(app.submitted_at or app.updated_at or datetime.now())
+    for key, value in (("job.applicationMonth", month), ("job.applicationDay", day)):
         _put(filled.texts, key, value)
     signature = form1.get("job.signature")
     if isinstance(signature, str) and signature.startswith("data:image/png;base64,"):

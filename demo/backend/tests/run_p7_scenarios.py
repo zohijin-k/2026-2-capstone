@@ -556,10 +556,22 @@ def test_layout_and_interview_form(client, jp_id: int, tmp: Path) -> None:
     template = client.get(f"/api/applications/{jp_id}/forms/templates/job_application.pdf")
     check("원본 템플릿 응답", template.status_code, 200)
     check("원본 템플릿 PDF", template.content[:5], b"%PDF-")
+    background = client.get(f"/api/applications/{jp_id}/forms/job_application/pages/1.png")
+    check("PyMuPDF 원본 배경 PNG", background.status_code, 200)
+    check("배경 PNG MIME", background.headers.get("content-type"), "image/png")
+    check("원본 PNG 캐시", background.headers.get("cache-control"), "private, max-age=3600")
+    import pymupdf
+    image = pymupdf.Pixmap(background.content)
+    check_true("배경 PNG 약 200dpi", 1650 <= image.width <= 1660 and 2335 <= image.height <= 2345)
+    preview_png = client.get(f"/api/applications/{jp_id}/forms/job_application/pages/1.png?preview=true&v=1")
+    check("완성 미리보기 PNG", preview_png.status_code, 200)
+    check("완성 PNG 캐시 금지", preview_png.headers.get("cache-control"), "no-store")
+    check_true("완성 PNG는 원본 배경과 다름", preview_png.content != background.content)
+    interview_png = client.get(f"/api/applications/{jp_id}/forms/job_interview_confirmation/pages/1.png")
+    check("면접확인서 원본 PNG", interview_png.status_code, 200)
     filled = client.get(f"/api/applications/{jp_id}/forms/interview-confirmation/filled.pdf")
     check("면접확인서 응답", filled.status_code, 200)
     check("면접확인서 PDF", filled.content[:5], b"%PDF-")
-    import pymupdf
     with pymupdf.open(stream=filled.content, filetype="pdf") as document:
         text = " ".join(page.get_text() for page in document)
     check_true("신청인 성명 미리 채움", "김가상" in text)

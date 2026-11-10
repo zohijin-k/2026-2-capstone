@@ -179,12 +179,12 @@
     "job.interview.1.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 307.67,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        480.9,
         295.76,
         535.27,
         312.58
@@ -243,12 +243,12 @@
     "job.interview.2.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 355.2,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        480.9,
         343.35,
         535.27,
         360.05
@@ -307,12 +307,12 @@
     "job.suit.1.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 402.66,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        480.9,
         390.81,
         535.27,
         407.51
@@ -371,12 +371,12 @@
     "job.suit.2.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 450.25,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        480.9,
         438.4,
         535.27,
         455.1
@@ -435,12 +435,12 @@
     "job.certificate.1.organizer": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 417.45,
       "y": 497.72,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        417.45,
         485.87,
         535.27,
         502.57
@@ -499,12 +499,12 @@
     "job.certificate.2.organizer": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 417.45,
       "y": 545.25,
       "size": 10.0,
       "align": "left",
       "box": [
-        388.35,
+        417.45,
         533.34,
         535.27,
         550.16
@@ -544,13 +544,13 @@
       "anchor": "시험비용",
       "mode": "cell_right"
     },
-    "job.applicationYear": {
+    "job.applicationMonth": {
       "type": "text",
       "page": 0,
       "x": 266.86,
       "y": 644.42,
       "size": 10.0,
-      "align": "left",
+      "align": "center",
       "box": [
         266.86,
         634.06,
@@ -558,9 +558,10 @@
         647.01
       ],
       "anchor": "2026년",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
-    "job.applicationMonth": {
+    "job.applicationDay": {
       "type": "text",
       "page": 0,
       "x": 318.67,
@@ -574,23 +575,8 @@
         647.01
       ],
       "anchor": "2026년 월",
-      "mode": "after"
-    },
-    "job.applicationDay": {
-      "type": "text",
-      "page": 0,
-      "x": 376.96,
-      "y": 644.42,
-      "size": 10.0,
-      "align": "center",
-      "box": [
-        376.96,
-        634.06,
-        535.27,
-        647.01
-      ],
-      "anchor": "2026년 월 일",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "job.signature": {
       "type": "image",

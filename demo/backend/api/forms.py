@@ -12,11 +12,11 @@ PC로 내려가는 일이 여전히 0회다.
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
 from ..forms import coords as form_coords
-from ..forms.render import render
+from ..forms.render import render, render_page_png, render_template_page_png
 from ..forms.values import BUILDERS, available_forms
 from .common import STORAGE, list_consents, load_application, subsidy_rows
 
@@ -75,6 +75,7 @@ def form_layout(application_id: int, form_no: str) -> dict[str, Any]:
         "public_form": spec.public_form,
         "page_sizes": sizes,
         "fields": spec.fields,
+        "masks": spec.masks or [],
     }
 
 
@@ -92,6 +93,52 @@ def form_template(application_id: int, form_no: str) -> Response:
         content=spec.template.read_bytes(),
         media_type="application/pdf",
         headers={"Content-Disposition": DISPOSITION, "Cache-Control": "no-store"},
+    )
+
+
+@router.get("/{application_id}/forms/{form_no}/pages/{page_no}.png")
+def form_page_png(
+    application_id: int,
+    form_no: str,
+    page_no: int,
+    preview: bool = Query(default=False),
+) -> Response:
+    """원본 또는 완성 서식의 한 쪽을 PyMuPDF로 렌더링한다."""
+    app = load_application(application_id)
+    if form_no not in available_forms(app) and not (
+        app.program_code != "double_savings" and form_no == "job_interview_confirmation"
+    ):
+        raise HTTPException(404, "이 신청 건의 서식이 아닙니다.")
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, f"{form_no} 템플릿을 사용할 수 없습니다.")
+    import fitz
+
+    with fitz.open(spec.template) as doc:
+        if page_no < 1 or page_no > doc.page_count:
+            raise HTTPException(404, "서식 쪽 번호가 범위를 벗어났습니다.")
+
+    if preview:
+        if form_no == "job_interview_confirmation":
+            filled = BUILDERS[form_no](app)
+        else:
+            filled = BUILDERS[form_no](
+                app,
+                consents=list_consents(application_id),
+                storage_root=STORAGE,
+                subsidy_items=subsidy_rows(application_id),
+            )
+        pdf = render(spec, filled)
+        png = render_page_png(pdf, page_no)
+        cache_control = "no-store"
+    else:
+        stat = spec.template.stat()
+        png = render_template_page_png(str(spec.template), stat.st_mtime_ns, page_no)
+        cache_control = "private, max-age=3600"
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": cache_control},
     )
 
 

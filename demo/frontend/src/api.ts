@@ -462,6 +462,7 @@ export interface FormFieldLayout {
   y?: number
   size?: number
   align?: 'left' | 'center'
+  format?: 'yyyy' | 'yy' | 'none'
   anchor?: string
   label?: string
 }
@@ -472,6 +473,7 @@ export interface FormLayout {
   public_form: string | null
   page_sizes: { width: number; height: number }[]
   fields: Record<string, FormFieldLayout>
+  masks?: { page: number; box: [number, number, number, number] }[]
 }
 
 export const fetchFormLayout = (id: number, formNo: string) =>

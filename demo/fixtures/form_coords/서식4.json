@@ -58,7 +58,8 @@
         604.24
       ],
       "anchor": "20",
-      "mode": "after"
+      "mode": "after",
+      "format": "yy"
     },
     "consent.form4.month": {
       "type": "text",
@@ -74,7 +75,8 @@
         604.24
       ],
       "anchor": "년",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "consent.form4.day": {
       "type": "text",
@@ -90,7 +92,8 @@
         604.24
       ],
       "anchor": "년 월",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     }
   },
   "masks": []

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   fetchFormLayout,
@@ -13,7 +13,6 @@ import {
   type SubsidyState,
 } from '../api.ts'
 import Modal from '../components/Modal.tsx'
-import PdfPages from '../components/PdfPages.tsx'
 import SignaturePad from '../components/SignaturePad.tsx'
 import type { ConsentValue } from './consent-model.ts'
 import { EMPTY_FORM1, type Form1Value } from './form1-model.ts'
@@ -62,6 +61,14 @@ function dateText(value: unknown): string {
   if (!value || typeof value !== 'object' || !('y' in value)) return ''
   const date = value as { y?: string; m?: string; d?: string }
   return [date.y, date.m, date.d].filter(Boolean).join('. ')
+}
+
+function applyFieldFormat(value: string, format: FormFieldLayout['format']): string {
+  if (format === 'yy') {
+    const digits = value.replace(/\D/g, '')
+    return digits.length >= 2 ? digits.slice(-2) : digits
+  }
+  return value
 }
 
 function readForm(form1: Form1Value, key: string): unknown {
@@ -120,6 +127,8 @@ export default function PdfFormsWorkspace({
   const [previewKey, setPreviewKey] = useState(0)
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [subsidySelections, setSubsidySelections] = useState<SubsidySelection[]>([])
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [availablePageWidth, setAvailablePageWidth] = useState(794)
   const selfCheckItems = isJob ? JOB_PACKAGE_SELF_CHECK_ITEMS : SELF_CHECK_ITEMS
 
   useEffect(() => {
@@ -140,9 +149,19 @@ export default function PdfFormsWorkspace({
     return () => { alive = false }
   }, [applicationId, formNos, isJob])
 
+  useEffect(() => {
+    const viewport = scrollRef.current
+    if (!viewport) return
+    const update = () => setAvailablePageWidth(Math.max(1, viewport.clientWidth - 28))
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(viewport)
+    return () => observer.disconnect()
+  }, [active])
+
   const currentLayout = active ? layouts[active.formNo] : undefined
   const pageSize = currentLayout?.page_sizes[page]
-  const pageWidth = 794
+  const pageWidth = Math.min(794, availablePageWidth)
   const scale = pageSize ? pageWidth / pageSize.width : 1
 
   const readChoice = (key: string): boolean => {
@@ -173,7 +192,6 @@ export default function PdfFormsWorkspace({
     }
     if (key.startsWith('job.application')) {
       const date = new Date()
-      if (key.endsWith('Year')) return String(date.getFullYear())
       if (key.endsWith('Month')) return String(date.getMonth() + 1)
       if (key.endsWith('Day')) return String(date.getDate())
     }
@@ -332,8 +350,9 @@ export default function PdfFormsWorkspace({
     onContinue()
   }
 
-  const templateUrl = active ? `/api/applications/${applicationId}/forms/templates/${encodeURIComponent(active.formNo)}.pdf` : ''
-  const previewUrl = active ? `/api/applications/${applicationId}/forms/${encodeURIComponent(active.formNo)}.pdf?v=${previewKey}` : ''
+  const pageImageUrl = active
+    ? `/api/applications/${applicationId}/forms/${encodeURIComponent(active.formNo)}/pages/${page + 1}.png?preview=${active.mode === 'preview' ? 'true' : 'false'}&v=${previewKey}`
+    : ''
 
   const renderField = ([key, field]: [string, FormFieldLayout]) => {
     if (!active || field.page !== page) return null
@@ -349,6 +368,7 @@ export default function PdfFormsWorkspace({
     if (field.type === 'check') {
       const checked = readChoice(key)
       const derived = fieldGroup(key) === 'residencePeriod' || fieldGroup(key) === 'workPeriod'
+      const markSize = Math.max(18, boxStyle.height * 1.5)
       return (
         <label key={key} className={`pdf-form__check ${isMissing && !isSelected(fieldGroup(key)) ? 'is-missing' : ''}`} style={boxStyle}>
           <input
@@ -359,6 +379,13 @@ export default function PdfFormsWorkspace({
             aria-label={`${label} ${field.label || key.split('.').slice(-1)[0]}`}
             onChange={(event) => toggleChoice(key, event.currentTarget.checked)}
           />
+          {checked && <svg
+            className="pdf-form__check-mark"
+            width={markSize}
+            height={markSize}
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          ><path d="M3 12.5 9 18 21 4" /></svg>}
         </label>
       )
     }
@@ -408,7 +435,7 @@ export default function PdfFormsWorkspace({
         className={`pdf-form__text ${isMissing && required ? 'is-missing' : ''}`}
         style={{ ...boxStyle, fontSize: fitFont, textAlign: field.align || 'left' }}
         aria-label={label}
-        value={dateValue}
+        value={applyFieldFormat(dateValue, field.format)}
         readOnly={readOnly || locked || !roundEnabled || !photoEnabled || !householdCountEnabled || suitFieldsLinked || key.startsWith('written') || key.includes('.year') || key.includes('.month') || key.includes('.day') || key.startsWith('job.application')}
         inputMode={key === 'householdSizeCount' ? 'numeric' : undefined}
         onChange={(event) => setText(key, event.currentTarget.value)}
@@ -501,19 +528,35 @@ export default function PdfFormsWorkspace({
             <button type="button" className="btn" disabled={page >= currentLayout.page_sizes.length - 1} onClick={() => setPage((p) => Math.min(currentLayout.page_sizes.length - 1, p + 1))}>▶</button>
             {active.mode === 'edit' && <span className="pdf-form__hint">칸을 탭으로 이동할 수 있습니다.</span>}
           </div>
-          <div className="pdf-form__scroll">
-            {active.mode === 'preview' ? (
-              <PdfPages url={previewUrl} width={pageWidth} pageNo={page + 1} />
-            ) : (
-              <div className="pdf-form__page" style={{ width: pageWidth, height: pageSize ? pageSize.height * scale : 'auto' }}>
-                <PdfPages url={templateUrl} width={pageWidth} pageNo={page + 1} />
+          <div className="pdf-form__scroll" ref={scrollRef} data-form-scroll>
+            <div
+              className="pdf-form__page"
+              data-form-page
+              style={{ width: pageWidth, height: pageSize ? pageSize.height * scale : 'auto' }}
+            >
+              <img
+                className="pdf-form__background"
+                src={pageImageUrl}
+                alt={`${formLabel(active.formNo)} ${page + 1}쪽 원본 서식`}
+                draggable={false}
+              />
+              {active.mode === 'edit' && (
                 <div className="pdf-form__overlay" style={{ width: pageWidth, height: pageSize ? pageSize.height * scale : 'auto' }}>
+                  {(currentLayout.masks || []).filter((mask) => mask.page === page).map((mask, index) => {
+                    const [x0, y0, x1, y1] = mask.box
+                    return <div
+                      key={`mask-${index}`}
+                      className="pdf-form__mask"
+                      aria-hidden="true"
+                      style={{ left: x0 * scale, top: y0 * scale, width: (x1 - x0) * scale, height: (y1 - y0) * scale }}
+                    />
+                  })}
                   {Object.entries(currentLayout.fields)
                     .sort((a, b) => a[1].page - b[1].page || a[1].box[1] - b[1].box[1] || a[1].box[0] - b[1].box[0])
                     .map(renderField)}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           {active.mode === 'edit' && !readOnly && active.formNo === '서식5' && (
             <div className="pdf-form__signature-mode">

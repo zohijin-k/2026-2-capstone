@@ -30,7 +30,8 @@
         568.01
       ],
       "anchor": "2026 년",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "writtenDay": {
       "type": "text",
@@ -46,7 +47,8 @@
         568.01
       ],
       "anchor": "2026 년 월",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "name": {
       "type": "text",

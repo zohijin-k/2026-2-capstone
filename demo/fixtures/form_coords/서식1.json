@@ -897,6 +897,7 @@
       ],
       "anchor": "2026.",
       "mode": "after",
+      "format": "none",
       "note": "원문 '2026. . .' 의 첫 빈칸(월)"
     },
     "writtenDay": {
@@ -914,6 +915,7 @@
       ],
       "anchor": "2026..",
       "mode": "after",
+      "format": "none",
       "note": "원문 '2026. . .' 의 둘째 빈칸(일)"
     },
     "monthlyDeposit.월 10만원": {

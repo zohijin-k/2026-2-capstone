@@ -338,10 +338,11 @@ function SlotCard({
         >
           <div className="dupload__form-preview">
             <p>신청자 정보가 미리 들어 있습니다. 회사에서 면접 내용과 확인 서명을 작성합니다.</p>
-            <PdfPages
-              url={`/api/applications/${applicationId}/forms/interview-confirmation/filled.pdf`}
-              width={820}
-              onReady={() => setInterviewPdfReady(true)}
+            <img
+              className="dupload__form-page"
+              src={`/api/applications/${applicationId}/forms/job_interview_confirmation/pages/1.png?preview=true`}
+              alt="면접확인서 양식"
+              onLoad={() => setInterviewPdfReady(true)}
               onError={() => setInterviewPdfReady(false)}
             />
           </div>

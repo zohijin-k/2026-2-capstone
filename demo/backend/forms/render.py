@@ -8,10 +8,11 @@
 
   * 글자 — 칸 안에 들어가도록 폭을 재서 넣는다. 넘치면 글자를 줄이지, 칸 밖으로
     나가지 않는다. 원본 선·글자를 침범하는 순간 서식이 아니라 낙서가 된다.
-  * `✓`  — `□` 글자의 원점에 같은 크기로 얹는다. 좌표를 따로 재지 않는다.
+  * `✓`  — 원본 체크 상자 중심에 좌표 비율을 적용해 크게 그린다.
   * 이미지 — 서식5 서명란에 캔버스 전자서명 PNG (R9.2).
 """
 
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,8 @@ INK = (0.05, 0.10, 0.45)
 
 #: 칸을 넘칠 때 줄일 수 있는 최소 글자 크기.
 MIN_SIZE = 5.0
+CHECK_HEIGHT_RATIO = 1.5
+CHECK_MIN_HEIGHT_PT = 13.5  # 18px at the 794px editor width.
 
 
 def _font() -> Any:
@@ -40,6 +43,31 @@ def fit_size(font: Any, text: str, size: float, max_width: float) -> float:
     return size
 
 
+def format_field_text(field: dict[str, Any], text: str) -> str:
+    """Apply the literal year format printed on the source form, if any."""
+    if field.get("format") == "yy":
+        digits = "".join(char for char in text if char.isdigit())
+        return digits[-2:] if len(digits) >= 2 else digits
+    return text
+
+
+def render_page_png(pdf: bytes, page_no: int, dpi: int = 200) -> bytes:
+    """Render one 1-based PDF page with PyMuPDF, matching the coordinate source."""
+    import fitz
+
+    with fitz.open(stream=pdf, filetype="pdf") as doc:
+        if page_no < 1 or page_no > doc.page_count:
+            raise IndexError("서식 쪽 번호가 범위를 벗어났습니다.")
+        return doc[page_no - 1].get_pixmap(dpi=dpi, alpha=False).tobytes("png")
+
+
+@lru_cache(maxsize=64)
+def render_template_page_png(path: str, modified_ns: int, page_no: int, dpi: int = 200) -> bytes:
+    """Cache the static template raster by path revision and page."""
+    source = Path(path).read_bytes()
+    return render_page_png(source, page_no, dpi)
+
+
 def render(coords: FormCoords, filled: FilledForm) -> bytes:
     """템플릿 + 입력값 → 완성된 서식 PDF 바이트."""
     import fitz
@@ -54,6 +82,7 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
     font = _font()
     doc = fitz.open(coords.template)
     writers: dict[int, Any] = {}
+    check_text_writers: dict[int, Any] = {}
 
     # 취업패키지 원본에 인쇄된 회색 예시 문구를 제거하고 흰색으로 덮는다.
     masks_by_page: dict[int, list[Any]] = {}
@@ -77,6 +106,7 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
         spec = coords.field(key)
         if spec is None or spec["type"] != "text" or not text:
             continue
+        text = format_field_text(spec, text)
         box = spec["box"]
         width = box[2] - box[0]
         size = fit_size(font, text, float(spec["size"]), width)
@@ -93,13 +123,35 @@ def render(coords: FormCoords, filled: FilledForm) -> bytes:
             # 줄 모르니 남긴다 — 다만 선택 기능이라 예외로 세우지는 않는다.
             continue
         box = spec["box"]
-        size = float(box[2] - box[0])  # ✓ 한 글자 폭 = 1em 이라 □ 폭과 같게 잡는다
-        mark_width = font.text_length("✓", size)
-        x = (box[0] + box[2]) / 2 - mark_width / 2
-        writer(int(spec["page"])).append((x, float(spec["y"])), "✓", font=font, fontsize=size)
+        height = float(box[3] - box[1])
+        size = max(height * CHECK_HEIGHT_RATIO, CHECK_MIN_HEIGHT_PT)
+        center_x = (float(box[0]) + float(box[2])) / 2
+        center_y = (float(box[1]) + float(box[3])) / 2
+        # Same 24×24 tick proportions as the SVG in PdfFormsWorkspace.
+        points = (
+            (center_x - size * 0.40, center_y + size * 0.02),
+            (center_x - size * 0.12, center_y + size * 0.31),
+            (center_x + size * 0.43, center_y - size * 0.36),
+        )
+        page = doc[int(spec["page"])]
+        page.draw_line(points[0], points[1], color=INK, width=max(1.7, size * 0.13), overlay=True)
+        page.draw_line(points[1], points[2], color=INK, width=max(1.7, size * 0.13), overlay=True)
+        # Keep the mark searchable for text-based review and accessible extraction.
+        # Render mode 3 is invisible; the visible check is the vector mark above.
+        page_no = int(spec["page"])
+        if page_no not in check_text_writers:
+            check_text_writers[page_no] = fitz.TextWriter(page.rect)
+        semantic_size = min(4.0, max(1.0, height * 0.35))
+        mark_width = font.text_length("✓", semantic_size)
+        mark_x = center_x - mark_width / 2
+        check_text_writers[page_no].append(
+            (mark_x, center_y + semantic_size * 0.35), "✓", font=font, fontsize=semantic_size
+        )
 
     for page_no, text_writer in writers.items():
         text_writer.write_text(doc[page_no], color=INK)
+    for page_no, text_writer in check_text_writers.items():
+        text_writer.write_text(doc[page_no], color=INK, render_mode=3)
 
     # --- 이미지 (서식5 전자서명) ---------------------------------------
     for key, image_path in filled.images.items():

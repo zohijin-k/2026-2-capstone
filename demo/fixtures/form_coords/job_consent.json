@@ -86,7 +86,8 @@
         666.55
       ],
       "anchor": "2026년",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "consent.job.day": {
       "type": "text",
@@ -102,7 +103,8 @@
         666.55
       ],
       "anchor": "2026년 월",
-      "mode": "after"
+      "mode": "after",
+      "format": "none"
     },
     "name": {
       "type": "text",
