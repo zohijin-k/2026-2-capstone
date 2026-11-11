@@ -15,8 +15,9 @@ import sys
 import time
 
 ENGINES = ("own", "applevision", "jbai")
-DOCS = ("resident_abstract", "nhis_payment", "nhis_acquisition_loss")
+DOCS = ("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4")
 KEYS = {
+    "insurance_4": ("name", "birth_date", "issue_date", "document_number", "rows"),
     "resident_abstract": ("name", "birth_date", "issue_date", "address_contains", "move_in_dates"),
     "nhis_payment": ("name", "birth_date", "issue_date", "insurance_type", "billed_by_month", "long_term_care_by_month"),
     "nhis_acquisition_loss": ("name", "birth_date", "issue_date", "query_period", "history", "recent_five_years"),
@@ -86,6 +87,9 @@ def _value_text(key, value):
         if isinstance(item, bool):
             return "true" if item else "false"
         return str(item)
+    if key == "rows":
+        from .insurance_bench import ROW_KEYS
+        return "\n".join(scalar(row[column] or None) for row in value for column in ROW_KEYS)
     if key == "history":
         return "\n".join(scalar(row.get(column)) for row in value for column in ("category", "acquired", "lost"))
     if key == "query_period":
@@ -114,6 +118,9 @@ def field_metrics(doc, truth, extracted):
     actual = {key: value.model_dump(mode="json")["value"] for key, value in extracted.fields.items()}
     aliases = {"name": "성명", "birth_date": "생년월일", "issue_date": "발급일", "insurance_type": "가입구분",
                "billed_by_month": "월별고지금액", "long_term_care_by_month": "월별장기요양보험료"}
+    if doc == "insurance_4":
+        from .insurance_bench import field_metrics as insurance_metrics
+        return insurance_metrics(truth, actual)
     metrics = {}
     for key in KEYS[doc]:
         if key not in truth:
@@ -153,7 +160,11 @@ def run_engine(engine, path, pages, doc, truth, today):
         from ..extractors.jbai_text import extract
         from ..schemas.models import DocType
         captured = run_jbai_file_pair(path)
-        result = extract(captured, DocType(doc), today=today)
+        if doc == "insurance_4":
+            from .insurance_bench import extract_jbai
+            result = extract_jbai(captured, today=today)
+        else:
+            result = extract(captured, DocType(doc), today=today)
         count = len(captured.pages)
         confidence = -1.0  # Remote model does not return calibrated confidence.
     else:
@@ -165,7 +176,11 @@ def run_engine(engine, path, pages, doc, truth, today):
                 return {"failed": "O", "fallback": "O" if ocr.engine != engine else "X"}
             scores.extend(word.confidence for word in ocr.words)
             pairs.append((page, ocr))
-        result = EXTRACTORS[doc](pairs, today=today)
+        if doc == "insurance_4":
+            from ..extractors.insurance_4 import extract as extractor
+        else:
+            extractor = EXTRACTORS[doc]
+        result = extractor(pairs, today=today)
         count = len(pairs)
         confidence = sum(scores) / len(scores) if scores else 0.0
     elapsed = time.perf_counter() - started

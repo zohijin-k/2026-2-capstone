@@ -51,7 +51,7 @@ def main() -> None:
     ap.add_argument("--rectify-phone", action="store_true")
     ap.add_argument("--engines", nargs="+", default=["own", "applevision", "jbai"])
     ap.add_argument("--gt", type=Path)
-    ap.add_argument("--doc", choices=["resident_abstract", "nhis_payment", "nhis_acquisition_loss"], default="resident_abstract")
+    ap.add_argument("--doc", choices=["resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"], default="resident_abstract")
     ap.add_argument("--today", type=date.fromisoformat)
     args = ap.parse_args()
     from .private_bench import quiet_dependencies

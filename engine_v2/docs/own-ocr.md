@@ -211,6 +211,11 @@ EasyOCR 미설치로 실제 own 대 EasyOCR 우열은 아직 판단할 수 없�
   engine_v2/data/private/초본.pdf \
   --gt engine_v2/data/private/초본.gt.json \
   --engines own applevision jbai --env-file .env --out metrics.json
+# 4대보험 가입내역: make_gt --doc insurance_4로 만든 정답 형식 그대로 사용
+.venv/bin/python -m engine_v2.tools.ocr_bench \
+  engine_v2/data/private/4대보험_1111.pdf \
+  --gt engine_v2/data/private/insurance_4.gt.json \
+  --doc insurance_4 --engines own applevision jbai --env-file .env
 ```
 
 JBAI는 기존 `JBAI_API_KEY`와 `JBAI_ALLOW_REAL_DOCS=true` 설정이 모두 필요하며 설정값은 출력하지 않는다. 미설정/비맥 Apple Vision/미설치 모델은 건너뛰고 계속한다. 이유 코드는 1=플랫폼, 2=설치/모델, 3=키 미설정, 4=실서류 전송 동의 미설정, 5=엔진/추출 예외다. `skipped/failed/fallback`은 O/X이며 다른 엔진으로 대체하지 않는다. 원격 신뢰도는 제공되지 않아 `-1`, `confidence_available=X`로 표시한다.
@@ -218,6 +223,50 @@ JBAI는 기존 `JBAI_API_KEY`와 `JBAI_ALLOW_REAL_DOCS=true` 설정이 모두 �
 입력·OCR·추출·저장 단계에서 Python stdout/stderr와 native fd 1/2 출력을 폐기한다. 예외 본문, 파일명, 정답 값, OCR 문자열, 사용자 정의 필드 키를 출력하지 않는다. 출력 키는 코드의 허용 목록으로 고정한다. 이 출력 억제는 프로세스 전체에 적용되므로 단일 CLI 용도다. `--out` 생략 시 결과 파일/디렉터리는 만들지 않으며 지정해도 상위 폴더를 자동 생성하지 않는다. PDF 텍스트 레이어도 300dpi로 렌더링하여 모든 엔진에 OCR을 실행한다.
 
 단일 필드 CER는 위 NFC/공백 정책을 공유한다. 월별은 월→금액 순서, 이력은 category/acquired/lost 값 순서, 조회기간은 시작/끝 순서의 값 전용 문자열을 내부 비교하고 JSON 스키마 키/구두점은 분모에 넣지 않는다. 빈 구조 셀은 `␀`, 필드 전체 누락은 빈 문자열이다. `address_contains`는 부분 정답이므로 각 지정 부분의 최소 연속 부분문자열 편집거리 합/지정 글자 수, `move_in_dates`는 날짜별 최근접 날짜 CER 평균이다. 이 두 항목은 전체 주소/전체 이력 CER가 아니며 미지정 항목의 추가는 벌점이 없다. O/X는 make_gt 계약의 완전 일치/포함 여부이고 임의 유사도 허용은 없다.
+
+`insurance_4` 출력 필드 키는 `name/birth_date/issue_date/document_number/rows`로 고정한다. `rows`는 make_gt 입력 순서(국민연금→건강보험→산재보험→고용보험), 추출은 문서 행 순서를 그대로 유지하고 재정렬하거나 최적 대응시키지 않는다. 각 행은 `insurance/name/subscriber_category/management_number/workplace_name/acquired/received/status` 순서의 값 전용 문자열로 CER를 비교한다. bbox·신뢰도·JSON 키/구두점은 제외한다. D의 정답 비교와 같이 생략한 셀은 빈 문자열, acquired의 null은 빈 문자열, received의 null/하이픈 표기는 빈 문자열로 정규화한다. CER 스트림에서는 빈 셀을 `␀`로 표시하고 전체 필드 누락은 빈 문자열로 둔다. 미가입 행도 비교하며, 행 순서나 개수가 다르면 O/X는 X다.
+
+JBAI의 4대보험 지원은 벤치 전용 변환 계층이다. 인식한 머리말과 6열 표의 순서를 임시 격자에 배치해 D의 `insurance_4.extract`를 재사용한다. 실제 bbox로 해석하지 않으며 반환 bbox는 비운다. 표가 없거나 지원하지 않는 구조는 값을 추측해 채우지 않는다. 가린 주민번호는 앞자리·성별 자리로 생년월일만 얻고 뒷자리를 복원하지 않는다. 기본 엔진의 판정·점수·추출기는 바꾸지 않는다. macOS Vision과 실제 JBAI 응답은 이 WSL 기계에서 검증하지 않았으며 합성 응답 재생으로 변환 경로를 검증한다.
+
+D의 가상 좌표 샘플을 이미지로 렌더링한 own CPU 실서류 CLI 실행 결과(실서류가 아님):
+
+```json
+{
+  "engine": "own",
+  "skipped": "X",
+  "failed": "X",
+  "fallback": "X",
+  "reason_code": 0,
+  "pages": 1,
+  "seconds_per_page": 2.564465,
+  "mean_confidence": 0.9786820496831622,
+  "confidence_available": "O",
+  "fields": {
+    "name": {
+      "match": "O",
+      "cer": 0.0
+    },
+    "birth_date": {
+      "match": "O",
+      "cer": 0.0
+    },
+    "issue_date": {
+      "match": "X",
+      "cer": 1.0
+    },
+    "document_number": {
+      "match": "O",
+      "cer": 0.0
+    },
+    "rows": {
+      "match": "O",
+      "cer": 0.0
+    }
+  }
+}
+```
+
+같은 실행에서 Apple Vision은 플랫폼 사유 코드 1, JBAI는 키 미설정 코드 3으로 건너뛰었다. 가짜 정답·인식 문자열·파일명은 출력 전체에서 검출되지 않았다. 이 합성 이미지에서는 발급일이 X/CER 1.0이며 추출기 보정은 하지 않았다. 이 한 번의 실행은 실서류 정확도나 세 엔진 성능 비교 결과가 아니다.
 
 실서류 모드 시간은 초기화+OCR+필드 추출 wall time/쪽 수이며 입력 래스터화는 제외한다. 합성 벤치 시간은 OCR wall time+보정 함수 시간이며 이미지 파일 IO/PNG 인코딩/필드 추출은 제외한다. 서로 다른 시간 정의를 직접 같은 지표로 비교하지 않는다.
 
