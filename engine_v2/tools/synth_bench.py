@@ -19,13 +19,21 @@ from datetime import date
 from pathlib import Path
 
 from ..extractors import resident_abstract, nhis_payment, nhis_acquisition_loss
+from ..extractors import exam_docs, interview_confirmation, receipt
 from ..pipeline.ocr import run_ocr
 from ..pipeline.preprocess import PageImage, PageSource
 from .privacy import mask_text
 
 EXTRACTORS = {"resident_abstract": resident_abstract.extract,
               "nhis_payment": nhis_payment.extract,
-              "nhis_acquisition_loss": nhis_acquisition_loss.extract}
+              "nhis_acquisition_loss": nhis_acquisition_loss.extract,
+              # 취업지원패키지 추가서류 (make_synth_eval --suite job_package)
+              "receipt": receipt.extract,
+              "exam_admission": exam_docs.extract,
+              "exam_score": exam_docs.extract,
+              "interview_confirm": interview_confirmation.extract}
+#: 전북AI 결과 판독기(jbai_text)가 있는 서류. 나머지는 jbai 엔진에서 건너뛴다.
+JBAI_DOCS = ("resident_abstract", "nhis_payment", "nhis_acquisition_loss")
 
 
 def normalize_text(text):
@@ -221,6 +229,11 @@ def run_suite(manifest_path, engines, output, *, unmasked=False, rectify_phone=F
                    "font": sample.get("font", "bundled-cjk"), "split": sample.get("split", "legacy"),
                    "rectification_requested": rectify, "rectification_applied": correction_applied,
                    "rectification_seconds": correction_sec}
+            if engine == "jbai" and sample["document_type"] not in JBAI_DOCS:
+                row.update(status="skipped", reason="전북AI 결과 판독기가 없는 서류")
+                rows.append(row)
+                print(f"{engine} | {row['document']} | {row['degradation']} | SKIP")
+                continue
             try:
                 if engine == "jbai":
                     from ..pipeline.jbai_ocr import run_jbai_image_pair, JBAIDocumentResult

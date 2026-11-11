@@ -59,12 +59,12 @@ def test_card_slip_reads_total_date_store_and_number():
     result = run(card_slip_words())
     assert result.detected_type == DocType.RECEIPT
     got = values(result)
-    assert got["결제금액"] == 45000
+    assert got["결제금액"] == "45000"
     assert got["결제일"] == date(2026, 3, 15)  # 두 자리 연도 '26/03/15'
     assert got["상호"] == "한빛정장대여"
     assert got["사업자등록번호"] == BRN
     assert got["결제수단"] == "카드"
-    assert (got["공급가액"], got["부가세"]) == (40909, 4091)
+    assert (got["공급가액"], got["부가세"]) == ("40909", "4091")
     assert all(checks(result).values())
     assert result.fields["결제금액"].confidence == 1.0
     assert result.fields["결제금액"].bbox is not None
@@ -80,7 +80,7 @@ def test_cash_receipt_prefers_total_over_cash_given():
         wd(10, 18, "거스름돈"), wd(60, 18, "5,000"),
     ])
     got = values(result)
-    assert got["결제금액"] == 45000
+    assert got["결제금액"] == "45000"
     assert got["결제일"] == date(2026, 3, 15)
     assert got["상호"] == "새솔양복점"
 
@@ -89,7 +89,7 @@ def test_label_and_value_read_as_one_word():
     result = run([wd(40, 3, "영수증"), wd(10, 8, "합계금액:45,000원", 30),
                   wd(10, 10, "결제일시:2026.03.15", 30), wd(45, 10, "14:20")])
     got = values(result)
-    assert got["결제금액"] == 45000
+    assert got["결제금액"] == "45000"
     assert got["결제일"] == date(2026, 3, 15)
 
 
@@ -105,7 +105,7 @@ def test_value_below_label_on_payment_screen():
     ])
     got = values(result)
     assert result.detected_type == DocType.RECEIPT
-    assert got["결제금액"] == 45000
+    assert got["결제금액"] == "45000"
     assert result.fields["결제금액"].raw_text == "45,000원"
     assert got["상호"] == "미래정장"
     assert got["결제수단"] == "카드"
@@ -118,7 +118,7 @@ def test_transfer_confirmation_reads_payee_and_amount():
         wd(10, 12, "이체금액"), wd(40, 12, "20,000원"), wd(10, 14, "수수료"), wd(40, 14, "0원"),
     ])
     got = values(result)
-    assert got["결제금액"] == 20000
+    assert got["결제금액"] == "20000"
     assert got["결제일"] == date(2026, 3, 12)
     assert got["받는분"] == "다온사진관"
     assert got["결제수단"] == "계좌이체"

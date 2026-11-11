@@ -15,12 +15,20 @@ import sys
 import time
 
 ENGINES = ("own", "applevision", "jbai")
-DOCS = ("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4")
+#: 취업지원패키지 추가서류. 전북AI 결과 판독기가 없어 jbai 엔진은 건너뛴다(사유 코드 6).
+JOB_DOCS = ("receipt", "exam_admission", "exam_score", "interview_confirm")
+DOCS = ("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4") + JOB_DOCS
 KEYS = {
     "insurance_4": ("name", "birth_date", "issue_date", "document_number", "rows"),
     "resident_abstract": ("name", "birth_date", "issue_date", "address_contains", "move_in_dates"),
     "nhis_payment": ("name", "birth_date", "issue_date", "insurance_type", "billed_by_month", "long_term_care_by_month"),
     "nhis_acquisition_loss": ("name", "birth_date", "issue_date", "query_period", "history", "recent_five_years"),
+    # make_gt --doc receipt / exam_admission / exam_score / interview_confirm 과 같은 키
+    "receipt": ("amount", "payment_date", "store", "payee", "brn", "payment_method"),
+    "exam_admission": ("name", "birth_date", "exam_name", "exam_date", "issue_date"),
+    "exam_score": ("name", "birth_date", "exam_name", "exam_date", "issue_date"),
+    "interview_confirm": ("name", "birth_date", "company", "industry", "interview_date", "interview_time",
+                          "place", "job", "confirm_date"),
 }
 
 
@@ -39,7 +47,10 @@ def quiet_dependencies():
         finally:
             # Flush buffered native output on success AND exception paths.
             import ctypes
-            ctypes.CDLL(None).fflush(None)
+            try:
+                ctypes.CDLL(None).fflush(None)
+            except (OSError, TypeError):
+                pass  # Windows에는 CDLL(None)이 없다. 파일 서술자는 아래에서 그대로 되돌린다.
             sink.flush()
             for fd, original in zip((1, 2), saved):
                 os.dup2(original, fd)
@@ -47,7 +58,10 @@ def quiet_dependencies():
 
 
 def unavailable(engine):
-    """Fixed reason codes: 1 platform, 2 installation, 3 credential, 4 opt-in."""
+    """Fixed reason codes: 1 platform, 2 installation, 3 credential, 4 opt-in.
+
+    run_private adds 6 (unsupported document) for jbai with JOB_DOCS.
+    """
     if engine == "applevision" and sys.platform != "darwin":
         return 1
     if engine == "jbai":
@@ -117,7 +131,12 @@ def field_metrics(doc, truth, extracted):
     from .synth_bench import cer, normalize_text
     actual = {key: value.model_dump(mode="json")["value"] for key, value in extracted.fields.items()}
     aliases = {"name": "성명", "birth_date": "생년월일", "issue_date": "발급일", "insurance_type": "가입구분",
-               "billed_by_month": "월별고지금액", "long_term_care_by_month": "월별장기요양보험료"}
+               "billed_by_month": "월별고지금액", "long_term_care_by_month": "월별장기요양보험료",
+               # 취업지원패키지 (판독기 필드 이름)
+               "amount": "결제금액", "payment_date": "결제일", "store": "상호", "payee": "받는분",
+               "brn": "사업자등록번호", "payment_method": "결제수단", "exam_name": "시험명", "exam_date": "응시일",
+               "company": "회사명", "industry": "업태업종", "interview_date": "면접일", "interview_time": "면접시간",
+               "place": "면접장소", "job": "응시직군", "confirm_date": "확인일"}
     if doc == "insurance_4":
         from .insurance_bench import field_metrics as insurance_metrics
         return insurance_metrics(truth, actual)
@@ -208,7 +227,7 @@ def run_private(file, gt, engines=ENGINES, *, doc="resident_abstract", out=None,
             row = {"engine": engine, "skipped": "X", "failed": "X", "fallback": "X", "reason_code": 0}
             try:
                 with quiet_dependencies():
-                    reason = unavailable(engine)
+                    reason = 6 if engine == "jbai" and doc in JOB_DOCS else unavailable(engine)
                     if reason:
                         row.update(skipped="O", reason_code=reason)
                     else:

@@ -5,6 +5,10 @@
 사업계획서 서식을 기업이 손으로 채운다). 그래서 좌표를 고정하지 않고 '라벨 → 값'으로 읽는다:
 라벨(합계금액·승인일시·응시일자 …)의 오른쪽, 없으면 바로 아래 한두 줄에서 값을 찾는다.
 위치 판단은 다른 판독기와 같이 페이지 대비 퍼센트 좌표를 쓴다.
+
+날짜·금액·번호를 해석할 때는 다른 판독기와 같이 `format_text.normalize_format_text`로 대시만
+맞춘 사본을 쓴다(길이를 바꾸지 않으므로 찾은 위치를 원문에 그대로 쓸 수 있다). 이름·OCR 단어·
+근거 원문은 바꾸지 않는다. 금액 필드는 `nhis_payment`·make_gt와 같이 숫자 문자열로 낸다.
 """
 
 from __future__ import annotations
@@ -19,8 +23,8 @@ from ..pipeline.ocr import OcrResult, OcrWord
 from ..pipeline.preprocess import PageImage
 from ..schemas.models import ExtractedField, FieldSource
 from . import nhis_common as common
+from .format_text import normalize_format_text
 
-DASHES = "-‐‑‒–—―"
 AMOUNT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:[,.]\d{3})+|\d{3,8})(?!\d)")
 #: 품목 줄의 금액: 세 자리 쉼표 또는 '원'이 붙은 숫자만 (주소 번지·전화번호를 금액으로 세지 않게)
 ITEM_AMOUNT_RE = re.compile(r"(?<![\d.,])\d{1,3}(?:,\d{3})+(?!\d)|(?<!\d)\d{3,7}\s*원")
@@ -30,8 +34,9 @@ TIME_RANGE_RE = re.compile(r"(\d{1,2}\s*:\s*\d{2})\s*[~∼〜～\-–]\s*(\d{1,2
 SHORT_DATE_RE = re.compile(r"(?<!\d)(\d{2})\s*[./\-]\s*(\d{1,2})\s*[./\-]\s*(\d{1,2})(?!\d)")
 #: OCR이 날짜와 시각을 붙여 읽은 경우('2026.09.2112:02'). 붙어 있으면 두 자리 일만 인정하고 사이를 띄운다.
 GLUED_TIME_RE = re.compile(r"(?<!\d)((?:\d{4}|\d{2})\s*[./\-년]\s*\d{1,2}\s*[./\-월]\s*\d{2})(?=\d{1,2}\s*:\s*\d{2})")
-BRN_RE = re.compile(rf"(?<!\d)(\d{{3}})\s*[{DASHES}]?\s*(\d{{2}})\s*[{DASHES}]?\s*(\d{{5}})(?!\d)")
-RRN_RE = re.compile(rf"(?<!\d)(\d{{6}})\s*[{DASHES}]\s*([1-8])\d{{6}}(?!\d)")
+#: 아래 두 패턴은 normalize_format_text를 거친 사본(대시가 '-' 하나로 통일됨)에 쓴다.
+BRN_RE = re.compile(r"(?<!\d)(\d{3})\s*-?\s*(\d{2})\s*-?\s*(\d{5})(?!\d)")
+RRN_RE = re.compile(r"(?<!\d)(\d{6})\s*-\s*([1-8])\d{6}(?!\d)")
 NAME_RE = re.compile(r"[가-힣]{2,5}")
 NAME_STOPWORDS = frozenset({
     "성명", "이름", "생년월일", "주소", "응시자", "수험자", "수험번호", "한자", "본인",
@@ -59,7 +64,7 @@ def unglue_time(text: str) -> str:
 
 def parse_amount(text: str, minimum: int = 100) -> int | None:
     """금액(원). 날짜·시각을 먼저 지워 '2026.03.15'나 '14:20'을 금액으로 읽지 않는다."""
-    cleaned = common.DATE_RE.sub(" ", unglue_time(text))
+    cleaned = common.DATE_RE.sub(" ", unglue_time(normalize_format_text(text)))
     cleaned = SHORT_DATE_RE.sub(" ", cleaned)
     cleaned = TIME_RE.sub(" ", cleaned)
     for match in AMOUNT_RE.finditer(cleaned):
@@ -70,7 +75,7 @@ def parse_amount(text: str, minimum: int = 100) -> int | None:
 
 
 def parse_date(text: str, *, short_year: bool = False) -> date | None:
-    text = unglue_time(text)
+    text = unglue_time(normalize_format_text(text))
     value = common.parse_date(text)
     if value is not None or not short_year:
         return value
@@ -88,7 +93,7 @@ def parse_short_year_date(text: str) -> date | None:
 
 
 def parse_brn(text: str) -> str | None:
-    match = BRN_RE.search(text)
+    match = BRN_RE.search(normalize_format_text(text))
     return f"{match.group(1)}-{match.group(2)}-{match.group(3)}" if match else None
 
 
@@ -147,13 +152,15 @@ def scrub_rrn(words: list[Word], originals: list[OcrWord]) -> date | None:
     birth = None
     for index, word in enumerate(words):
         text = word.text
-        match = RRN_RE.search(text)
-        if match:
-            birth = birth or birth_from_rrn(match.group(1), match.group(2))
-            text = RRN_RE.sub(lambda m: f"{m.group(1)}-{m.group(2)}******", text)
+        # 정규화 사본은 길이가 같으므로 찾은 위치로 원문(대시 모양 그대로)의 뒷자리만 지운다.
+        matches = list(RRN_RE.finditer(normalize_format_text(text)))
+        if matches:
+            birth = birth or birth_from_rrn(matches[0].group(1), matches[0].group(2))
+            for match in reversed(matches):
+                text = text[:match.end(2)] + "******" + text[match.end():]
         elif re.fullmatch(r"[1-8]\d{6}", text) and index > 0:
             before = " ".join(item.text for item in words[max(0, index - 2):index])
-            front = re.search(rf"(\d{{6}})\s*[{DASHES}]\s*$", before)
+            front = re.search(r"(\d{6})\s*-\s*$", normalize_format_text(before))
             if front:
                 birth = birth or birth_from_rrn(front.group(1), text[0])
                 text = text[0] + "******"
@@ -311,6 +318,11 @@ def line_index_of(lines: list[list[Word]], hints: Sequence[str]) -> int | None:
 # ---------------------------------------------------------------------------
 # 필드
 # ---------------------------------------------------------------------------
+
+def as_text(hit: Hit) -> Hit:
+    """금액처럼 숫자로 비교한 값을 필드에는 숫자 문자열로 낸다 (nhis_payment·make_gt와 같은 형식)."""
+    return Hit(str(hit.value), hit.raw, hit.words, hit.label, hit.same_line)
+
 
 def ocr_ok(hit: Hit | None, threshold: float = 0.8) -> bool:
     """값 단어의 OCR 점수가 모두 기준 이상인가 (글자층은 1.0)."""

@@ -67,6 +67,71 @@ def documents():
         yield kind, sorted(cells, key=lambda c: (c[1], c[0])), fields
 
 
+JOB_OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "synth_eval" / "job_package"
+SUITES = ("core", "job_package")
+
+
+def job_documents():
+    """취업지원패키지 추가서류 4종 (영수증·응시확인서·성적표·면접확인서). `--suite job_package`.
+
+    기본 세트(documents)와 분리해 기존 기준선 결과와 진단 재현 사례 수를 바꾸지 않는다.
+    머리 칸(y 14/18/22)은 라벨 x=10·값 x≥25로 두어 train의 세로 머리 칸 변환을 그대로 받고,
+    상호·회사명 같은 글 값은 본문(y≥27)에 둔다. 정답 키는 패키지 판독기의 필드 이름이다.
+    """
+    name = "가상시험"
+    brn = "123-45-67891"  # 검증숫자가 맞는 가상 사업자등록번호
+
+    def header(title):
+        return [(10, 8, title), (10, 14, "성명"), (25, 14, name),
+                (10, 18, "생년월일"), (30, 18, "1999.01.01"),
+                (10, 22, "발급일"), (30, 22, "2026.11.10")]
+    receipt = [(10, 8, "카드 영수증"),
+               (10, 14, "결제일시"), (30, 14, "2026.04.01 10:20"),
+               (10, 18, "사업자등록번호"), (30, 18, brn),
+               (10, 22, "승인번호"), (30, 22, "00000000"),
+               (10, 27, "가맹점명"), (30, 27, "가상정장대여"),
+               (10, 33, "품목"), (45, 33, "수량"), (70, 33, "금액"),
+               (10, 38, "면접 정장 대여"), (45, 38, "1"), (70, 38, "70,000"),
+               (10, 45, "공급가액"), (45, 45, "63,636"),
+               (10, 50, "부가세"), (45, 50, "6,364"),
+               (10, 55, "합계금액"), (45, 55, "70,000"),
+               (10, 60, "결제수단"), (45, 60, "신용카드 일시불")]
+    admission = header("응시확인서") + [
+        (10, 27, "자격종목"), (30, 27, "정보처리기능사"),
+        (10, 32, "응시일자"), (30, 32, "2026.03.22"),
+        (10, 37, "응시번호"), (30, 37, "000001"),
+        (10, 45, "위 사람은 위 시험에 응시하였음을 확인합니다.")]
+    score = header("성적표") + [
+        (10, 27, "종목"), (30, 27, "컴퓨터활용능력 2급"),
+        (10, 32, "시험일"), (30, 32, "2026.05.23"),
+        (10, 37, "점수"), (30, 37, "80점"), (50, 37, "합격여부"), (70, 37, "합격")]
+    interview = [(10, 8, "면접확인서"),
+                 (10, 14, "성명"), (25, 14, name),
+                 (10, 18, "생년월일"), (30, 18, "1999.01.01"),
+                 (10, 22, "면접일시"), (30, 22, "2026.04.02 10:00~10:40"),
+                 (10, 27, "회사명"), (30, 27, "가상회사"),
+                 (10, 32, "업태/업종"), (30, 32, "정보통신업"),
+                 (10, 37, "면접장소"), (30, 37, "본사 회의실"),
+                 (10, 42, "응시직군"), (30, 42, "사무직"),
+                 (10, 50, "상기인은 기업의 채용을 위한 면접에 참석하였음을 확인합니다."),
+                 (40, 57, "2026년 4월 2일"),
+                 (40, 63, "회사명 : 가상회사"),
+                 (40, 68, "담당자 : 가상담당 (서명)")]
+    person = {"성명": name, "생년월일": "1999-01-01"}
+    result = [
+        ("receipt", receipt, {"결제금액": "70000", "결제일": "2026-04-01", "상호": "가상정장대여",
+                              "사업자등록번호": brn, "결제수단": "카드", "공급가액": "63636", "부가세": "6364"}),
+        ("exam_admission", admission, dict(person, 시험명="정보처리기능사", 응시일="2026-03-22", 발급일="2026-11-10")),
+        ("exam_score", score, dict(person, 시험명="컴퓨터활용능력 2급", 응시일="2026-05-23", 발급일="2026-11-10")),
+        ("interview_confirm", interview, dict(person, 회사명="가상회사", 업태업종="정보통신업", 면접일="2026-04-02",
+                                               면접시간="10:00~10:40", 면접장소="본사 회의실", 응시직군="사무직",
+                                               확인일="2026-04-02")),
+    ]
+    for kind, cells, fields in result:
+        cells.append((10, 75, "합성 평가 전용 가짜 서류 - 실제 인물 및 기관 발급 문서 아님"))
+        yield kind, sorted(cells, key=lambda c: (c[1], c[0])), fields
+
+
 def render(cells, font_path=None):
     with pymupdf.open() as doc:
         page = doc.new_page(width=595, height=842)
@@ -120,9 +185,11 @@ SPLITS = {
 }
 
 
-def split_documents(split):
+def split_documents(split, suite="core"):
     """Template families are assigned before degradation, never by image/seed."""
-    for kind, cells, fields in documents():
+    if suite not in SUITES:
+        raise ValueError("Unknown suite")
+    for kind, cells, fields in (documents() if suite == "core" else job_documents()):
         if split == "train":
             # A structurally different header: values appear below their labels.
             # Tables keep their semantics but use a narrower, lower body.
@@ -202,10 +269,16 @@ def degrade_with_geometry(base, stage, rng):
     return degrade(base, stage, rng), np.eye(3), {}
 
 
-def generate(out_dir=OUT_DIR, seed=20261111, *, split="test", fonts=None):
+def generate(out_dir=None, seed=20261111, *, split="test", fonts=None, suite="core"):
     from engine_v2.tools.fetch_synth_fonts import font_path
     if split not in SPLITS:
         raise ValueError("Unknown split")
+    if suite not in SUITES:
+        raise ValueError("Unknown suite")
+    if out_dir is None:
+        out_dir = OUT_DIR if suite == "core" else JOB_OUT_DIR
+    # 패키지 세트는 표본 이름과 난수 씨앗을 기본 세트와 겹치지 않게 한다 (기본 세트 출력은 그대로).
+    id_prefix, seed_offset = ("", 0) if suite == "core" else ("job_", 100)
     selected = tuple(fonts) if fonts else SPLITS[split]["fonts"]
     if not selected or not set(selected).issubset(SPLITS[split]["fonts"]):
         raise ValueError("Fonts must belong to selected split; train/test fonts cannot overlap")
@@ -216,13 +289,13 @@ def generate(out_dir=OUT_DIR, seed=20261111, *, split="test", fonts=None):
     records = []
     for font_name in selected:
         font_index = ("nanumgothic", "nanummyeongjo", "nanumgothiccoding").index(font_name)
-        for doc_index, (kind, cells, fields) in enumerate(split_documents(split)):
+        for doc_index, (kind, cells, fields) in enumerate(split_documents(split, suite)):
             base = render(cells, paths[font_name])
             ys = sorted({c[1] for c in cells})
             lines = [" ".join(c[2] for c in cells if c[1] == y) for y in ys]
             for stage_index, stage in enumerate(STAGES):
-                sample_id = f"{split}_{font_name}_{doc_index+1:02}_{stage_index:02}"
-                rng = np.random.default_rng(np.random.SeedSequence([seed, font_index, doc_index, stage_index]))
+                sample_id = f"{id_prefix}{split}_{font_name}_{doc_index+1:02}_{stage_index:02}"
+                rng = np.random.default_rng(np.random.SeedSequence([seed, font_index, seed_offset + doc_index, stage_index]))
                 img, matrix, degradation_params = degrade_with_geometry(base, stage, rng)
                 img.save(out_dir / f"{sample_id}.png", dpi=(300, 300))
                 record = {"id": sample_id, "image": f"{sample_id}.png", "document_type": kind,
@@ -237,19 +310,24 @@ def generate(out_dir=OUT_DIR, seed=20261111, *, split="test", fonts=None):
                 records.append(record)
     manifest = {"version": 2, "synthetic": True, "seed": seed, "today": TODAY,
                 "split": split, "split_policy": SPLITS, "samples": records}
+    if suite != "core":
+        manifest["suite"] = suite
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     return manifest
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--output", type=Path, default=OUT_DIR)
+    ap.add_argument("--output", type=Path, help=f"default: {OUT_DIR} (core) or {JOB_OUT_DIR} (job_package)")
     ap.add_argument("--seed", type=int, default=20261111)
     ap.add_argument("--split", choices=sorted(SPLITS), default="test")
     ap.add_argument("--fonts", nargs="+", help="Subset of fonts allocated to this split")
+    ap.add_argument("--suite", choices=SUITES, default="core",
+                    help="core: 초본·건강보험 3종 (기준선) / job_package: 취업지원패키지 추가서류 4종")
     args = ap.parse_args()
-    manifest = generate(args.output, args.seed, split=args.split, fonts=args.fonts)
-    print(f"Generated {len(manifest['samples'])} synthetic pages: {args.output}")
+    output = args.output or (OUT_DIR if args.suite == "core" else JOB_OUT_DIR)
+    manifest = generate(output, args.seed, split=args.split, fonts=args.fonts, suite=args.suite)
+    print(f"Generated {len(manifest['samples'])} synthetic pages: {output}")
 
 if __name__ == "__main__":
     main()

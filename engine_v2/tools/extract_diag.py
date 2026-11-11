@@ -14,9 +14,10 @@ import json
 from pathlib import Path
 
 from ..extractors import nhis_acquisition_loss, nhis_common, nhis_payment, resident_abstract
+from ..extractors import exam_docs, interview_confirmation, receipt as receipt_reader
 from ..extractors.format_text import normalize_format_text
 from ..extractors.insurance_issue import select_issue_date, date_shape_spans
-from ..pipeline.layout import group_lines, normalize
+from ..pipeline.layout import group_lines, line_text, normalize, squash
 from ..pipeline.ocr import run_ocr
 from ..pipeline.preprocess import PageImage, PageSource
 from .private_bench import quiet_dependencies, raster_pages
@@ -27,6 +28,24 @@ FIELDS = {
     "resident_abstract": ("name", "birth_date", "issue_date", "address_history_count"),
     "nhis_payment": ("성명", "생년월일", "발급일", "가입구분", "건강보험료", "고지월"),
     "nhis_acquisition_loss": ("성명", "생년월일", "발급일", "가입구분", "취득일", "변동내역"),
+    "receipt": ("결제금액", "결제일", "상호", "사업자등록번호", "결제수단"),
+    "exam_admission": ("성명", "생년월일", "시험명", "응시일", "발급일"),
+    "exam_score": ("성명", "생년월일", "시험명", "응시일", "발급일"),
+    "interview_confirm": ("성명", "생년월일", "회사명", "면접일", "확인일"),
+}
+#: 취업지원패키지 서류의 라벨 어휘. 추적에는 이 고정 어휘 중 찾은 것만 낸다 (입력에서 나온 글자 없음).
+_EXAM_LABELS = (exam_docs.NAME_LABELS + exam_docs.BIRTH_LABELS + exam_docs.EXAM_NAME_LABELS
+                + exam_docs.EXAM_DATE_LABELS + exam_docs.ISSUE_LABELS)
+JOB_LABELS = {
+    "receipt": (receipt_reader.TOTAL_LABELS + receipt_reader.PAY_DATE_LABELS + receipt_reader.STORE_LABELS
+                + receipt_reader.PAYEE_LABELS + receipt_reader.BRN_LABELS + receipt_reader.SUPPLY_LABELS
+                + receipt_reader.VAT_LABELS),
+    "exam_admission": _EXAM_LABELS,
+    "exam_score": _EXAM_LABELS,
+    "interview_confirm": (interview_confirmation.NAME_LABELS + interview_confirmation.BIRTH_LABELS
+                          + interview_confirmation.COMPANY_LABELS + interview_confirmation.INDUSTRY_LABELS
+                          + interview_confirmation.INTERVIEW_DATE_LABELS + interview_confirmation.PLACE_LABELS
+                          + interview_confirmation.JOB_LABELS + interview_confirmation.CONFIRM_HINTS),
 }
 MASKED = "[masked]"
 
@@ -131,6 +150,9 @@ def diagnose(pages, doc, *, truth=None, synthetic=False, unmasked=False):
             trace["header"] = {k: _display(header[k], unmasked) for k in ("name", "birth", "issue")}
             trace["table_bounds_percent"] = resident_abstract._table_bounds(lines)
             trace["rrn_ascii_pattern_matched"] = any(resident_abstract.RRN.search(w.text) for w in result.words)
+        elif doc in JOB_LABELS:
+            flat = squash("".join(line_text(line) for line in lines))
+            trace["labels_found"] = sorted({label for label in JOB_LABELS[doc] if squash(label) in flat})
         else:
             header = nhis_common.header_for_page(page, result)
             trace["header"] = {k: _display(getattr(header, k), unmasked) for k in ("name", "birth", "issue")}
@@ -149,7 +171,12 @@ def diagnose(pages, doc, *, truth=None, synthetic=False, unmasked=False):
                 period, _ = nhis_acquisition_loss._query_period([(page, result)])
                 trace["query_period"] = [_display(v, unmasked) for v in period] if period else None
         traces.append(trace)
-    return {"document": doc, "masked": not unmasked, "fields": fields, "pages": traces}
+    report = {"document": doc, "masked": not unmasked, "fields": fields, "pages": traces}
+    if doc in JOB_LABELS:
+        # 고정 어휘만: 판별 종류와 서류 안 검증 통과 여부 (검증 상세 문구는 값을 담을 수 있어 내지 않는다)
+        report["detected_type"] = extracted.detected_type.value
+        report["validations"] = {item.name: item.passed for item in extracted.validations}
+    return report
 
 
 def synthetic_cases(seed=20261111, *, include_legacy=False):

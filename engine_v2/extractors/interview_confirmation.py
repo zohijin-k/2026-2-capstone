@@ -92,13 +92,13 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     warnings: list[str] = []
     diagnostics: dict[str, str] = {"서류종류": evidence}
 
-    name = job.find(lines, NAME_LABELS, job.parse_name, stop=STOP, below=False)
-    birth = job.find(lines, BIRTH_LABELS, job.parse_date, stop=STOP, below=False)
+    name = job.find(lines, NAME_LABELS, job.parse_name, stop=STOP)  # 라벨 아래 값(세로 머리 칸)도 읽는다
+    birth = job.find(lines, BIRTH_LABELS, job.parse_date, stop=STOP)
     companies = _companies(lines)
     company = companies[0] if companies else None
     signed_company = companies[-1] if len(companies) > 1 else None
     industry = job.find(lines, INDUSTRY_LABELS, job.parse_text, stop=STOP, below=False)
-    interview = job.find(lines, INTERVIEW_DATE_LABELS, job.parse_date, stop=STOP, below=False)
+    interview = job.find(lines, INTERVIEW_DATE_LABELS, job.parse_date, stop=STOP)
     place = job.find(lines, PLACE_LABELS, job.parse_text, stop=STOP, below=False)
     applied = job.find(lines, JOB_LABELS, job.parse_text, stop=STOP, below=False)
     confirmed = _confirm_date(lines)

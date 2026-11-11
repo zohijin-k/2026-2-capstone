@@ -4,8 +4,8 @@
 카드 매출전표, 간이영수증, 온라인 결제 완료 화면, 계좌이체 확인증을 같은 부품이 읽는다.
 접수확인서는 결제영수증을 대신할 수 없으므로(도청 문제 제안서) 영수증으로 판별하지 않는다.
 
-추출 필드: 결제금액(int) · 결제일(date) · 상호 · 받는분(계좌이체) · 사업자등록번호 · 결제수단 ·
-          공급가액(int) · 부가세(int) · 품목수(int)
+추출 필드: 결제금액(숫자 문자열) · 결제일(date) · 상호 · 받는분(계좌이체) · 사업자등록번호 · 결제수단 ·
+          공급가액(숫자 문자열) · 부가세(숫자 문자열) · 품목수(int)
 서류 안 검증: 사업자등록번호 검증숫자, 공급가액+부가세=합계, 합계 표기 일치, 결제일이 오늘 이후가 아님,
             결제 취소 전표가 아님, 품목이 하나(여러 건 일괄결제가 아님)
 지원 한도·지원연도·신청 금액 대조는 하지 않는다. 데모 기준 버전과 규칙팩이 본다.
@@ -173,7 +173,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         checks = [amount.label != "금액", single_total, job.ocr_ok(amount)]
         if vat_ok is not None:
             checks.append(vat_ok)
-        fields["결제금액"] = job.to_field(amount, checks, page_map, sources)
+        fields["결제금액"] = job.to_field(job.as_text(amount), checks, page_map, sources)
     else:
         diagnostics["결제금액"] = "합계·결제금액 라벨 또는 값을 찾지 못함"
         warnings.append("결제금액을 찾지 못해 담당자 확인이 필요합니다.")
@@ -196,7 +196,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         fields["결제수단"] = job.raw_field(method, method, [], [True], page_map, sources)
     for name, hit in (("공급가액", supply), ("부가세", vat)):
         if hit is not None:
-            fields[name] = job.to_field(hit, [vat_ok is not False, job.ocr_ok(hit)], page_map, sources)
+            fields[name] = job.to_field(job.as_text(hit), [vat_ok is not False, job.ocr_ok(hit)], page_map, sources)
     if items:
         item_words = [word for line in items for word in line]
         fields["품목수"] = job.raw_field(len(items), str(len(items)), item_words, [True], page_map, sources)

@@ -74,8 +74,8 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     if detected == DocType.UNKNOWN and job.find_hint(flat, NOT_EXAM_HINTS):
         warnings.append("수험표로 보입니다. 수험표는 응시 사실을 증명하지 않아 응시확인서 또는 성적표가 필요합니다.")
 
-    name = job.find(lines, NAME_LABELS, job.parse_name, stop=STOP, below=False)
-    birth = job.find(lines, BIRTH_LABELS, job.parse_date, stop=STOP, below=False)
+    name = job.find(lines, NAME_LABELS, job.parse_name, stop=STOP)  # 라벨 아래 값(세로 머리 칸)도 읽는다
+    birth = job.find(lines, BIRTH_LABELS, job.parse_date, stop=STOP)
     exam_name = job.find(lines, EXAM_NAME_LABELS, job.parse_text, stop=STOP, below=False)
     exam_date = job.find(lines, EXAM_DATE_LABELS, job.parse_date, stop=STOP)
     issue = job.find(lines, ISSUE_LABELS, job.parse_date, stop=STOP)
