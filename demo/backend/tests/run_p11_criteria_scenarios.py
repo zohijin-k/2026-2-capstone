@@ -60,7 +60,7 @@ def run(client) -> None:
     officer = client.get(path, params={"role": "province"}).json()
     check("버전 이력 보존", len(officer["history"]) >= 2, True)
     check("새 고지월 기준", officer["current"]["nhis_payment_months"], body["nhis_payment_months"])
-    check("두배적금 기본 종이 제출 허용 서식", officer["current"]["paper_forms"], {
+    check("두배적금 기본 스캔본 제출 허용 서식", officer["current"]["paper_forms"], {
         "서식1": False, "서식2": False, "서식3": False, "서식4": False, "서식5": True,
     })
     old_snapshot = read_criteria(for_application(Application.model_validate(existing)))
@@ -105,7 +105,7 @@ def run(client) -> None:
     check("구형 기준 담당자 조회", legacy_officer.status_code, 200)
     check("구형 기준 이력도 보정", legacy_officer.json()["current"].get("nhis_payment_months"),
           ["2025-10", "2025-11", "2025-12"])
-    check("구형 기준 종이 제출 허용 기본값", legacy_officer.json()["current"].get("paper_forms"), {
+    check("구형 기준 스캔본 제출 허용 기본값", legacy_officer.json()["current"].get("paper_forms"), {
         "서식1": False, "서식2": False, "서식3": False, "서식4": False, "서식5": True,
     })
 
@@ -128,11 +128,11 @@ def run(client) -> None:
                   if key not in {"version", "schema_version", "changed_at", "changed_role"}}
     paper_body["paper_forms"] = {"서식1": False, "서식2": False, "서식3": False, "서식4": False, "서식5": False}
     paper_saved = client.put(path, params={"role": "province"}, json=paper_body)
-    check("관리자 종이 제출 허용 설정 저장", paper_saved.status_code, 200)
+    check("관리자 스캔본 제출 허용 설정 저장", paper_saved.status_code, 200)
     paper_app = client.post("/api/applications", json={"program_code": code}).json()
-    check("새 신청서에 종이 제출 기준 버전 고정", paper_app["criteria_version"], paper_saved.json()["version"])
-    check("새 기준에서 종이 제출 비허용 적용", read_criteria(for_application(Application.model_validate(paper_app)))["paper_forms"]["서식5"], False)
-    check("이전 신청서는 종이 제출 기본값 유지", old_snapshot["paper_forms"]["서식5"], True)
+    check("새 신청서에 스캔본 제출 기준 버전 고정", paper_app["criteria_version"], paper_saved.json()["version"])
+    check("새 기준에서 스캔본 제출 비허용 적용", read_criteria(for_application(Application.model_validate(paper_app)))["paper_forms"]["서식5"], False)
+    check("이전 신청서는 스캔본 제출 기본값 유지", old_snapshot["paper_forms"]["서식5"], True)
 
     # 지원 항목 카탈로그 역시 신청서가 생성된 시점의 버전에 고정된다.
     job_old = client.post("/api/applications", json={"program_code": "job_package"}).json()

@@ -3,6 +3,7 @@
   python -m engine_v2.tools.make_gt --doc resident_abstract
   python -m engine_v2.tools.make_gt --doc nhis_payment
   python -m engine_v2.tools.make_gt --doc nhis_acquisition_loss
+  python -m engine_v2.tools.make_gt --doc insurance_4
 
 초본 이미지(data/private/초본_p0.png)를 옆에 열어두고, 보이는 그대로 입력하면 된다.
 모르는 항목은 그냥 엔터로 건너뛰면 된다. 파일은 본인 PC에만 저장된다.
@@ -19,7 +20,7 @@ from pathlib import Path
 from ..paths import PRIVATE_DIR
 
 OUT = PRIVATE_DIR / "초본.gt.json"
-DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss"}
+DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"}
 
 
 def ask_amount(prompt: str) -> str | None:
@@ -137,12 +138,63 @@ def _acquisition_gt() -> dict:
     return gt
 
 
+def _ask_optional_date(prompt: str) -> str | None:
+    while True:
+        raw = input(prompt).strip()
+        if raw in {"", "-", "–", "—"}:
+            return None
+        compact = re.fullmatch(r"(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])", raw)
+        nums = compact.groups() if compact else re.findall(r"\d+", raw)
+        if len(nums) == 3:
+            try:
+                return date(int(nums[0]), int(nums[1]), int(nums[2])).isoformat()
+            except ValueError:
+                pass
+        print("  날짜를 못 알아들었어요. 예: 2026.11.10 또는 '-'")
+
+
+def _insurance4_gt() -> dict:
+    print("4대 사회보험 가입내역 확인서를 보고 입력하세요. 주민등록번호는 입력하지 않습니다.\n")
+    gt: dict = {}
+    name = input("1) 성명: ").strip()
+    if name:
+        gt["name"] = name
+    if birth := ask_date("2) 생년월일: "):
+        gt["birth_date"] = birth
+    if issue := ask_date("3) 발급일: "):
+        gt["issue_date"] = issue
+    confirmation = input("4) 문서확인번호 (하이픈 포함, 모르면 엔터): ").strip()
+    if confirmation:
+        gt["document_number"] = confirmation
+    print("5) 국민연금·건강보험·산재보험·고용보험 네 행을 모두 입력하세요. 미가입 행도 기록합니다.")
+    rows = []
+    while insurance := input("   보험 종류 (국민연금/건강보험/산재보험/고용보험, 끝나면 엔터): ").strip():
+        if insurance not in ("국민연금", "건강보험", "산재보험", "고용보험"):
+            print("  알려진 보험 종류를 입력해 주세요.")
+            continue
+        status = input("   상태 (가입/미가입): ").strip()
+        while status not in {"가입", "미가입"}:
+            status = input("   '가입' 또는 '미가입'을 입력해 주세요: ").strip()
+        row = {"insurance": insurance, "status": status}
+        if row["status"] == "가입":
+            row["name"] = input("   성명: ").strip()
+            row["subscriber_category"] = input("   가입자종별: ").strip()
+            row["management_number"] = input("   사업장관리번호 (없으면 엔터): ").strip()
+            row["workplace_name"] = input("   사업장명칭 (없으면 엔터): ").strip()
+            row["acquired"] = ask_date("   자격취득일: ")
+            row["received"] = _ask_optional_date("   신고접수일 (괄호 안 날짜, 없으면 '-'): ")
+        rows.append(row)
+    if rows:
+        gt["rows"] = rows
+    return gt
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doc", choices=sorted(DOCS), default="resident_abstract")
     args = parser.parse_args()
     gt = {"resident_abstract": _resident_gt, "nhis_payment": _payment_gt,
-          "nhis_acquisition_loss": _acquisition_gt}[args.doc]()
+          "nhis_acquisition_loss": _acquisition_gt, "insurance_4": _insurance4_gt}[args.doc]()
     out = OUT if args.doc == "resident_abstract" else PRIVATE_DIR / f"{args.doc}.gt.json"
 
     if not gt:

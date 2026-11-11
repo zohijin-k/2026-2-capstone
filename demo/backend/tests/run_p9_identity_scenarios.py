@@ -392,6 +392,50 @@ def test_signature_upload(client) -> None:
     check_true("PDF는 .pdf로 저장", r.json()["identity"]["pledge_signature_path"].endswith(".pdf"))
 
 
+def test_insurance4_reader_privacy(client, tmp: Path) -> None:
+    print("\n[9] 4대보험 가입내역 확인서 추출·종류 판별·주민번호 폐기")
+    from engine_v2.tests.test_insurance_4 import synthetic_words
+    from .run_p8_localocr_scenarios import install_fake_ocr, make_image_pdf
+    from .. import models
+    from sqlmodel import select
+
+    app_id = new_app(client)
+    identify(client, app_id, "김전북", "1999-01-01")
+    client.put(f"/api/applications/{app_id}/doc-context",
+               json={"work_category": "직장가입자", "workplace_count": 1})
+    pdf = make_image_pdf(tmp / "synthetic-insurance4.pdf", pages=1)
+    install_fake_ocr([synthetic_words()])
+    with pdf.open("rb") as fh:
+        uploaded = client.post(
+            f"/api/applications/{app_id}/documents",
+            files={"file": (pdf.name, fh, "application/pdf")},
+            data={"slot_key": "work_proof", "declared_issue_date": "2026-11-10"},
+        )
+    check("합성 서류 업로드", uploaded.status_code, 200)
+    body = uploaded.json()
+    check("본문 종류 판별", body.get("detected_doc_type"), "4대보험가입내역확인서")
+    check("신청자 허용 필드 추출", body.get("extracted", {}).get("생년월일"), "1999-01-01")
+    check_true("사업장명칭은 신청자 응답에 없음", "가상회사주식회사" not in json.dumps(body, ensure_ascii=False))
+    raw = json.dumps(body, ensure_ascii=False)
+    check_true("신청자 응답에 주민번호 뒷자리 없음", "123456" not in raw)
+    with models.get_session() as session:
+        saved = session.exec(select(models.Document).where(models.Document.application_id == app_id)).all()
+        saved_json = json.dumps([item.ocr_json for item in saved], ensure_ascii=False)
+        check_true("DB OCR 결과에 주민번호 뒷자리 없음", "123456" not in saved_json)
+        parsed = json.loads(saved[0].ocr_json["fields"]["가입내역"])
+        check("보험 4행 상세 판독", len(parsed), 4)
+        check_true("담당자 위치 강조 bbox 저장", "가입내역" in saved[0].ocr_json["bboxes"])
+    other = new_app(client)
+    identify(client, other, "김전북", "1999-01-01")
+    client.put(f"/api/applications/{other}/doc-context",
+               json={"work_category": "직장가입자", "workplace_count": 1})
+    wrong = upload_fixture(client, other, tmp, "S2_건강보험료납부확인서_적합", "work_proof")
+    check("다른 서류 종류 판별 유지", wrong.get("detected_doc_type"), "건강보험료납부확인서")
+    check("다른 서류 안내는 한 건", len(wrong.get("findings", [])), 1)
+    check_true("다른 서류 한 줄 오분류 안내", any("건강보험료 납부확인서" in finding.get("message", "")
+                                               for finding in wrong.get("findings", [])))
+
+
 def main() -> int:
     from fastapi.testclient import TestClient
 
@@ -407,6 +451,7 @@ def main() -> int:
             test_nhis_dependent_reconciliation(client, tmp)
             test_officer_view(client, tmp)
             test_signature_upload(client)
+            test_insurance4_reader_privacy(client, tmp)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

@@ -639,9 +639,9 @@ APPLICANT_FORM_FILE_ALLOWLIST = {
 FORBIDDEN_TOKENS = ("attachment", "download")
 CODE_SUFFIXES = (".py", ".ts", ".tsx", ".css")
 DOWNLOAD_API_SYMBOLS = {
-    "written_forms_options", "written_forms_pdf", "original_hwp_options",
+    "written_forms_pdf", "original_hwp_options",
     "original_hwp_bundle", "filled_form_file",
-    "printable_admin_consent", "blank_form_file", "source_form_hwp",
+    "blank_form_file", "source_form_hwp",
     "form_file_options", "interview_confirmation",
 }
 
@@ -740,14 +740,21 @@ def test_applicant_form_archive_access(client, ids) -> None:
 
     app = load_application(app_id)
     expected_pages = 0
-    for form_no in forms_api._completed_form_numbers(app):
+    for form_no in forms_api.available_forms(app):
         if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
-            continue
-        payload, _ = forms_api._filled_pdf(app, form_no)
+            document = forms_api._paper_consent_document(app)
+            if document is not None:
+                payload = forms_api._scan_pdf(document)
+            else:
+                payload, _ = forms_api._filled_pdf(app, form_no)
+        elif forms_api._form_has_saved_values(app, form_no):
+            payload, _ = forms_api._filled_pdf(app, form_no)
+        else:
+            payload = forms_api._blank_form_pdf(app, form_no)
         with fitz.open(stream=payload, filetype="pdf") as form_pdf:
             expected_pages += form_pdf.page_count
     with fitz.open(stream=response.content, filetype="pdf") as archive:
-        check("작성 서식 PDF에는 완료한 서식 쪽만 포함", archive.page_count, expected_pages)
+        check("작성 서식 PDF에는 사업의 모든 서식 포함", archive.page_count, expected_pages)
 
 
 # ---------------------------------------------------------------- 7. 담당자 판단

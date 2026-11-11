@@ -515,12 +515,8 @@ export interface ApplicantFormSummary {
   hwp_available: boolean
 }
 
-export const fetchWrittenFormsOptions = (id: number) =>
-  json<{ url: string | null; completed: number; total: number }>(`/api/applications/${id}/forms/files/written/options`)
 export const fetchOriginalHwpOptions = (id: number) =>
   json<{ url: string | null; label: string | null }>(`/api/applications/${id}/forms/files/original-hwp/options`)
-export const printableForm5Url = (id: number) => `/api/applications/${id}/forms/files/서식5/print.pdf`
-export const sourceFormHwpUrl = (id: number, formNo: string) => `/api/applications/${id}/forms/files/${encodeURIComponent(formNo)}/source.hwp`
 export const fetchInterviewFormFileOptions = (id: number) =>
   json<{ blank: string; hwp: string | null }>(`/api/applications/${id}/forms/files/job_interview_confirmation/options`)
 
