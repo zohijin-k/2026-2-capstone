@@ -18,12 +18,16 @@ Tier2(pdftext)는 텍스트 레이어가 있는 PDF만 읽는다. 그런데 실�
   - 암호 PDF·없는 파일: Tier2가 공고문 문구로 '미비'를 낸다
   - OCR 엔진이 설치돼 있지 않은 서버: 조용히 건너뛴다 (데모가 멈추지 않는 원칙)
 
-OCR 엔진 선택: 환경변수 ENGINE_V2_OCR = applevision | easyocr | paddle | off
-  기본값은 macOS면 applevision(내장), 그 외 easyocr.
+OCR 엔진 선택: 환경변수 ENGINE_V2_OCR = own | applevision | easyocr | paddle | off
+  명시한 값이 우선이며, 기본값은 macOS를 포함해 own.
+  기본 선택에서 own 모델 파일이 없을 때에만 easyocr로 대체한다.
+  명시한 own의 모델 누락이나 추론 오류는 다른 OCR 엔진으로 대체하지 않는다.
+  대체 사유는 engine_decision() 반환값과 경고 로그에만 남긴다.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 from datetime import date
@@ -40,10 +44,28 @@ ENGINE_ENV = "ENGINE_V2_OCR"
 GENERIC_CONFIDENCE_CAP = 0.8
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_logger = logging.getLogger(__name__)
+
+
+def engine_decision() -> tuple[str, str]:
+    """선택한 엔진과 대체 사유(대체 없으면 빈 문자열). 모델 로드·검증·로그 없음."""
+    configured = os.environ.get(ENGINE_ENV)
+    if configured:
+        return configured, ""
+
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from engine_v2.pipeline.ocr import own
+    from engine_v2.tools.fetch_own_models import ASSETS
+
+    # 실제 own 로더의 디렉터리와 고정 자산 목록을 따른다. 해시/추론 오류는 대체하지 않는다.
+    if all((own.MODEL_DIR / name).is_file() for name in ASSETS):
+        return "own", ""
+    return "easyocr", "own 모델 파일 없음: easyocr로 대체"
 
 
 def _engine_name() -> str:
-    return os.environ.get(ENGINE_ENV) or ("applevision" if sys.platform == "darwin" else "easyocr")
+    return engine_decision()[0]
 
 
 def _import_v2():
@@ -253,7 +275,7 @@ _JOB_DOCS: dict[DocType, tuple[str, str]] = {
     DocType.EXAM_TRANSCRIPT: ("exam_docs", "exam_score"),
     DocType.INTERVIEW_CONFIRMATION: ("interview_confirmation", "interview_confirm"),
 }
-#: 이 필드가 하나라도 없으면 문서 신뢰도를 0.5로 둔다 (빈 칸이 최솟값 계산에서 빠져 신뢰도가 올라가지 않게).
+#: OCR에서 이 필드가 하나라도 없으면 신뢰도 0.5; 글자층의 확정된 부재는 0.9로 둔다.
 _JOB_REQUIRED = {
     "receipt": ("결제금액", "결제일"),
     "exam_admission": ("성명", "응시일"),
@@ -278,6 +300,12 @@ def _job_extractor(detected: DocType):
     return importlib.import_module(f"engine_v2.extractors.{_JOB_DOCS[detected][0]}").extract
 
 
+def _pages_engine(pages) -> str:
+    """모든 쪽이 글자층일 때만 pdftext, 그 밖에는 실제 OCR 결과의 엔진."""
+    return next((result.engine for page, result in pages
+                 if page.source.value != "text_layer"), "pdftext")
+
+
 def _from_job_doc(ex, pages, classification_evidence: str = "",
                   detected_override: DocType | None = None) -> OcrResult:
     """engine_v2 패키지 서류 판독 결과를 데모 필드 계약으로 옮긴다 (필드 이름은 데모 규칙이 쓰는 그대로)."""
@@ -296,13 +324,14 @@ def _from_job_doc(ex, pages, classification_evidence: str = "",
         fields["판독경고"] = " ".join(ex.warnings)
     v2type = ex.detected_type.value
     required = _JOB_REQUIRED.get(v2type, ())
+    text_only = all(page.source.value == "text_layer" for page, _ in pages)
     if required and all(name in ex.fields for name in required):
         confidence = min(ex.fields[name].confidence for name in required)
     else:
-        confidence = 0.5
+        # 글자층의 빈 항목은 확정된 부재이며, OCR의 빈 항목은 미판독일 수 있다.
+        confidence = 0.9 if text_only else 0.5
     issue = next((ex.fields[name] for name in _JOB_ISSUE_FIELDS.get(v2type, ()) if name in ex.fields), None)
     detected = detected_override or next((demo for demo, (_, value) in _JOB_DOCS.items() if value == v2type), None)
-    text_only = all(page.source.value == "text_layer" for page, _ in pages)
     return OcrResult(
         detected_doc_type=detected,
         confidence=round(min(confidence, ex.type_confidence), 2),
@@ -312,6 +341,7 @@ def _from_job_doc(ex, pages, classification_evidence: str = "",
         bboxes=bboxes,
         page_count=len(pages),
         tier=NAME,
+        engine=_pages_engine(pages),
         classification_evidence=classification_evidence,
         classification_confidence=0.95 if detected else 0.0,
     )
@@ -366,7 +396,9 @@ class LocalOcr:
 
     def read(self, file_path: str, expected: DocType | None) -> OcrResult | None:
         del expected  # 종류는 슬롯 기대값이 아니라 본문 OCR 결과로 먼저 고른다.
-        engine = _engine_name()
+        engine, reason = engine_decision()
+        if reason:
+            _logger.warning("%s", reason)
         result = self._read(file_path, engine)
         if result is not None and not result.engine:
             result.engine = engine
@@ -421,7 +453,7 @@ class LocalOcr:
                     extractor.extract(pages), pages, v2types,
                     classified.classification_evidence, detected,
                 )
-            result.engine = "pdftext"  # 텍스트 레이어를 그대로 읽었다 (OCR 엔진 미사용)
+            result.engine = _pages_engine(pages)
             return result
 
         try:
