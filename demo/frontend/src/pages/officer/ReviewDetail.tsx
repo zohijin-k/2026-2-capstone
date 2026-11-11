@@ -67,6 +67,7 @@ function asViewerDoc(form: FormExport, index: number): OfficerDocument {
     ocr_tier: null,
     ocr_engine: null,
     ocr_fallback_reason: null,
+    ocr_quality_note: null,
     declared_issue_date: null,
     uploaded_at: '',
   }
@@ -423,6 +424,9 @@ export default function ReviewDetail({
                   <dt>판독 엔진</dt>
                   <dd>
                     {activeDoc.ocr_engine}
+                    {activeDoc.ocr_quality_note && (
+                      <em> · {activeDoc.ocr_quality_note}</em>
+                    )}
                     {activeDoc.ocr_fallback_reason && (
                       <em> (대체 사유: {activeDoc.ocr_fallback_reason})</em>
                     )}

@@ -2301,6 +2301,7 @@ function toOfficerDocument(entry: MockEntry, doc: MockDoc, index: number): Offic
     ocr_tier: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
     ocr_engine: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
     ocr_fallback_reason: null,
+    ocr_quality_note: null,
     declared_issue_date: dateShown.startsWith('(') ? null : dateShown || null,
     uploaded_at: entry.row.submitted_at ?? '',
   }

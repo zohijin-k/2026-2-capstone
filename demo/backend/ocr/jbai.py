@@ -78,12 +78,8 @@ QUALITY_RULES = {
 }
 
 
-def _quality_failure(detected: DocType, extracted, document) -> str | None:
-    from engine_v2.pipeline.jbai_quality import HALLUCINATION_THRESHOLDS
-
-    for page in document.pages:
-        if page.hallucination_score >= HALLUCINATION_THRESHOLDS["fail_score"]:
-            return f"쪽 {page.page + 1} 환각 의심(점수 {page.hallucination_score:.2f})"
+def _quality_failure(detected: DocType, extracted) -> str | None:
+    """Reject missing required fields or failed document checks, not OCR noise alone."""
     rules = QUALITY_RULES[detected]
     fields = extracted.fields
     validations = {item.name: item.passed for item in extracted.validations}
@@ -121,6 +117,17 @@ def _quality_failure(detected: DocType, extracted, document) -> str | None:
             }
             return labels.get(key, f"검증 실패: {key}")
     return None
+
+
+def _noisy_pages(document) -> list[int]:
+    from engine_v2.pipeline.jbai_quality import HALLUCINATION_THRESHOLDS
+
+    return [page.page + 1 for page in document.pages
+            if page.hallucination_score >= HALLUCINATION_THRESHOLDS["fail_score"]]
+
+
+def _noise_suffix(noisy_pages: list[int]) -> str:
+    return f" · 환각 의심 {'·'.join(map(str, noisy_pages))}쪽" if noisy_pages else ""
 
 #: 전북AI 판독기가 있는 서류. 이 칸에 올라온 파일만 전북AI로 보낸다.
 SUPPORTED: tuple[DocType, ...] = (
@@ -282,11 +289,12 @@ class JbaiOcr:
         """전북AI 판독 결과 → 데모 OcrResult. LocalOcr와 같은 변환(_from_resident·_from_nhis)을 쓴다."""
         from . import pdftext
 
+        noisy_pages = _noisy_pages(document)
         detected, evidence = pdftext.classify_with_evidence(_document_text(document))
         if detected is None:
-            raise OcrFallback("전북AI 판독 결과로 서류 종류를 알아보지 못함")
+            raise OcrFallback("전북AI 판독 결과로 서류 종류를 알아보지 못함" + _noise_suffix(noisy_pages))
         if detected not in SUPPORTED:
-            raise OcrFallback("전북AI 판독기가 없는 서류로 판별됨")
+            raise OcrFallback("전북AI 판독기가 없는 서류로 판별됨" + _noise_suffix(noisy_pages))
 
         v2types = v2.V2DocType
         v2type = {
@@ -296,7 +304,7 @@ class JbaiOcr:
             DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
         }[detected]
         extracted = v2.jbai_text.extract(document, v2type)
-        quality_reason = _quality_failure(detected, extracted, document)
+        quality_reason = _quality_failure(detected, extracted)
         # 판독기가 열 순서 처리에만 쓰는 임시 격자. 화면 좌표로는 쓰지 않는다.
         pages = v2.jbai_text.virtual_pages(document, v2type)
 
@@ -317,6 +325,9 @@ class JbaiOcr:
             _merge_image_heuristics(result, path)
         result.tier = NAME
         result.engine = NAME
+        if noisy_pages:
+            result.quality_note = "잡음 있음"
         if quality_reason:
-            raise OcrFallback(f"전북AI 판독 검증 실패: {quality_reason}", fallback_result=result)
+            raise OcrFallback(f"전북AI 판독 검증 실패: {quality_reason}" + _noise_suffix(noisy_pages),
+                              fallback_result=result)
         return result
