@@ -39,6 +39,7 @@ class InsuranceRow:
     words: list[Word] = field(default_factory=list)
     acquired_words: list[Word] = field(default_factory=list)
     received_words: list[Word] = field(default_factory=list)
+    date_column_words: list[Word] = field(default_factory=list)
     bbox: BBox | None = None
     confidence: float = 0.0
 
@@ -101,17 +102,18 @@ def _looks_like_insurance4(pages: list[tuple[PageImage, OcrResult]]) -> bool:
 
 
 def _page_marker(lines: list[list[Word]]) -> bool:
-    # OCR may return "1/1" as one token, spaced tokens, or three separate tokens.
-    # Join each line and short neighboring-line windows after removing whitespace.
-    for index, line in enumerate(lines):
-        text = "".join(word.text for word in line)
-        if re.search(r"(?<!\d)1\s*[/|／]\s*1(?!\d)", text):
-            return True
-        adjacent = "".join(word.text for row in lines[index:index + 3] for word in row)
-        adjacent = re.sub(r"\s+", "", adjacent)
-        if re.search(r"(?<!\d)1[/|／]1(?!\d)", adjacent):
-            return True
-    return False
+    candidates = _page_marker_candidates(lines)
+    text = re.sub(r"\s+", "", "".join(word.text for word in candidates))
+    # Vision can drop the slash from the isolated top-right 1/1 marker.
+    return bool(re.search(r"(?<!\d)1[/|／]1(?!\d)", text) or
+                re.search(r"(?<!\d)111(?!\d)", text))
+
+
+def _page_marker_candidates(lines: list[list[Word]]) -> list[Word]:
+    """Return words in the top-right page-marker slot in reading order."""
+    return sorted((word for line in lines for word in line
+                   if 84 <= word.x0 <= 99 and 27 <= word.cy <= 33.5),
+                  key=lambda word: (word.cy, word.x0))
 
 
 def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str]]:
@@ -127,12 +129,36 @@ def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str
     return starts
 
 
+def _row_chunks(lines: list[list[Word]], header_bottom: float,
+                starts: list[tuple[int, str]]) -> list[tuple[str, list[list[Word]]]]:
+    """Group full row bands, including date cells printed above the insurance label.
+
+    The first band's upper edge is the bottom of the two-line table header. Later
+    edges are halfway between adjacent insurance labels, which delimit the rows
+    when OCR does not expose the table's horizontal rules as words.
+    """
+    if not starts:
+        return []
+    centers = [lines[index][0].cy for index, _ in starts]
+    chunks = []
+    for i, (_, insurance) in enumerate(starts):
+        top = header_bottom if i == 0 else (centers[i - 1] + centers[i]) / 2
+        bottom = (centers[i] + centers[i + 1]) / 2 if i + 1 < len(starts) else 51.5
+        chunk = [line for line in lines if top < line[0].cy <= bottom]
+        chunks.append((insurance, chunk))
+    return chunks
+
+
 def _table_header_y(lines: list[list[Word]]) -> float | None:
     for i in range(len(lines)):
         block = lines[i:min(i + 3, len(lines))]
         flat = squash("".join(line_text(row) for row in block))
         if "자격취득일" in flat and "신고접수일" in flat and "사업장" in flat:
-            return max(word.cy for row in block for word in row)
+            header_lines = [row for row in block if any(
+                token in squash(line_text(row))
+                for token in ("자격취득일", "신고접수일", "사업장"))]
+            source_lines = header_lines or block
+            return max(word.cy for row in source_lines for word in row)
     return None
 
 
@@ -159,6 +185,7 @@ def _parse_row(insurance: str, lines: list[list[Word]], anchors: dict[str, float
         row.status = "미가입"
         return row
     row.status = "가입"
+    row.date_column_words = [word for word in words if word.x0 >= anchors["date"] - 3]
     for word in words:
         text = squash(word.text.strip("()（）"))
         if text in CATEGORY_NAMES:
@@ -283,6 +310,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         lines = page_lines[page.page]
         header_y = _table_header_y(lines)
         starts = _row_starts(lines, header_y if header_y is not None else 33.5)
+        row_chunks = _row_chunks(lines, header_y if header_y is not None else 33.5, starts)
         anchors = {
             "name": _header_x(lines, "성명", 22.0, header_y or 33.5),
             "category": _header_x(lines, "가입자종별", 33.5, header_y or 33.5),
@@ -290,9 +318,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             "workplace": _header_x(lines, "사업장명칭", 64.0, header_y or 33.5),
             "date": _header_x(lines, "자격취득일", 81.5, header_y or 33.5),
         }
-        for i, (start, insurance) in enumerate(starts):
-            end = starts[i + 1][0] if i + 1 < len(starts) else len(lines)
-            chunk = [line for line in lines[start:end] if line[0].cy <= 51.5]
+        for insurance, chunk in row_chunks:
             all_rows.append(_parse_row(insurance, chunk, anchors))
 
     expected_order = list(INSURANCE_NAMES)

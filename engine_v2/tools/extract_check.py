@@ -156,6 +156,99 @@ def _row_mismatch_reason(actual_rows: list[dict], expected_rows: list[dict]) -> 
     return "행 개수가 다름"
 
 
+def _mask_shape(text: str) -> str:
+    """Show OCR character shape while keeping the underlying document text private."""
+    from .privacy import _mask_character
+    return "".join(_mask_character(char) for char in text)
+
+
+def _insurance_page_marker_reason(pages) -> str:
+    from ..extractors import insurance_4
+    from ..extractors.nhis_common import page_lines
+
+    candidates = []
+    for page, result in pages or []:
+        lines = page_lines(page, result)
+        words = insurance_4._page_marker_candidates(lines)
+        if words:
+            line_indexes = [index for index, line in enumerate(lines)
+                            if any(word in words for word in line)]
+            candidates.append((words, line_indexes))
+    if not candidates:
+        return "쪽 표시 후보를 찾지 못함"
+    words, line_indexes = candidates[0]
+    shapes = [repr(_mask_shape(word.text)) for word in words]
+    if len(set(line_indexes)) > 1:
+        return f"쪽 표시 후보 글자 모양 {', '.join(shapes)}를 서로 다른 줄로 인식"
+    return f"쪽 표시 후보 글자 모양 {', '.join(shapes)}에서 1/1을 찾지 못함"
+
+
+def _insurance_date_formats_reason(result) -> str:
+    from ..extractors.insurance_4 import _normalize_cell
+
+    for row in result.rows:
+        if row.status == "미가입":
+            continue
+        if row.acquired is None:
+            cell, label, excluded = row.date_column_words, "자격취득일", set()
+        elif row.receipt_date_present and row.received is None:
+            cell, label = row.date_column_words, "신고접수일"
+            excluded = {id(word) for word in row.acquired_words}
+        else:
+            continue
+        values = [word for word in sorted(cell, key=lambda word: (word.cy, word.x0))
+                  if id(word) not in excluded and _normalize_cell(word.text)]
+        if not values:
+            return f"{row.insurance_type} 행 {label} 칸: 비어 있음"
+        shape = ", ".join(repr(_mask_shape(word.text)) for word in values)
+        return f"{row.insurance_type} 행 {label} 칸에 날짜 모양({shape})"
+    return "가입 행의 자격취득일 또는 신고접수일을 날짜로 읽지 못함"
+
+
+def _validation_failure_reason(doc: str, validation, result, pages) -> str:
+    name = validation.name
+    if doc == "insurance_4":
+        if name == "page_marker_1_of_1":
+            return _insurance_page_marker_reason(pages)
+        if name == "date_formats":
+            return _insurance_date_formats_reason(result)
+    known = {
+        "document_type": "서류 종류를 확인하지 못함",
+        "page_complete": "쪽 또는 OCR 결과가 비어 있음",
+        "document_number_format": "문서확인번호 형식이 맞지 않음",
+        "issue_not_future": "발급일을 읽지 못했거나 발급일이 미래임",
+        "page_names_match": "쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못함",
+        "monthly_total_matches": "월별 금액 합계가 합계 줄과 다름",
+        "paid_total_matches": "납부 금액 합계를 확인하지 못함",
+        "history_dates_read": "이력 표의 날짜를 모두 읽지 못함",
+        "acquisition_before_loss": "자격취득일이 자격상실일보다 늦음",
+        "four_rows_in_order": "보험별 행 수 또는 순서가 양식과 다름",
+        "insurance_names_recognized": "보험 구분 열의 이름을 모두 찾지 못함",
+        "dates_not_after_issue": "발급일보다 뒤인 날짜가 있거나 발급일을 확인하지 못함",
+        "row_names_match_header": "가입 행의 성명이 머리 표 성명과 일치하지 않음",
+        "insurance_type_found": "가입구분을 찾지 못함",
+        "monthly_rows_found": "월별 보험료 행을 찾지 못함",
+        "monthly_amounts_numeric": "월별 금액 칸이 비었거나 숫자가 아님",
+        "months_continuous": "고지월이 연속되지 않음",
+        "pages_complete": "쪽 번호가 빠졌거나 쪽 전체를 읽지 못함",
+        "doc_no_consistent": "문서확인번호가 쪽마다 다르거나 누락됨",
+        "issue_date_consistent": "발급일을 못 찾았거나 쪽마다 다름",
+        "issue_date_not_future": "발급일이 미래임",
+        "name_consistent": "성명을 못 찾았거나 쪽마다 다름",
+        "birth_consistent": "생년월일을 못 찾았거나 쪽마다 다름",
+        "history_dates_ordered": "주소 변동 날짜 순서가 맞지 않음",
+        "occurred_before_reported": "발생일이 신고일보다 늦음",
+        "recent_five_years_covered": "이력이 최근 5년을 포함하는지 확인하지 못함",
+    }
+    if name.endswith("_consistent"):
+        field = name.removesuffix("_consistent")
+        labels = {"name": "성명", "birth_date": "생년월일", "issue_date": "발급일",
+                  "document_number": "문서확인번호", "doc_no": "문서확인번호",
+                  "issue_number": "발급번호"}
+        return f"{labels.get(field, field)}를 찾지 못했거나 쪽마다 값이 다름"
+    return validation.detail or known.get(name, "검증 기준을 충족하지 않음")
+
+
 def _layout(doc: str, pages) -> None:
     from ..extractors.nhis_common import label_hits, page_lines
 
@@ -266,10 +359,14 @@ def _run_nhis(args, gt: dict) -> None:
         # reason is tool-generated text that may contain an already-safe cell shape;
         # masking it again would corrupt fixed words such as "누락" and "비어 있음".
         print(f"  {label}: {status} — {reason}")
-    if args.doc == "insurance_4":
-        print("[검증]")
-        for validation in result.validations:
-            print(f"  {'OK' if validation.passed else 'FAIL'} {validation.name}")
+    print("[검증]")
+    for validation in result.validations:
+        status = "OK" if validation.passed else "FAIL"
+        if validation.passed:
+            print(f"  {status} {validation.name}")
+        else:
+            reason = _validation_failure_reason(args.doc, validation, result, pages)
+            print(f"  {status} {validation.name} — {reason}")
     if args.engine == "jbai":
         _print_jbai_timing(document)
 
@@ -406,7 +503,11 @@ def main() -> None:
 
     print("\n[검증]")
     for v in res.validations:
-        print(f"  {'통과' if v.passed else '실패'}  {v.name}  {v.detail}")
+        if v.passed:
+            print(f"  통과  {v.name}  {v.detail}")
+        else:
+            reason = _validation_failure_reason(args.doc, v, res, pages)
+            print(f"  실패  {v.name} — {reason}")
 
     print(f"\n[주소 이력] {len(res.history)}건 (시도 / 사유 / 발생일 유무 / 메모 수)")
     for i, e in enumerate(res.history):
