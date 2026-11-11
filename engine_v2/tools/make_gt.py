@@ -4,6 +4,8 @@
   python -m engine_v2.tools.make_gt --doc nhis_payment
   python -m engine_v2.tools.make_gt --doc nhis_acquisition_loss
   python -m engine_v2.tools.make_gt --doc insurance_4
+  python -m engine_v2.tools.make_gt --doc receipt            # 취업지원패키지: receipt · exam_admission ·
+                                                             #   exam_score · interview_confirm
 
 초본 이미지(data/private/초본_p0.png)를 옆에 열어두고, 보이는 그대로 입력하면 된다.
 모르는 항목은 그냥 엔터로 건너뛰면 된다. 파일은 본인 PC에만 저장된다.
@@ -20,7 +22,8 @@ from pathlib import Path
 from ..paths import PRIVATE_DIR
 
 OUT = PRIVATE_DIR / "초본.gt.json"
-DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"}
+DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4",
+        "receipt", "exam_admission", "exam_score", "interview_confirm"}
 
 
 def ask_amount(prompt: str) -> str | None:
@@ -189,12 +192,67 @@ def _insurance4_gt() -> dict:
     return gt
 
 
+def _ask_fields(prompts: tuple[tuple[str, str, str], ...]) -> dict:
+    """(정답 키, 질문, 종류 text·date·amount)를 차례로 묻는다. 엔터는 건너뛰기."""
+    gt: dict = {}
+    for key, prompt, kind in prompts:
+        if kind == "date":
+            value = ask_date(prompt)
+        elif kind == "amount":
+            value = ask_amount(prompt)
+        else:
+            value = input(prompt).strip()
+        if value:
+            gt[key] = value
+    return gt
+
+
+def _receipt_gt() -> dict:
+    print("결제영수증을 보고 입력하세요. 카드번호·계좌번호는 입력하지 않습니다.\n")
+    return _ask_fields((
+        ("amount", "1) 결제금액 (합계, 원): ", "amount"),
+        ("payment_date", "2) 결제일 (거래일시의 날짜): ", "date"),
+        ("store", "3) 상호·가맹점명 (없으면 엔터): ", "text"),
+        ("payee", "4) 받는분 (계좌이체 확인증일 때, 없으면 엔터): ", "text"),
+        ("brn", "5) 사업자등록번호 (하이픈 포함, 없으면 엔터): ", "text"),
+        ("payment_method", "6) 결제수단 (카드/현금/계좌이체/간편결제): ", "text"),
+    ))
+
+
+def _exam_gt() -> dict:
+    print("응시확인서 또는 성적표를 보고 입력하세요.\n")
+    return _ask_fields((
+        ("name", "1) 성명: ", "text"),
+        ("birth_date", "2) 생년월일 (없으면 엔터): ", "date"),
+        ("exam_name", "3) 시험명·종목: ", "text"),
+        ("exam_date", "4) 응시일 (시험일): ", "date"),
+        ("issue_date", "5) 발급일·출력일 (없으면 엔터): ", "date"),
+    ))
+
+
+def _interview_gt() -> dict:
+    print("면접확인서를 보고 입력하세요. 주소·연락처·이메일·담당자는 입력하지 않습니다.\n")
+    return _ask_fields((
+        ("name", "1) 성명: ", "text"),
+        ("birth_date", "2) 생년월일: ", "date"),
+        ("company", "3) 회사명 (면접기업 칸): ", "text"),
+        ("industry", "4) 업태/업종 (없으면 엔터): ", "text"),
+        ("interview_date", "5) 면접일: ", "date"),
+        ("interview_time", "6) 면접시간 (예: 14:00~14:40, 없으면 엔터): ", "text"),
+        ("place", "7) 면접장소 (없으면 엔터): ", "text"),
+        ("job", "8) 응시직군 (없으면 엔터): ", "text"),
+        ("confirm_date", "9) 확인일 ('확인합니다' 아래 날짜, 없으면 엔터): ", "date"),
+    ))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doc", choices=sorted(DOCS), default="resident_abstract")
     args = parser.parse_args()
     gt = {"resident_abstract": _resident_gt, "nhis_payment": _payment_gt,
-          "nhis_acquisition_loss": _acquisition_gt, "insurance_4": _insurance4_gt}[args.doc]()
+          "nhis_acquisition_loss": _acquisition_gt, "insurance_4": _insurance4_gt,
+          "receipt": _receipt_gt, "exam_admission": _exam_gt, "exam_score": _exam_gt,
+          "interview_confirm": _interview_gt}[args.doc]()
     out = OUT if args.doc == "resident_abstract" else PRIVATE_DIR / f"{args.doc}.gt.json"
 
     if not gt:

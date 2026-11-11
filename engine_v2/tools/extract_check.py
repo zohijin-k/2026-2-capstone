@@ -3,17 +3,21 @@
   python -m engine_v2.tools.extract_check <file.pdf> --doc nhis_payment --gt <gt.json>
   python -m engine_v2.tools.extract_check <file.pdf> --doc nhis_acquisition_loss --gt <gt.json>
   python -m engine_v2.tools.extract_check <file.pdf> --doc insurance_4 --gt <gt.json>
+  python -m engine_v2.tools.extract_check <file.jpg> --doc receipt --gt <gt.json>
+  (패키지 서류: receipt · exam_admission · exam_score · interview_confirm)
 
-건강보험 서류의 출력은 필드별 상태와 값 없는 원인만 보여준다. 실제 값은 절대 출력하지 않는다.
+건강보험·패키지 서류의 출력은 필드별 상태와 값 없는 원인만 보여준다. 실제 값은 절대 출력하지 않는다.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import date
 from pathlib import Path
 
+from ..extractors import exam_docs, interview_confirmation, receipt
 from ..extractors import nhis_acquisition_loss, nhis_payment
 from ..extractors.resident_abstract import extract, kst_today, months_between, resolved_sido, trailing_residence_start
 from ..schemas.models import DocType as V2DocType, DocumentInput
@@ -28,6 +32,27 @@ DOC_LABELS = {
     "insurance_4": ["문서확인번호", "발급번호", "발급일", "성명", "생년월일",
                     "가입내역", "보험별가입여부", "보험별가입자종별", "근로관련가입여부",
                     "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록"],
+    "receipt": ["결제금액", "결제일", "상호", "받는분", "사업자등록번호", "결제수단", "공급가액", "부가세", "품목수"],
+    "exam_admission": ["성명", "생년월일", "시험명", "응시일", "발급일"],
+    "exam_score": ["성명", "생년월일", "시험명", "응시일", "발급일"],
+    "interview_confirm": ["성명", "생년월일", "회사명", "업태업종", "면접일", "면접시간", "면접장소", "응시직군", "확인일"],
+}
+#: 취업지원패키지 추가서류: --doc 이름 → (서류 종류, 추출기)
+JOB_DOCS = {
+    "receipt": (V2DocType.RECEIPT, receipt.extract),
+    "exam_admission": (V2DocType.EXAM_ADMISSION, exam_docs.extract),
+    "exam_score": (V2DocType.EXAM_SCORE, exam_docs.extract),
+    "interview_confirm": (V2DocType.INTERVIEW_CONFIRM, interview_confirmation.extract),
+}
+#: make_gt 정답 키 → 판독 필드 (성명·생년월일·발급일은 `_expected` 앞부분이 공통으로 옮긴다)
+JOB_GT_FIELDS = {
+    "receipt": (("amount", "결제금액"), ("payment_date", "결제일"), ("store", "상호"), ("payee", "받는분"),
+                ("brn", "사업자등록번호"), ("payment_method", "결제수단")),
+    "exam_admission": (("exam_name", "시험명"), ("exam_date", "응시일")),
+    "exam_score": (("exam_name", "시험명"), ("exam_date", "응시일")),
+    "interview_confirm": (("company", "회사명"), ("industry", "업태업종"), ("interview_date", "면접일"),
+                          ("interview_time", "면접시간"), ("place", "면접장소"), ("job", "응시직군"),
+                          ("confirm_date", "확인일")),
 }
 LAYOUT_LABELS = {
     "nhis_payment": ("성명", "생년월일", "주민등록번호", "발급일", "발급일자", "발행일", "출력일",
@@ -42,6 +67,15 @@ LAYOUT_LABELS = {
                     "사업장", "명칭", "관리번호", "사업장관리번호", "사업장명칭", "가입자종별",
                     "자격", "취득일", "자격취득일", "신고접수일", "미가입", "직장가입자",
                     "지역가입자", "직장피부양자", "사업장가입자", "가입내역"),
+    "receipt": ("영수증", "매출전표", "가맹점명", "상호", "사업자번호", "사업자등록번호", "거래일시", "결제일시",
+                "승인일시", "이체일시", "일자", "결제금액", "승인금액", "합계금액", "합계", "이체금액", "공급가액",
+                "부가세", "받는분", "판매자", "품목", "금액"),
+    "exam_admission": ("응시확인서", "성명", "생년월일", "수험번호", "종목명", "시험명", "시험일자", "응시일자",
+                       "시험장소", "발급일자", "발급일"),
+    "exam_score": ("성적표", "성적통지서", "성명", "생년월일", "종목", "시험일", "점수", "합격여부", "출력일",
+                   "발급일"),
+    "interview_confirm": ("면접확인서", "성명", "생년월일", "회사명", "기업명", "업태/업종", "업종", "면접일시",
+                          "면접일자", "면접장소", "응시직군", "지원분야", "확인합니다", "담당자"),
 }
 
 
@@ -89,6 +123,10 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
             expected["사업장명칭목록"] = json.dumps(list(dict.fromkeys(
                 row["사업장명칭"] for row in work_rows if row["사업장명칭"])),
                 ensure_ascii=False, separators=(",", ":"))
+    elif doc in JOB_GT_FIELDS:
+        for key, target in JOB_GT_FIELDS[doc]:
+            if gt.get(key) not in (None, ""):
+                expected[target] = str(gt[key])
     elif doc == "nhis_payment":
         months = gt.get("billed_by_month", {})
         if months:
@@ -111,6 +149,13 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
         if history:
             expected["가입구분"] = max(history, key=lambda row: row["acquired"])["category"]
     return expected
+
+
+def _differs(doc: str, actual, wanted: str) -> bool:
+    """추출값과 정답이 다른가. 패키지 서류는 OCR 띄어쓰기 차이(예: '한빛테크 (주)')를 무시한다."""
+    if doc in JOB_DOCS:
+        return re.sub(r"\s+", "", str(actual)) != re.sub(r"\s+", "", str(wanted))
+    return str(actual) != wanted
 
 
 def _normalize_expected_cell(value) -> str:
@@ -239,6 +284,24 @@ def _validation_failure_reason(doc: str, validation, result, pages) -> str:
         "history_dates_ordered": "주소 변동 날짜 순서가 맞지 않음",
         "occurred_before_reported": "발생일이 신고일보다 늦음",
         "recent_five_years_covered": "이력이 최근 5년을 포함하는지 확인하지 못함",
+        "amount_found": "결제금액을 찾지 못함",
+        "payment_date_found": "결제일을 찾지 못함",
+        "payment_date_not_future": "결제일이 오늘 이후로 읽힘",
+        "single_total": "합계 금액 표기가 서로 다름",
+        "supply_plus_vat_matches": "공급가액과 부가세의 합이 합계와 다름",
+        "brn_checksum": "사업자등록번호 검증숫자가 맞지 않음",
+        "not_cancelled": "결제 취소 전표로 보임",
+        "single_item": "품목이 여러 개(일괄결제 의심)",
+        "name_found": "성명을 찾지 못함",
+        "exam_date_found": "응시일을 찾지 못함",
+        "exam_name_found": "시험명을 찾지 못함",
+        "exam_date_not_future": "응시일이 오늘 이후로 읽힘",
+        "exam_date_not_after_issue": "응시일이 발급일보다 뒤임",
+        "company_found": "회사명을 찾지 못함",
+        "interview_date_found": "면접일을 찾지 못함",
+        "interview_date_not_future": "면접일이 오늘 이후로 읽힘",
+        "interview_not_after_confirmation": "면접일이 확인일보다 뒤임",
+        "company_names_match": "회사명 칸과 서명란 회사명이 다름",
     }
     if name.endswith("_consistent"):
         field = name.removesuffix("_consistent")
@@ -272,7 +335,7 @@ def _layout(doc: str, pages) -> None:
 def _run_nhis(args, gt: dict) -> None:
     from ..engine import _load_pages
 
-    doc_type = {
+    doc_type = JOB_DOCS[args.doc][0] if args.doc in JOB_DOCS else {
         "nhis_payment": V2DocType.NHIS_PAYMENT,
         "nhis_acquisition_loss": V2DocType.NHIS_ACQUISITION_LOSS,
         "insurance_4": V2DocType.INSURANCE_4,
@@ -301,6 +364,8 @@ def _run_nhis(args, gt: dict) -> None:
             if args.doc == "insurance_4":
                 from ..extractors import insurance_4
                 extractor = insurance_4.extract
+            elif args.doc in JOB_DOCS:
+                extractor = JOB_DOCS[args.doc][1]
             else:
                 extractor = nhis_payment.extract if args.doc == "nhis_payment" else nhis_acquisition_loss.extract
             result = extractor(pages)
@@ -344,7 +409,7 @@ def _run_nhis(args, gt: dict) -> None:
             else:
                 status = "OK"
                 reason = "정답과 일치"
-        elif label in expected and str(field.value) != expected[label]:
+        elif label in expected and _differs(args.doc, field.value, expected[label]):
             status = "FAIL"
             reason = "정답과 불일치 (실제·정답 값 숨김)"
         else:
@@ -385,13 +450,15 @@ def main() -> None:
     ap.add_argument("file", type=Path)
     ap.add_argument("--gt", type=Path)
     ap.add_argument("--engine", default="applevision")
-    ap.add_argument("--doc", choices=("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"),
-                    default="resident_abstract")
+    ap.add_argument("--doc", choices=("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4",
+                                      *JOB_DOCS), default="resident_abstract")
     ap.add_argument("--layout", action="store_true", help="칸·열 제목 위치만 값 가림 형태로 표시")
     args = ap.parse_args()
 
     if args.doc == "insurance_4" and args.engine == "jbai":
         raise SystemExit("4대 사회보험 확인서는 좌표 기반 OCR 엔진만 지원합니다.")
+    if args.doc in JOB_DOCS and args.engine == "jbai":
+        raise SystemExit("취업지원패키지 서류는 아직 전북AI 판독에 연결하지 않았습니다. 로컬 OCR 엔진을 지정하세요.")
 
     if args.engine == "jbai":
         import os

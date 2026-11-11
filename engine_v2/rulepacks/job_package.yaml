@@ -1,0 +1,123 @@
+# 청년 취업지원패키지 — 규칙팩 (초안)
+# 두배적금 규칙팩(doubling_savings.yaml)과 같은 형식이다. 사업계획·공고가 바뀌면 이 파일만 고친다.
+# ⚠️ 표시는 사업계획서·도청 확인 전 가정값이다. 판정 단일화(데모 판정을 engine_v2로 전환) 때
+# 데모 기준 버전과 키를 맞춘다.
+#
+# 여기 없는 것 (데모 기준 버전 subsidy가 계속 담당)
+#   - 항목별 금액 한도·최대 횟수·횟수 범위: 서류 한 장이 아니라 신청 단위 계산이다.
+#   - 영수증 금액과 신청 금액 대조: 데모는 불일치를 '확인필요'로 보낸다. 지금 엔진은 확신 있는 FAIL을
+#     '부적합'으로 내므로, 출력 계약에 '확인필요로 끝나는 불일치'가 생긴 뒤 옮긴다.
+#   - 결제일 ≤ 면접일, 정장 대여기간, 인정 시험 목록, 업종: 서류 사이 대조이거나 도청 원본 목록이 필요하다.
+#
+# 못 읽은 값(필드 없음)은 규칙이 UNKNOWN → '검토필요'가 된다. 판독 실패로 '부적합'이 나오지 않도록
+# 판독 검증(validation) 실패는 서류 종류 판별에만 쓴다.
+#
+# 메시지 원칙
+#   applicant: 신청자에게 그대로 노출. 기준 수치·내부 판단 근거를 쓰지 않는다.
+#   reviewer : 담당자용. {중괄호}는 실행 시 실제 값으로 채운다.
+
+program_id: job_package
+version: "2026-draft-1"
+reference_date: announcement_date
+
+required_documents:        # 지원 항목별 추가서류는 신청자가 고른 항목·회차에 따라 달라 여기서 고정하지 않는다
+  - resident_abstract
+
+documents:
+  resident_abstract:
+    rules:
+      - id: abstract.doc_type
+        type: doc_type_is
+        params: { expected: resident_abstract }
+        applicant: "주민등록표 초본이 아닌 서류가 올라왔어요. 등본이 아니라 '초본'을 올려주세요."
+        reviewer: "감지된 서류: {detected_type}"
+
+      - id: abstract.issue_date_recent
+        type: settings_issue_date
+        params: { field: issue_date }   # 사업계획서: 2026. 1. 1. 이후 발급 서류만 인정 (기준 버전에서 읽음)
+        applicant: "초본 발급일이 이 사업의 인정 기준에 맞지 않아요. 기준에 맞는 서류를 올려주세요."
+        reviewer: "발급일 {value} · 설정 기준 {cutoff} · 방식 {mode}"
+
+      - id: abstract.name_matches
+        type: equals_applicant
+        params: { field: name, applicant: name }
+        applicant: "신청자 성명과 초본의 성명이 달라요. 본인 초본인지 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: abstract.birth_matches
+        type: equals_applicant
+        params: { field: birth_date, applicant: birth_date }
+        applicant: "입력하신 생년월일과 초본의 정보가 달라요. 다시 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: abstract.age_eligible
+        type: date_in_range
+        params: { field: birth_date, start: 1987-01-01, end: 2008-12-31 }   # 사업계획서 출생일 기준 (만 나이 계산 안 함)
+        applicant: "신청 자격(연령) 요건에 해당하지 않아요."
+        reviewer: "생년월일 {value} (허용 {start}~{end})"
+
+      - id: abstract.lives_in_jeonbuk
+        type: current_sido_is
+        params: { field: current_address, sido: 전북 }
+        applicant: "현재 주소가 신청 지역 요건에 해당하지 않아요."
+        reviewer: "현 주소 시도: {sido}"
+
+  receipt:
+    rules:
+      - id: receipt.doc_type
+        type: doc_type_is
+        params: { expected: receipt }
+        applicant: "결제영수증이 아닌 서류가 올라왔어요. 접수확인서가 아니라 결제일과 금액이 적힌 영수증을 올려주세요."
+        reviewer: "감지된 서류: {detected_type}"
+
+      - id: receipt.payment_date
+        type: settings_issue_date
+        params: { field: 결제일 }   # ⚠️ 영수증 기준 날짜를 결제일로 볼지 도청 확인 (지원연도 이전 결제는 불인정)
+        applicant: "영수증 결제일이 이 사업의 인정 기준에 맞지 않아요."
+        reviewer: "결제일 {value} · 설정 기준 {cutoff} · 방식 {mode}"
+
+  exam_admission:
+    rules: &exam_rules
+      - id: exam.doc_type
+        type: validation_passed
+        params: { validation: document_type }   # 응시확인서·성적표 둘 다 인정, 수험표는 실패
+        applicant: "응시확인서 또는 성적표가 아닌 서류가 올라왔어요. 수험표가 아니라 응시일이 적힌 응시확인서나 성적표를 올려주세요."
+        reviewer: "서류 종류 판별: {detail}"
+
+      - id: exam.name_matches
+        type: equals_applicant
+        params: { field: 성명, applicant: name }
+        applicant: "신청자 성명과 응시서류의 성명이 달라요. 본인 서류인지 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: exam.exam_date
+        type: settings_issue_date
+        params: { field: 응시일 }   # ⚠️ 응시서류 기준 날짜를 응시일로 볼지 도청 확인. 응시일을 못 읽으면 검토필요
+        applicant: "응시일이 이 사업의 인정 기준에 맞지 않아요."
+        reviewer: "응시일 {value} · 설정 기준 {cutoff} · 방식 {mode}"
+
+  exam_score:
+    rules: *exam_rules
+
+  interview_confirm:
+    rules:
+      - id: interview.doc_type
+        type: doc_type_is
+        params: { expected: interview_confirm }
+        applicant: "면접확인서가 아닌 서류가 올라왔어요. 면접 기업이 확인한 면접확인서를 올려주세요."
+        reviewer: "감지된 서류: {detected_type}"
+
+      - id: interview.name_matches
+        type: equals_applicant
+        params: { field: 성명, applicant: name }
+        applicant: "신청자 성명과 면접확인서의 성명이 달라요. 본인 서류인지 확인해 주세요."
+        reviewer: "입력 {declared} / 서류 {value}"
+
+      - id: interview.interview_date
+        type: settings_issue_date
+        params: { field: 면접일 }   # ⚠️ 면접확인서 기준 날짜를 면접일로 볼지 도청 확인
+        applicant: "면접일이 이 사업의 인정 기준에 맞지 않아요."
+        reviewer: "면접일 {value} · 설정 기준 {cutoff} · 방식 {mode}"
+
+# 선착순 선발이라 배점이 없다.
+scoring: {}
