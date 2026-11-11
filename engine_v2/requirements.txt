@@ -8,3 +8,13 @@ ocrmac; sys_platform == "darwin"   # Apple Vision, 맥 전용 기준선
 # easyocr                          # 필요할 때 주석 해제
 # paddlepaddle                     # Python 3.14에서 설치 안 될 수 있음
 # paddleocr
+
+# Own OCR: CPU execution, tensor/image transforms, DB polygon expansion
+onnxruntime>=1.20,<2
+numpy>=1.26,<3
+opencv-python-headless>=4.10,<5
+pyclipper>=1.3,<2
+python-dotenv>=1,<2  # optional benchmark --env-file configuration
+
+# Content-only document classifier training (BSD-3-Clause); CPU, fixed API/version
+scikit-learn==1.7.2

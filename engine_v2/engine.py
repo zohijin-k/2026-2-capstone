@@ -193,8 +193,11 @@ def _load_pages(doc: DocumentInput, ocr_engine: str) -> list[tuple[PageImage, Oc
         return str(e)
 
 
-def run(app: ApplicationInput, ocr_engine: str = "applevision", today: date | None = None,
+def run(app: ApplicationInput, ocr_engine: str | None = None, today: date | None = None,
         *, is_demo_upload: bool = False) -> ApplicationResult:
+    from .pipeline.ocr import default_engine
+
+    ocr_engine = ocr_engine if ocr_engine is not None else default_engine()
     rulepack = load_rulepack(app.program_id.value)
     docs: list[DocumentResult] = []
     if ocr_engine == "jbai" and is_demo_upload:

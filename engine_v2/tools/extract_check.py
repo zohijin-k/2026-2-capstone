@@ -14,6 +14,8 @@ import json
 from datetime import date
 from pathlib import Path
 
+from ..pipeline.ocr import default_engine
+
 from ..extractors import nhis_acquisition_loss, nhis_payment
 from ..extractors.resident_abstract import extract, kst_today, months_between, resolved_sido, trailing_residence_start
 from ..schemas.models import DocType as V2DocType, DocumentInput
@@ -384,7 +386,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("file", type=Path)
     ap.add_argument("--gt", type=Path)
-    ap.add_argument("--engine", default="applevision")
+    ap.add_argument("--engine", default=default_engine())
     ap.add_argument("--doc", choices=("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"),
                     default="resident_abstract")
     ap.add_argument("--layout", action="store_true", help="칸·열 제목 위치만 값 가림 형태로 표시")
