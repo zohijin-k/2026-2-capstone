@@ -52,6 +52,15 @@ CODE_IDENTITY_UNCERTAIN = "IDENTITY_UNCERTAIN"
 CODE_MISSING_BILLING_MONTHS = "MISSING_BILLING_MONTHS"
 CODE_NHIS_DEPENDENT_INSURED_PERSON = "NHIS_DEPENDENT_INSURED_PERSON"
 CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW = "NHIS_SUBSCRIBER_IDENTITY_REVIEW"
+CODE_PAGES_INCOMPLETE = "PAGES_INCOMPLETE"
+CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
+CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
+
+RETAKE_GUIDANCE = (
+    "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
+    "서류 전체가 똑바로 보이게 밝은 곳에서 선명하게 다시 촬영해 주세요. "
+    "이대로 제출해도 담당자가 확인합니다."
+)
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -60,20 +69,25 @@ HOW_TO_FIX: dict[str, str] = {
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
     CODE_MISSING_BILLING_MONTHS: "조회기간에 {months}이 포함되도록 다시 발급해 주세요.",
-    "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
+    "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. " + RETAKE_GUIDANCE,
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
-    "LOW_IMAGE_QUALITY": "글자가 또렷하게 보이도록 스캔본이나 밝은 곳에서 찍은 사진으로 다시 올려 주세요. pdf 파일을 권장합니다.",
-    "LOW_OCR_CONFIDENCE": "자동 판독이 되지 않은 항목이 있어 담당자가 직접 확인합니다. 더 선명한 파일이 있다면 교체해 주세요.",
+    "LOW_IMAGE_QUALITY": RETAKE_GUIDANCE,
+    "LOW_OCR_CONFIDENCE": RETAKE_GUIDANCE,
     "MISSING_SIGNATURE": "서명란에 서명한 뒤 다시 올려 주세요.",
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
     CODE_MISSING_ADDRESS_HISTORY: "정부24에서 초본을 발급할 때 '과거의 주소 변동사항(최근 5년)' 포함을 체크해 다시 발급받아 주세요.",
     CODE_MISSING_REQUIRED_FIELD: "{field}이(가) 표기된 서류로 다시 발급받아 올려 주세요. 발급 기관에 {field} 표기를 요청하시면 됩니다.",
-    CODE_REQUIRED_FIELD_UNREADABLE: "서류에 {field}이(가) 적혀 있다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. {field}이(가) 잘 보이게 다시 찍어 올리면 더 빨리 확인됩니다.",
+    CODE_REQUIRED_FIELD_UNREADABLE: "서류에 {field}이(가) 적혀 있다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. {field}이(가) 잘 보이게 다시 찍어 올리면 더 빨리 확인됩니다. " + RETAKE_GUIDANCE,
     CODE_IDENTITY_MISMATCH: "본인 명의로 발급받은 서류만 인정됩니다. 가족이나 다른 사람 명의의 서류가 아닌지 확인하고 다시 올려 주세요.",
-    CODE_IDENTITY_UNCERTAIN: "본인 서류가 맞다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
+    CODE_IDENTITY_UNCERTAIN: RETAKE_GUIDANCE,
     CODE_NHIS_DEPENDENT_INSURED_PERSON: "건강보험 가입자 명의 서류로 확인했습니다.",
     CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW: "가입자 명의 확인이 필요해 담당자가 확인합니다.",
-    CODE_UNKNOWN_DOCUMENT_TYPE: "자동으로 서류 종류를 판별하지 못했습니다. 담당자가 직접 확인하므로 그대로 두셔도 되고, 더 선명한 파일이 있다면 교체해 주세요.",
+    CODE_UNKNOWN_DOCUMENT_TYPE: RETAKE_GUIDANCE,
+    CODE_RESIDENT_APPLICANT_UNREADABLE: RETAKE_GUIDANCE,
+    CODE_PAGES_UNREADABLE: "서류 전체가 선명하게 보이게 다시 촬영해 주세요. " + RETAKE_GUIDANCE,
+    CODE_PAGES_INCOMPLETE: "빠진 쪽까지 모두 올려 주세요.",
+    CODE_PAGES_DUPLICATED: "중복된 쪽을 확인하고 서로 다른 모든 쪽을 올려 주세요.",
+    "NHIS_HISTORY_PERIOD_UNREADABLE": RETAKE_GUIDANCE,
 }
 
 _DOC_TYPE_DISPLAY = {
@@ -116,6 +130,10 @@ def _has_final_consonant(value: str) -> bool:
 #: 화면캡처는 오탐 시 신청자가 억울해지므로 자동 반려하지 않는다.
 REVIEW_ONLY_CODES = {
     "LOW_OCR_CONFIDENCE",
+    "LOW_IMAGE_QUALITY",
+    "NHIS_HISTORY_PERIOD_UNREADABLE",
+    CODE_RESIDENT_APPLICANT_UNREADABLE,
+    CODE_PAGES_UNREADABLE,
     # 입력 발급일 불일치이나 판독이 불확실 — 오독일 수 있어 자동 반려하지 않는다.
     "DECLARED_DATE_UNCERTAIN",
     # 본인 정보 불일치이나 판독이 불확실 — 남의 서류로 단정하지 않는다.
@@ -226,6 +244,50 @@ def _finding(code: str, message: str, req: DocRequirement, **fmt: str) -> CheckF
     )
 
 
+def _uncertain(finding: CheckFinding) -> CheckFinding:
+    """읽기 불확실성은 확정 위반 문구와 제출 차단을 함께 없앤다."""
+    finding.message = "서류의 내용을 확실하게 읽지 못했습니다. 담당자가 원본에서 직접 확인합니다."
+    finding.how_to_fix = RETAKE_GUIDANCE
+    finding.severity = "NEEDS_REVIEW"
+    return finding
+
+
+def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFinding]:
+    # 쪽 완전성 검사를 수행한 추출기의 구조화된 결과만 소비한다.
+    # 기존 fixture/일반 글자층 판독값에는 이 검사의 결과 자체가 없다.
+    if "쪽표기자료" not in ocr.fields:
+        return []
+    unreadable = _finding(
+        CODE_PAGES_UNREADABLE,
+        "주민등록초본의 쪽표기를 확실하게 읽지 못했습니다. 담당자가 전체 쪽을 확인합니다.", req,
+    )
+    try:
+        data = json.loads(ocr.fields["쪽표기자료"])
+        markers = data["markers"]
+        confidence = min(float(data["confidence"]), ocr.confidence)
+        if (not markers or len(markers) != ocr.page_count
+                or not confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD):
+            return [unreadable]
+        if any(not isinstance(m, list) or len(m) != 2
+               or any(type(v) is not int for v in m) or not 1 <= m[0] <= m[1] for m in markers):
+            return [unreadable]
+        totals = {m[1] for m in markers}
+        if len(totals) != 1:
+            return [unreadable]
+        total = totals.pop()
+        seen = {m[0] for m in markers}
+        if len(seen) < total:
+            return [_finding(
+                CODE_PAGES_INCOMPLETE,
+                f"주민등록초본 {total}쪽 중 {len(seen)}쪽만 올라왔습니다. 빠진 쪽까지 모두 올려 주세요.", req,
+            )]
+        if len(markers) != len(seen):
+            return [_finding(CODE_PAGES_DUPLICATED, "주민등록초본에 중복된 쪽이 올라왔습니다.", req)]
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return [unreadable]
+    return []
+
+
 def check_document(
     req: DocRequirement,
     ocr: OcrResult,
@@ -251,6 +313,7 @@ def check_document(
                 message=f"'{req.label}' 자리에 올리신 파일의 서류 종류를 판별하지 못했습니다. 담당자가 확인합니다.",
                 link=req.issuer_url,
                 severity="NEEDS_REVIEW",
+                how_to_fix=HOW_TO_FIX[CODE_UNKNOWN_DOCUMENT_TYPE],
                 detail=ocr.classification_evidence or "본문에서 지원 서류의 제목·서식 단서를 찾지 못했습니다.",
             )
             return CheckResult(status="NEEDS_REVIEW", findings=[finding])
@@ -264,16 +327,18 @@ def check_document(
             if suggested_slot_label:
                 body += f"\n{suggested_slot_label} 칸에 올리실 파일이라면 그 칸에 올려 주세요."
             evidence = ocr.classification_evidence or f"본문 단서로 '{_display_doc_type(detected)}' 판별"
-            return CheckResult(
-                status="FAIL",
-                findings=[CheckFinding(
-                    code="WRONG_DOCUMENT_TYPE",
-                    message=title,
-                    how_to_fix=body,
-                    link=req.issuer_url,
-                    detail=evidence,
-                )],
+            finding = CheckFinding(
+                code="WRONG_DOCUMENT_TYPE",
+                message=title,
+                how_to_fix=body,
+                link=req.issuer_url,
+                detail=evidence,
             )
+            # 다른 항목을 못 읽어도 제목은 확실히 읽었을 수 있다.
+            type_confidence = ocr.classification_confidence or ocr.confidence
+            if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
+                _uncertain(finding)
+            return CheckResult(status=finding.severity, findings=[finding])
 
     # 2) 엔진 단건 검사 — 암호/화질/서명/발급일/입력일 대조/신뢰도.
     engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format, req.date_basis)
@@ -311,9 +376,14 @@ def check_document(
         if date_label:
             finding.message = finding.message.replace("발급일", date_label).replace("발급분", "기준 날짜")
             finding.how_to_fix = finding.how_to_fix.replace("발급일", date_label).replace("발급분", "기준 날짜")
+        if (f.code.value in {"DOCUMENT_ISSUED_TOO_EARLY", "DOCUMENT_ISSUED_AFTER_APPLICATION"}
+                and ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD):
+            _uncertain(finding)
         findings.append(finding)
 
     # 3) 데모가 얹는 항목.
+    if not ocr.is_encrypted and ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT:
+        findings.extend(_check_resident_pages(ocr, req))
     if ocr.is_screen_capture:
         findings.append(
             _finding(
@@ -370,13 +440,17 @@ def check_document(
             missing = list(req.premium_months)
         if missing:
             rendered = format_month_ranges(missing)
-            findings.append(_finding(
+            finding = _finding(
                 CODE_MISSING_BILLING_MONTHS,
                 f"납부확인서에 심사 대상 고지월 {rendered}이 없어 평균 보험료를 계산할 수 없습니다.",
                 req, months=rendered,
-            ))
+            )
+            if ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
+                _uncertain(finding)
+            findings.append(finding)
 
-    if req.slot_key == "nhis_acquisition_loss" and req.recent_years and ocr.fields.get("자격이력자료"):
+    if (not ocr.is_encrypted and req.slot_key == "nhis_acquisition_loss" and req.recent_years
+            and (ocr.fields.get("자격이력자료") or ocr.tier != "fixture")):
         try:
             data = json.loads(ocr.fields["자격이력자료"])
             issue = ocr.issue_date
@@ -423,8 +497,23 @@ def check_document(
             CODE_RESIDENT_APPLICANT_UNREADABLE,
             "초본의 신청인 정보를 읽지 못해 담당자가 확인합니다.",
             severity="NEEDS_REVIEW",
+            how_to_fix=RETAKE_GUIDANCE,
             detail="첫 쪽 신청인 성명과 생년월일을 모두 판독해야 본인인증 정보와 대조할 수 있습니다.",
         ))
+
+    if (not ocr.is_encrypted and ocr.tier != "fixture"
+            and ocr.detected_doc_type is DocType.INSURANCE_4):
+        name = str(ocr.fields.get("성명") or "").strip()
+        try:
+            birth = date.fromisoformat(str(ocr.fields.get("생년월일") or "")[:10])
+        except ValueError:
+            birth = None
+        if not name or birth is None:
+            findings.append(_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                "4대보험 서류의 성명·생년월일을 모두 읽지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="성명·생년월일",
+            ))
 
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
@@ -453,7 +542,7 @@ def check_document(
             if abstract_applicant_missing:
                 pass  # 신청인 칸 미판독은 위에서 인증 여부와 무관하게 확인필요로 기록했다.
             elif (abstract_applicant_name or "").replace(" ", "") != identity.name or abstract_applicant_birth_date != identity.birth:
-                findings.append(CheckFinding(
+                finding = CheckFinding(
                     CODE_IDENTITY_MISMATCH,
                     "본인이 직접 발급받은 초본이 아닙니다. 본인 명의로 발급받아 다시 올려 주세요.",
                     severity="FAIL",
@@ -461,7 +550,11 @@ def check_document(
                         f"초본 첫 쪽 신청인 칸 판독: 성명={abstract_applicant_name}, 생년월일={abstract_applicant_birth_date.isoformat()}; "
                         f"본인인증 정보와 일치하지 않음."
                     ),
-                ))
+                )
+                if ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
+                    finding.code = CODE_IDENTITY_UNCERTAIN
+                    _uncertain(finding)
+                findings.append(finding)
             else:
                 # 기존 주민등록표 성명·생년월일 대조도 유지한다. 신청인 칸이 본인과
                 # 맞더라도 초본 본문에서 읽은 대상자 정보가 다르면 기존 신뢰도 규칙을 쓴다.

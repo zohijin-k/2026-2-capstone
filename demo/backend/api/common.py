@@ -198,6 +198,8 @@ def document_dict(d: Document) -> dict[str, Any]:
     visible_fields = set(APPLICANT_VISIBLE_FIELDS)
     if d.doc_type == "4대보험가입내역확인서" or d.expected_doc_type == "4대보험가입내역확인서":
         visible_fields.add("생년월일")
+    if any(finding.get("code") == "IDENTITY_MISMATCH" for finding in findings):
+        visible_fields.difference_update({"성명", "생년월일"})
     return {
         "document_id": d.id,
         "slot_key": d.slot_key,

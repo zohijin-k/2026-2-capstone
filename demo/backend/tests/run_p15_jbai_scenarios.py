@@ -519,7 +519,7 @@ def test_api_privacy_cache_and_views(client, tmp: Path) -> None:
         other = new_app(client)
         identify(client, other, "김전북", "1999-01-01")
         FAKE.serve(pages, "network")
-        install_fake_ocr(fake_abstract_words())
+        install_fake_ocr([[type(w)({"1/3": "1/2", "2/3": "2/2"}.get(w.text, w.text), w.confidence, w.bbox_px) for w in page] for page in fake_abstract_words()])
         with pdf.open("rb") as fh:
             res = client.post(f"/api/applications/{other}/documents",
                               files={"file": (pdf.name, fh, "application/pdf")},
