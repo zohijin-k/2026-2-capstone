@@ -714,9 +714,9 @@ def submit(application_id: int) -> dict[str, Any]:
         row.status = STATUS_SUBMITTED
         row.submitted_at = form_values.submission_timestamp()
         row.updated_at = row.submitted_at
-        from .forms import snapshot_written_archive
+        from .forms import snapshot_written_pdf
 
-        archive_path, archive_count = snapshot_written_archive(row)
+        archive_path, archive_count = snapshot_written_pdf(row)
         row.written_forms_archive_path = archive_path
         row.written_forms_archive_count = archive_count
         s.add(row)

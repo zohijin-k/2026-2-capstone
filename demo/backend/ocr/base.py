@@ -67,6 +67,8 @@ class OcrResult:
     engine: str = ""
     #: 앞 계층이 실패해 다음 계층으로 넘어온 사유. 담당자 화면 전용 — 신청자 응답에는 싣지 않는다.
     fallback_reason: str = ""
+    #: 판독을 유지했을 때 담당자가 참고할 품질 메모. 신청자 응답에는 싣지 않는다.
+    quality_note: str = ""
     #: OCR 본문에서 찾은 종류 단서. 신청자 응답에는 보내지 않는다.
     classification_evidence: str = ""
     #: 문서 종류 판별 신뢰도. 추출 필드 신뢰도와 분리한다.

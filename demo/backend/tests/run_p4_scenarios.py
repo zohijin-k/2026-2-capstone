@@ -4,8 +4,8 @@
     PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p4_scenarios
 
 확인하는 것:
-  1. **다운로드 0회** — 심사 1건을 여는 전 구간에서 `Content-Disposition`이 전부
-     `inline`이고 `attachment`가 0건이다. 소스 코드에도 다운로드 경로가 없다.
+  1. **담당자 다운로드 0회** — 원본 파일 응답이 담당자·신청자 경로 모두
+     `inline`이고, 담당자 화면·API에서 파일 저장 경로를 제공하지 않는지 확인한다.
   2. 심사표 항목의 `source_document_id` + `bbox`로 좌측 하이라이트 대상이 실제로
      해석된다 (존재하는 서류 · 좌표 4점 · 인라인으로 열림)
   3. 필터(사업·시군·읍면동·처리상태·AI판정·신청일)가 각각 결과 건수를 바꾼다
@@ -602,6 +602,13 @@ def test_inline_only(rec, detail) -> None:
             res.headers["content-disposition"].split(";")[0],
             "inline",
         )
+        # 같은 원본 API를 신청자 세션에서도 열어 inline 응답을 확인한다.
+        applicant_res = rec.client.get(doc["file_url"])
+        check(
+            f"신청자 {doc['label']} Content-Disposition",
+            applicant_res.headers.get("content-disposition", "").split(";")[0],
+            "inline",
+        )
 
     check("없는 서류 → 404", rec.get("/api/files/999999").status_code, 404)
 
@@ -612,40 +619,135 @@ def test_inline_only(rec, detail) -> None:
         all(d.lower().startswith("inline") for d in rec.dispositions),
         True,
     )
-    check("원본 스트리밍 호출 건수", sum(1 for e in rec.log if e["path"].startswith("/api/files/")), 8)
+    check("담당자 원본 스트리밍 호출 건수", sum(1 for e in rec.log if e["path"].startswith("/api/files/")), 8)
     for entry in rec.log:
         if entry["content_disposition"]:
             print(f"         {entry['path']} → {entry['content_disposition']}")
 
 
-#: 다운로드 경로를 만들 수 있는 토큰. 소스에 하나라도 있으면 P4 게이트 실패다.
+#: 신청자 본인 서식 제공 기능이 실제로 구현된 파일만 허용한다.
+#: forms.py에는 신청자 본인 서식 API가 있고, 담당자 원본 파일 API(files.py)와 분리돼 있다.
+#: PdfFormsWorkspace와 스타일은 신청자 작성 서식 메뉴 전용이다.
+#: DocumentUpload에는 취업패키지 면접확인서 양식 메뉴가 있다.
+APPLICANT_FORM_FILE_ALLOWLIST = {
+    "backend/api/forms.py": "신청자 본인 서식 PDF/HWP 및 면접확인서 양식 API",
+    "frontend/src/forms/PdfFormsWorkspace.tsx": "신청자 서식 작성·본인 보관용 메뉴",
+    "frontend/src/forms/pdf-forms-workspace.css": "신청자 서식 메뉴 아이콘 스타일",
+    "frontend/src/pages/applicant/DocumentUpload.tsx": "신청자 면접확인서 양식 메뉴",
+}
+
 FORBIDDEN_TOKENS = ("attachment", "download")
+CODE_SUFFIXES = (".py", ".ts", ".tsx", ".css")
+DOWNLOAD_API_SYMBOLS = {
+    "written_forms_options", "written_forms_pdf", "original_hwp_options",
+    "original_hwp_bundle", "filled_form_file",
+    "printable_admin_consent", "blank_form_file", "source_form_hwp",
+    "form_file_options", "interview_confirmation",
+}
 
-#: 이 검사 자체가 토큰을 들고 있으므로 스스로는 제외한다. P6 시연 검증 스크립트도
-#: 같은 이유로 제외한다 — "attachment 응답이 0건"을 세려면 그 낱말을 들고 있어야 한다.
-SCAN_SKIP = {"run_p4_scenarios.py", "run_p6_scenarios.py"}
 
-
-def _scan(root: Path, suffixes: tuple[str, ...]) -> list[str]:
+def _scan(root: Path) -> list[str]:
     hits: list[str] = []
     for path in sorted(root.rglob("*")):
-        if path.suffix not in suffixes or path.name in SCAN_SKIP:
+        if path.suffix not in CODE_SUFFIXES:
             continue
-        if "node_modules" in path.parts or "__pycache__" in path.parts:
+        if any(part in {"node_modules", "__pycache__", "tests", "dist"} for part in path.parts):
+            continue
+        relative = path.relative_to(DEMO_ROOT).as_posix()
+        if relative in APPLICANT_FORM_FILE_ALLOWLIST:
             continue
         text = path.read_text(encoding="utf-8").lower()
         for token in FORBIDDEN_TOKENS:
             if token in text:
-                hits.append(f"{path.relative_to(DEMO_ROOT)}:{token}")
+                hits.append(f"{relative}:{token}")
+    return hits
+
+
+def _download_feature_imports() -> list[str]:
+    """담당자 코드에서 신청자 전용 서식 저장 API를 가져다 쓰지 못하게 한다."""
+    import ast
+    import re
+
+    hits: list[str] = []
+    backend = DEMO_ROOT / "backend" / "api"
+    for path in sorted(backend.glob("*.py")):
+        if path.name == "forms.py":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module == "forms" and node.level:
+                    imported = DOWNLOAD_API_SYMBOLS.intersection(alias.name for alias in node.names)
+                    if "*" in {alias.name for alias in node.names}:
+                        imported.add("*")
+                    if imported:
+                        hits.append(f"{path.relative_to(DEMO_ROOT)}:forms.{','.join(sorted(imported))}")
+                if node.module in {"api", "..api", None} and "forms" in {alias.name for alias in node.names}:
+                    hits.append(f"{path.relative_to(DEMO_ROOT)}:api.forms")
+            elif isinstance(node, ast.Import):
+                if any(alias.name.endswith(".api.forms") for alias in node.names):
+                    hits.append(f"{path.relative_to(DEMO_ROOT)}:api.forms")
+
+    officer_pages = DEMO_ROOT / "frontend" / "src" / "pages" / "officer"
+    officer_components = DEMO_ROOT / "frontend" / "src" / "components"
+    for path in sorted([*officer_pages.rglob("*.tsx"), *officer_components.rglob("*.tsx")]):
+        content = path.read_text(encoding="utf-8")
+        for specifier in re.findall(r"(?:from\s*|import\s*)['\"]([^'\"]+)['\"]", content):
+            if not specifier.startswith("."):
+                continue
+            target = (path.parent / specifier).resolve()
+            candidates = [target, target.with_suffix(".tsx"), target.with_suffix(".ts")]
+            for candidate in candidates:
+                if not candidate.is_file():
+                    continue
+                try:
+                    relative = candidate.relative_to(DEMO_ROOT).as_posix()
+                except ValueError:
+                    continue
+                if relative in APPLICANT_FORM_FILE_ALLOWLIST:
+                    hits.append(f"{path.relative_to(DEMO_ROOT)}:{relative}")
+                break
     return hits
 
 
 def test_no_download_in_source() -> None:
-    print("\n[7] 소스에 다운로드 경로가 없다 — 정적 검사")
-    backend = _scan(DEMO_ROOT / "backend", (".py",))
-    frontend = _scan(DEMO_ROOT / "frontend" / "src", (".ts", ".tsx", ".css"))
-    check("백엔드 attachment/download 사용", backend, [])
-    check("프론트 attachment/download 사용", frontend, [])
+    print("\n[7] 담당자 심사 화면·원본 서류 API에 파일 저장 경로가 없다")
+    check("허용 목록 밖의 소스 attachment/download 사용", _scan(DEMO_ROOT), [])
+    check("담당자 코드의 신청자 서식 저장 기능 import", _download_feature_imports(), [])
+
+
+def test_applicant_form_archive_access(client, ids) -> None:
+    print("\n[7-1] 신청자 본인 서식 API는 담당자 역할 토큰으로 접근할 수 없다")
+    from ..api import forms as forms_api
+    from ..api.common import load_application
+
+    app_id = ids["A"]
+    denied = client.get(
+        f"/api/applications/{app_id}/forms/files/written.pdf?role={ROLE_PROVINCE}",
+        headers={
+            "authorization": f"Bearer {ROLE_PROVINCE}",
+            "cookie": f"applicant_access_{app_id}=officer-role-token",
+        },
+    )
+    check("담당자 역할 토큰의 작성 서식 접근", denied.status_code, 403)
+
+    response = client.get(f"/api/applications/{app_id}/forms/files/written.pdf")
+    check("신청자 본인 작성 서식 접근", response.status_code, 200)
+    import fitz
+
+    app = load_application(app_id)
+    expected_pages = 0
+    for form_no in forms_api._completed_form_numbers(app):
+        if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+            continue
+        payload, _ = forms_api._filled_pdf(app, form_no)
+        with fitz.open(stream=payload, filetype="pdf") as form_pdf:
+            expected_pages += form_pdf.page_count
+    with fitz.open(stream=response.content, filetype="pdf") as archive:
+        check("작성 서식 PDF에는 완료한 서식 쪽만 포함", archive.page_count, expected_pages)
 
 
 # ---------------------------------------------------------------- 7. 담당자 판단
@@ -789,6 +891,7 @@ def main() -> int:
             test_bbox_link(rec, detail)
             test_inline_only(rec, detail)
             test_no_download_in_source()
+            test_applicant_form_archive_access(client, ids)
 
             test_decisions(client, ids)
             test_applicant_still_blind(client, ids)

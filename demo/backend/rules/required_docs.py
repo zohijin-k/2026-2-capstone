@@ -284,7 +284,7 @@ def _job_package_checklist(
             doc_type=DocType.RESIDENT_ABSTRACT,  # 업로드 대상이 아니라 표기용
             label="청년 취업지원패키지 신청서 (개인정보 수집·이용·제공 동의서 포함)",
             check_declared_date=False,
-            notes=["신청서와 동의서는 화면에서 작성합니다. 출력·서명·스캔이 필요 없습니다."],
+            notes=["신청서와 동의서는 온라인으로 작성합니다. 출력·서명·스캔이 필요 없습니다."],
             upload=False,
             fulfilled_by="온라인 신청서 작성 + 동의 기록",
         ),

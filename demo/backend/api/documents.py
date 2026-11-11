@@ -207,6 +207,7 @@ def _ocr_json(ocr: OcrResult) -> dict[str, Any]:
         # 판독 엔진·대체 사유는 담당자 화면(officer.py)만 읽는다. 신청자 응답(document_dict)에는 없다.
         "engine": ocr.engine,
         "fallback_reason": ocr.fallback_reason,
+        "quality_note": ocr.quality_note,
         "classification_evidence": ocr.classification_evidence,
         "classification_confidence": ocr.classification_confidence,
         "elapsed_ms": ocr.elapsed_ms,

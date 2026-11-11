@@ -67,6 +67,7 @@ function asViewerDoc(form: FormExport, index: number): OfficerDocument {
     ocr_tier: null,
     ocr_engine: null,
     ocr_fallback_reason: null,
+    ocr_quality_note: null,
     declared_issue_date: null,
     uploaded_at: '',
   }
@@ -390,7 +391,7 @@ export default function ReviewDetail({
           {viewingForm && (
             <Panel title={`작성 서식 — ${viewingForm.label}`}>
               <p className="muted">
-                신청자가 화면에서 작성한 값을 원본 서식 PDF에 그대로 얹은 것입니다.
+                신청자가 온라인으로 작성한 값을 원본 서식 PDF에 그대로 얹은 것입니다.
                 항목 순서·표 구조·문구가 종이 서식과 같습니다.
               </p>
               <p className="muted">
@@ -423,6 +424,9 @@ export default function ReviewDetail({
                   <dt>판독 엔진</dt>
                   <dd>
                     {activeDoc.ocr_engine}
+                    {activeDoc.ocr_quality_note && (
+                      <em> · {activeDoc.ocr_quality_note}</em>
+                    )}
                     {activeDoc.ocr_fallback_reason && (
                       <em> (대체 사유: {activeDoc.ocr_fallback_reason})</em>
                     )}

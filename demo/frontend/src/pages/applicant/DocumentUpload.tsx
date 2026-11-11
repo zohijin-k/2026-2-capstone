@@ -556,7 +556,7 @@ export default function DocumentUpload({
             {hasAdminConsent && (
               <li>
                 <strong>행정정보 공동이용 사전동의서 (서식5)</strong>
-                {' — '}{context.paper_forms?.['서식5'] ? '종이 작성 스캔본을 제출합니다.' : '화면 작성 동의와 서명을 제출합니다.'}
+                {' — '}{context.paper_forms?.['서식5'] ? '종이 작성 스캔본을 제출합니다.' : '온라인 작성 동의와 서명을 제출합니다.'}
               </li>
             )}
           </ul>

@@ -868,6 +868,8 @@ export interface OfficerDocument {
   ocr_engine: string | null
   /** 앞 엔진이 실패해 다른 엔진으로 대체한 사유 (예: 전북AI 응답 시간 초과) */
   ocr_fallback_reason: string | null
+  /** 판독을 유지한 경우 담당자가 참고할 품질 메모 */
+  ocr_quality_note: string | null
   declared_issue_date: string | null
   uploaded_at: string
 }

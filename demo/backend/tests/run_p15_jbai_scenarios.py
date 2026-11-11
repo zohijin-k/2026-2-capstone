@@ -322,8 +322,25 @@ def test_fallback(tmp: Path) -> None:
     FAKE.serve(noisy_pages)
     install_fake_ocr(fake_abstract_words())
     ocr = read_document(str(pdf), DocType.RESIDENT_ABSTRACT)
-    check("비한국어 응답 과다 → LocalOcr 대체", (ocr.tier, ocr.engine), ("localocr", "fake"))
-    check_true("환각 fallback 사유가 담당자용으로 남음", "환각 의심" in ocr.fallback_reason)
+    check("잡음 많아도 판독 검증 통과 → 전북AI 유지", (ocr.tier, ocr.engine, ocr.fallback_reason), ("jbai", "jbai", ""))
+    check("검증 통과한 잡음은 담당자 참고 메모로", ocr.quality_note, "잡음 있음")
+
+    jbai_adapter.clear_cache()
+    FAKE.serve(noisy_pages)
+    from engine_v2.extractors import jbai_text
+    original_noisy_extract = jbai_text.extract
+    def noisy_empty_history(document, doc_type):
+        from dataclasses import replace
+        return replace(original_noisy_extract(document, doc_type), history=[])
+    jbai_text.extract = noisy_empty_history
+    try:
+        install_fake_ocr(fake_abstract_words())
+        noisy_failure = read_document(str(pdf), DocType.RESIDENT_ABSTRACT)
+    finally:
+        jbai_text.extract = original_noisy_extract
+    check("잡음 많고 검증 실패 → LocalOcr 대체", (noisy_failure.tier, noisy_failure.engine), ("localocr", "fake"))
+    check("검증 실패 대체 사유에 환각 쪽 표시", noisy_failure.fallback_reason,
+          "전북AI 판독 검증 실패: 주소 이력 없음 · 환각 의심 2·3쪽")
 
     print("  -- 판독 검증 실패 → LocalOcr로 대체, 이유를 담당자 메타데이터에 기록")
     jbai_adapter.clear_cache()
@@ -448,13 +465,31 @@ def test_api_privacy_cache_and_views(client, tmp: Path) -> None:
                    any("status=200 pages=2" in m for m in jbai_lines)
                    and any("status=cache" in m for m in jbai_lines))
 
-        print("  -- (사) 판독 엔진·대체 사유는 담당자 화면에만")
-        hidden = {"ocr_tier", "ocr_engine", "ocr_fallback_reason", "engine", "fallback_reason", "tier"}
+        print("  -- (사) 판독 엔진·품질 메모·대체 사유는 담당자 화면에만")
+        hidden = {"ocr_tier", "ocr_engine", "ocr_fallback_reason", "ocr_quality_note", "engine", "fallback_reason", "quality_note", "tier"}
         check("신청자 응답 키에 엔진·대체 정보 없음", sorted(hidden & set(doc)), [])
         check_true("신청자 응답 본문에 엔진 이름 없음",
                    all("jbai" not in r.text and "전북AI" not in r.text for r in responses))
         check("담당자 화면 엔진", (officer[0]["ocr_tier"], officer[0]["ocr_engine"]), ("jbai", "jbai"))
         check("담당자 화면 대체 사유(없음)", officer[0]["ocr_fallback_reason"], None)
+
+        print("  -- 검증 통과 잡음은 담당자 판독 엔진 줄에 참고 표시")
+        jbai_adapter.clear_cache()
+        note_app = new_app(client)
+        identify(client, note_app, "김전북", "1999-01-01")
+        note_pages = synthetic("resident_abstract", with_rrn=True)
+        note_pages[1]["table_content"] = "<fcel>" + "漢" * 5000 + "<nl>"
+        FAKE.serve(note_pages)
+        install_fake_ocr(fake_abstract_words())
+        note_pdf = make_image_pdf(tmp / "잡음포함_검증통과.pdf", pages=len(note_pages))
+        with note_pdf.open("rb") as fh:
+            note_response = client.post(f"/api/applications/{note_app}/documents",
+                files={"file": (note_pdf.name, fh, "application/pdf")},
+                data={"slot_key": "resident_abstract", "declared_issue_date": "2026-11-10"})
+        check("잡음 포함 업로드는 유지", note_response.status_code, 200)
+        check_true("신청자 응답에 품질 메모 없음", "quality_note" not in note_response.text and "잡음 있음" not in note_response.text)
+        note_view = _document_view(list_documents(note_app)[0], {"resident_abstract": "주민등록초본"})
+        check("담당자 판독 엔진 참고 표시", (note_view["ocr_engine"], note_view["ocr_quality_note"]), ("jbai", "잡음 있음"))
 
         print("  -- 품질 검증 fallback 사유는 담당자 판독 엔진 줄에 표시")
         jbai_adapter.clear_cache()
