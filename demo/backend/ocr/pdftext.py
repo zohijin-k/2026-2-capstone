@@ -39,10 +39,15 @@ DOC_TYPE_KEYWORDS: list[tuple[DocType, tuple[str, ...]]] = [
     (DocType.LABOR_CONTRACT, ("근로계약서",)),
     (DocType.ADMIN_INFO_CONSENT, ("행정정보공동이용",)),
     (DocType.ID_PHOTO_COPY, ("면접용사진사본", "면접용증명사진사본", "면접사진")),
-    (DocType.INTERVIEW_CONFIRMATION, ("면접확인서",)),
-    (DocType.EXAM_CONFIRMATION, ("응시확인서",)),
-    (DocType.EXAM_TRANSCRIPT, ("성적표",)),
-    (DocType.PAYMENT_RECEIPT, ("영수증",)),
+    (DocType.INTERVIEW_CONFIRMATION, ("면접확인서", "면접참석확인서", "면접사실확인서")),
+    (DocType.EXAM_CONFIRMATION, ("응시확인서", "응시사실확인서", "응시증명서")),
+    (DocType.EXAM_TRANSCRIPT, ("성적표", "성적통지서", "성적증명서", "성적확인서")),
+    # 비슷하지만 인정되지 않는 서류(도청 문제 제안서). 영수증보다 먼저 본다.
+    (DocType.ADMISSION_TICKET, ("수험표",)),
+    (DocType.REGISTRATION_CONFIRMATION, ("접수확인서",)),
+    # 카드 전표·결제 화면·이체 확인증은 '영수증'이라는 말이 없을 수 있다.
+    (DocType.PAYMENT_RECEIPT, ("영수증", "매출전표", "신용승인", "카드승인", "결제가완료", "결제완료",
+                               "이체확인증")),
 ]
 
 #: "2026년 3월 5일" / "2026. 3. 5." / "2026-03-05" / "2026/03/05"

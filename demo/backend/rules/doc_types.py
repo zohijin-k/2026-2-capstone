@@ -42,6 +42,10 @@ class DocType(StrEnum):
     # --- 필수는 아니지만 오분류 탐지를 위해 분류기가 알아야 하는 라벨 ---
     RESIDENT_CERTIFICATE = "주민등록등본"
     BIZ_REG_CERT = "사업자등록증"
+    # 도청 문제 제안서(취업지원패키지): 접수확인서는 결제영수증을 대신할 수 없다.
+    REGISTRATION_CONFIRMATION = "접수확인서"
+    # 수험표는 시험 전에 받는 서류라 응시 사실을 증명하지 않는다 (응시확인서·성적표 필요).
+    ADMISSION_TICKET = "수험표"
 
 
 #: 서로 헷갈려서 잘못 올리기 쉬운 서류 쌍.
@@ -53,6 +57,10 @@ CONFUSION_GROUPS: list[set[DocType]] = [
     {DocType.BIZ_REG_PROOF, DocType.BIZ_REG_CERT},
     # 이름이 비슷하고 둘 다 건보공단 발급이라 자주 바뀐다.
     {DocType.NHIS_QUALIFICATION, DocType.NHIS_ACQUISITION_LOSS},
+    # 도청 문제 제안서: "접수확인서만 제출되고 결제일이 명시된 결제영수증이 없는 경우 자동 식별".
+    {DocType.PAYMENT_RECEIPT, DocType.REGISTRATION_CONFIRMATION},
+    # 응시확인서·성적표 자리에 수험표를 올리는 경우.
+    {DocType.EXAM_CONFIRMATION, DocType.EXAM_TRANSCRIPT, DocType.ADMISSION_TICKET},
 ]
 
 #: 서류를 발급받는 곳. 업로드 화면의 "발급처 바로가기" 링크에 쓴다.

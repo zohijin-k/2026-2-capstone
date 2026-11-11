@@ -9,6 +9,8 @@ Tier2(pdftext)는 텍스트 레이어가 있는 PDF만 읽는다. 그런데 실�
   - 초본/등본은 engine_v2 추출기로 구조를 읽는다: 성명·생년월일·발급일·주소이력,
     그리고 쪽 간 일치·순번 연속 같은 **서류 내부 검증**으로 신뢰도를 매긴다.
   - 건강보험료 납부·자격득실확인서는 텍스트 PDF와 이미지 PDF 모두 engine_v2 추출기를 쓴다.
+  - 취업지원패키지 추가서류(결제영수증·응시확인서·성적표·면접확인서)도 텍스트 PDF와 이미지 모두
+    engine_v2 추출기(receipt·exam_docs·interview_confirmation)를 쓴다.
   - 그 밖의 서류는 OCR 텍스트에 Tier2의 정규식 추출을 그대로 적용한다.
 
 처리하지 않는 파일(→ None, 다음 계층으로):
@@ -244,6 +246,77 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     )
 
 
+#: 취업지원패키지 추가서류 → (engine_v2 추출기 모듈, engine_v2 서류 종류 값)
+_JOB_DOCS: dict[DocType, tuple[str, str]] = {
+    DocType.PAYMENT_RECEIPT: ("receipt", "receipt"),
+    DocType.EXAM_CONFIRMATION: ("exam_docs", "exam_admission"),
+    DocType.EXAM_TRANSCRIPT: ("exam_docs", "exam_score"),
+    DocType.INTERVIEW_CONFIRMATION: ("interview_confirmation", "interview_confirm"),
+}
+#: 이 필드가 하나라도 없으면 문서 신뢰도를 0.5로 둔다 (빈 칸이 최솟값 계산에서 빠져 신뢰도가 올라가지 않게).
+_JOB_REQUIRED = {
+    "receipt": ("결제금액", "결제일"),
+    "exam_admission": ("성명", "응시일"),
+    "exam_score": ("성명", "응시일"),
+    "interview_confirm": ("성명", "회사명", "면접일"),
+}
+#: 데모 발급일(issue_date)로 넘길 날짜: 서류에 적힌 발급일이 없으면 그 서류의 기준 날짜
+_JOB_ISSUE_FIELDS = {
+    "receipt": ("발급일", "결제일"),
+    "exam_admission": ("발급일", "응시일"),
+    "exam_score": ("발급일", "응시일"),
+    "interview_confirm": ("확인일", "면접일"),
+}
+
+
+def _job_extractor(detected: DocType):
+    """패키지 서류 추출기도 지연 import 한다."""
+    import importlib
+
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    return importlib.import_module(f"engine_v2.extractors.{_JOB_DOCS[detected][0]}").extract
+
+
+def _from_job_doc(ex, pages, classification_evidence: str = "",
+                  detected_override: DocType | None = None) -> OcrResult:
+    """engine_v2 패키지 서류 판독 결과를 데모 필드 계약으로 옮긴다 (필드 이름은 데모 규칙이 쓰는 그대로)."""
+    fields: dict[str, str] = {}
+    bboxes: dict[str, BBox] = {}
+    for key, value in ex.fields.items():
+        fields[key] = value.value.isoformat() if isinstance(value.value, date) else str(value.value)
+        if (box := _demo_bbox(value.bbox)) is not None:
+            bboxes[key] = box
+    validations = ex.validations
+    fields["판독검증"] = f"{sum(v.passed for v in validations)}/{len(validations)} 통과"
+    failed = [v.name for v in validations if not v.passed]
+    if failed:
+        fields["판독검증실패"] = ", ".join(failed)
+    if ex.warnings:
+        fields["판독경고"] = " ".join(ex.warnings)
+    v2type = ex.detected_type.value
+    required = _JOB_REQUIRED.get(v2type, ())
+    if required and all(name in ex.fields for name in required):
+        confidence = min(ex.fields[name].confidence for name in required)
+    else:
+        confidence = 0.5
+    issue = next((ex.fields[name] for name in _JOB_ISSUE_FIELDS.get(v2type, ()) if name in ex.fields), None)
+    detected = detected_override or next((demo for demo, (_, value) in _JOB_DOCS.items() if value == v2type), None)
+    text_only = all(page.source.value == "text_layer" for page, _ in pages)
+    return OcrResult(
+        detected_doc_type=detected,
+        confidence=round(min(confidence, ex.type_confidence), 2),
+        image_quality=1.0 if text_only else _quality([page for page, _ in pages]),
+        issue_date=issue.value if issue is not None and isinstance(issue.value, date) else None,
+        fields=fields,
+        bboxes=bboxes,
+        page_count=len(pages),
+        tier=NAME,
+        classification_evidence=classification_evidence,
+        classification_confidence=0.95 if detected else 0.0,
+    )
+
+
 def _generic(pages, path: Path) -> OcrResult | None:
     """초본·등본이 아닌 서류: OCR 텍스트에 Tier2 정규식을 적용한다.
 
@@ -314,7 +387,8 @@ class LocalOcr:
             if classified is None:
                 return None
             detected = classified.detected_doc_type
-            if detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
+            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4)
+                    and detected not in _JOB_DOCS):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
         elif engine == "off":
             return None
@@ -325,7 +399,7 @@ class LocalOcr:
             return None
 
         if text_pdf:
-            v2type = {
+            v2type = v2types(_JOB_DOCS[detected][1]) if detected in _JOB_DOCS else {
                 DocType.NHIS_PAYMENT: v2types.NHIS_PAYMENT,
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
@@ -334,7 +408,10 @@ class LocalOcr:
             pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
-            if detected == DocType.INSURANCE_4:
+            if detected in _JOB_DOCS:
+                result = _from_job_doc(_job_extractor(detected)(pages), pages,
+                                       classified.classification_evidence, detected)
+            elif detected == DocType.INSURANCE_4:
                 result = _from_insurance4(
                     insurance4_extractor.extract(pages), pages, classified.classification_evidence
                 )
@@ -365,6 +442,12 @@ class LocalOcr:
         detected, evidence = pdftext.classify_with_evidence(text)
         if detected is None:
             return None
+
+        if detected in _JOB_DOCS:
+            result = _from_job_doc(_job_extractor(detected)(pages), pages, evidence, detected)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
 
         if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
             if detected == DocType.INSURANCE_4:
