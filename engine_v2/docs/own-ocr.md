@@ -1,7 +1,7 @@
 제작 과정은 [own-ocr-history.md](own-ocr-history.md) 참고
 # 자체 OCR 1단계
 
-`own`은 공개 사전학습 PP-OCR 모델을 기관 내부 CPU에서 ONNX Runtime으로 추론하는 엔진이다. 직접 사전학습한 모델이라는 뜻은 아니다. 2단계에서 전북 서류 합성 데이터로 추가 학습한다. 이번에는 미세조정, 판정·점수 규칙 변경, demo 백엔드 연결을 하지 않았다.
+`own`은 공개 사전학습 PP-OCR 모델을 기관 내부 CPU에서 ONNX Runtime으로 추론하는 엔진이다. 직접 사전학습한 모델이라는 뜻은 아니다. 2단계에서 전북 서류 합성 데이터로 추가 학습한다. 미세조정과 판정·점수 규칙은 변경하지 않았다. demo 백엔드는 아래 기본 엔진 선택 규칙으로 연결한다.
 
 ## 기존 구조와 호환 계약
 
@@ -9,7 +9,9 @@
 
 `own`은 DB 확률맵 → 윤곽선/영역 평균 점수 → polygon unclip → 원본 좌표 복원 → 원근 보정 crop → Korean CTC 순이다. 검출은 긴 변 최대 1600, 32배수 크기; 인식은 높이 48, 최소 폭 320이다. DB 임계값 0.3/box 점수 0.5/unclip 1.5를 고정했다. 세로 crop은 회전하지만 180도 방향 분류 모델은 포함하지 않는다. CPUExecutionProvider만 사용하며 스레드는 intra=2/inter=1이다. 네트워크 다운로드는 fetch 명령에서만 수행한다. 추론 시작 시 모든 파일 해시, 사전·출력 클래스 수, 모델 내장 문자 목록을 검증한다.
 
-`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`를 우선하고, 없으면 macOS=`applevision`, 그 외=`own`이다. **demo/backend의 기존 비맥 easyocr 기본값은 변경하지 않았다.** 해당 기본값은 그 디렉터리에 있으므로 변경 금지/체인 연결 제외 조건을 우선했다. 현재 demo의 로컬 OCR 어댑터는 환경변수로 명시한 `own`도 공용 `run_ocr`에 전달할 수 있다. 이 작업에서 기본 연결은 바꾸지 않는다. 공용 로컬 엔진 선택지는 `own | applevision | easyocr | paddle`이며, `off`는 demo 어댑터의 비활성화 값이다. `jbai`는 별도 어댑터/벤치 경로이며 공용 `run_ocr` 선택지가 아니다. `extract_diag`는 `--engine own | applevision`을 명시적으로 지원한다.
+`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`를 우선하고, 없으면 macOS=`applevision`, 그 외=`own`이다. demo/backend 로컬 OCR 기본값은 macOS를 포함해 모든 기계에서 `own`이다. 비어 있지 않은 `ENGINE_V2_OCR` 명시 지정이 우선하며, 기본 선택에서 own 모델 파일이 없을 때에만 `easyocr`로 대체한다. 모델 감지는 실제 로더의 `own.MODEL_DIR`(기본 `engine_v2/models/own`)과 고정 자산 목록의 파일 존재 여부를 사용한다. 명시한 `own`의 모델 누락, 해시 검증 실패, 일반 추론 오류는 다른 OCR 엔진으로 대체하지 않는다. 대체 사유는 `demo.backend.ocr.localocr.engine_decision() -> tuple[str, str]`의 `(엔진, 사유)` 반환값과 대체 시 판독 호출당 한 줄의 경고 로그로만 확인한다. 대체가 없으면 사유는 빈 문자열이다. 결과의 `engine`에는 실제 사용한 엔진만 기록하며 `fallback_reason`·`quality_note`에 대체 사유를 쓰지 않는다. easyocr도 미설치이면 기존처럼 다음 계층으로 넘어간다. 모델 준비 경로·`fetch_own_models.py` 사용법과 engine_v2 CLI 기본값은 그대로다. 공용 로컬 엔진 선택지는 `own | applevision | easyocr | paddle`이며, `off`는 demo 어댑터의 비활성화 값이다. `jbai`는 별도 어댑터/벤치 경로이며 공용 `run_ocr` 선택지가 아니다. `extract_diag`는 `--engine own | applevision`을 명시적으로 지원한다.
+
+취업지원 서류의 필수 항목 부재는 실제 페이지 출처로 구분한다. 모든 쪽을 글자층으로 읽었다면 부재를 확정하고 문서 신뢰도를 0.9로 유지한다. 응시일이 없으면 기존 `MISSING_REQUIRED_FIELD` 부적합만 반환한다. 한 쪽이라도 OCR을 거쳤다면 부재는 미판독일 수 있으므로 신뢰도 0.5와 실제 OCR 엔진을 기록하고, `LOW_OCR_CONFIDENCE`·`REQUIRED_FIELD_UNREADABLE`로 담당자 확인과 재촬영을 안내한다. 모든 쪽이 글자층일 때만 엔진을 `pdftext`로 표시한다. 필수 항목을 읽었을 때의 신뢰도 계산과 기존 판정 규칙은 유지하며, 엔진·대체 사유는 신청자 응답에 공개하지 않는다. 글자층 사용 기준은 engine_v2의 기존 `TEXT_LAYER_MIN_CHARS`를 따른다.
 
 ## 모델 선택과 라이선스
 
