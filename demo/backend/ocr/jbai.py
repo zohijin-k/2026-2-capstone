@@ -79,6 +79,11 @@ QUALITY_RULES = {
 
 
 def _quality_failure(detected: DocType, extracted, document) -> str | None:
+    from engine_v2.pipeline.jbai_quality import HALLUCINATION_THRESHOLDS
+
+    for page in document.pages:
+        if page.hallucination_score >= HALLUCINATION_THRESHOLDS["fail_score"]:
+            return f"쪽 {page.page + 1} 환각 의심(점수 {page.hallucination_score:.2f})"
     rules = QUALITY_RULES[detected]
     fields = extracted.fields
     validations = {item.name: item.passed for item in extracted.validations}

@@ -316,6 +316,15 @@ def test_fallback(tmp: Path) -> None:
     check("서류 종류 판별 실패 → LocalOcr 대체·사유",
           (ocr.tier, ocr.fallback_reason), ("localocr", "전북AI 판독 결과로 서류 종류를 알아보지 못함"))
 
+    jbai_adapter.clear_cache()
+    noisy_pages = synthetic("resident_abstract")
+    noisy_pages[1]["table_content"] = "<fcel>" + "漢" * 5000 + "<nl>"
+    FAKE.serve(noisy_pages)
+    install_fake_ocr(fake_abstract_words())
+    ocr = read_document(str(pdf), DocType.RESIDENT_ABSTRACT)
+    check("비한국어 응답 과다 → LocalOcr 대체", (ocr.tier, ocr.engine), ("localocr", "fake"))
+    check_true("환각 fallback 사유가 담당자용으로 남음", "환각 의심" in ocr.fallback_reason)
+
     print("  -- 판독 검증 실패 → LocalOcr로 대체, 이유를 담당자 메타데이터에 기록")
     jbai_adapter.clear_cache()
     FAKE.serve(synthetic("resident_abstract"))

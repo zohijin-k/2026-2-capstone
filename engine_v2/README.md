@@ -394,15 +394,20 @@ OCR이 주 경로가 되었으므로 7단계를 먼저 한다. 어댑터: `pipel
 기존 `OcrWord`와 달리 bbox가 없고, 표 응답은 HTML 또는 OTSL 토큰이다. `extractors/jbai_text.py`가
 기존 초본·납부확인서·자격득실 추출기의 결과 계약에 맞춰 연결되며, `run(..., ocr_engine="jbai")`로
 선택할 수 있다. 데모는 기관 확인에 따라 `demo/backend/ocr/jbai.py`에서 전북AI를 기본 판독으로 쓰고,
-오류 시 로컬 OCR로 대체한다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
+오류 또는 문서별 핵심 검증·쪽별 환각 점수 실패 시 로컬 OCR로 대체한다. 요청은 `temperature=0`,
+`max_tokens=4096`을 사용한다. 토큰 한도는 선택 환경변수 `JBAI_MAX_TOKENS`로 바꿀 수 있으며,
+서버가 요청 옵션을 HTTP 400으로 거부하면 그 옵션을 빼고 재요청한 사실을 도구 출력에 표시한다.
+`python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 기존 엔진과 비교할 수 있고,
 인식 값은 콘솔이나 파일에 출력하지 않는다. 키는 `JBAI_API_KEY` 환경변수에서만 읽고,
 `JBAI_ALLOW_REAL_DOCS`가 true가 아니면 `data/private/` 파일과 데모 업로드는 차단한다.
 
 전북AI OCR은 JPG만 받으므로 전송 이미지는 JPEG다. PDF는 쪽마다 200dpi RGB(알파 없음)로 렌더링해
 품질 95 JPEG로 만들고(`render_pdf_pages_200dpi`), 사진은 EXIF 회전을 반영한 RGB JPEG로 바꾼다
 (`image_file_to_jpeg`, `run_jbai_file_pair`). 32MB 제한은 실제 전송하는 JPEG 바이트로 검사한다.
-응답 원문의 주민등록번호는 받은 즉시 `mask_rrn`으로 성별 자리 뒤 6자리를 지우고, 가린 텍스트만
-`text_lines`·`tables`·`raw_content`에 남긴다(추출기는 생년월일과 성별 자리만 쓴다).
+응답 원문의 주민등록번호는 받은 즉시 `mask_rrn`으로 성별 자리 뒤 6자리를 지우고, 모델 특수 토큰을
+제거한 텍스트만 `text_lines`·`tables`·`raw_content`에 남긴다(추출기는 생년월일과 성별 자리만 쓴다).
+쪽별 비한국어 문자 비율·반복 줄·이미지 대비 응답 길이를 합산한 환각 점수가 기준을 넘으면 로컬 OCR로 넘긴다.
+값을 출력하는 도구는 `engine_v2/tools/privacy.py`의 공용 마스커를 쓴다.
 
 가상 값만 넣은 합성 표 이미지로 `OCR:`와 `Table Recognition:`을 각각 호출해 HTTP 200을 확인했다.
 `OCR:` 응답은 `choices[0].message.content`의 일반 문자열이며 줄 사이를 개행으로 나눴고,
@@ -412,6 +417,10 @@ OCR이 주 경로가 되었으므로 7단계를 먼저 한다. 어댑터: `pipel
 응답에 쓸 만한 별도 reasoning 필드는 없었다. 합성 호출은 각각 약 0.6초 걸렸다.
 `python -m engine_v2.tools.extract_check <합성.pdf> --doc resident_abstract --engine jbai --gt <정답.json>`로
 합성 재생 결과를 점검할 수 있다. 실제 서류는 `JBAI_ALLOW_REAL_DOCS=true`를 명시하기 전에는 차단된다.
+기관 제공 엔드포인트의 실제 응답 구조만 가려 확인할 때는
+`python -m engine_v2.tools.jbai_dump <파일.pdf>`를, 합성·승인 자료의 요청 방식 지표를 비교할 때는
+`python -m engine_v2.tools.jbai_bench <파일.pdf> --temperature-zero --gray-contrast --stripes 4 --dpi 300`을 쓴다.
+두 도구 모두 실제 파일 실행 전에 `JBAI_ALLOW_REAL_DOCS=true`를 요구하며 응답 텍스트를 노출하지 않는다.
 
 비교 지표: 쪽당 처리시간, 평균 신뢰도, 저신뢰 비율, 고정 문구 적중, **정답 필드 적중**(본인 PC의 정답 파일 기준)
 

@@ -12,56 +12,8 @@ from collections import Counter
 from pathlib import Path
 
 from ..pipeline.jbai_ocr import run_jbai_file_pair
-
-
-_LABELS = (
-    "주민등록번호", "문서확인번호", "발급번호", "사업장관리번호", "사업장명칭",
-    "생년월일", "변동사유", "발급일시", "발급일자", "발급일", "신청인",
-    "성명", "주소", "발생일", "신고일", "전입", "세대주", "쪽",
-    "국민연금", "건강보험", "고용보험", "산재보험", "사회보험", "가입내역",
-    "확인서", "가입자", "사업장", "명칭", "관리번호", "구분", "자격",
-    "취득일", "상실일", "미가입", "해당없음", "지역", "직장", "외국인",
-    "등록번호", "현재", "기준", "공단", "고지금액", "납부금액",
-)
-_REGIONS = (
-    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", "대전광역시",
-    "울산광역시", "세종특별자치시", "경기도", "강원특별자치도", "강원도", "충청북도",
-    "충청남도", "전북특별자치도", "전라북도", "전라남도", "경상북도", "경상남도",
-    "제주특별자치도", "제주도", "서울", "부산", "대구", "인천", "광주", "대전",
-    "울산", "세종", "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주",
-)
-_PRESERVE = tuple(sorted(set(_LABELS + _REGIONS + ("주민번호",)), key=len, reverse=True))
-_RRN = re.compile(r"(?<!\d)\d{6}\s*[-− ]\s*(?:\d|\*){7}(?![\d*])")
-_TOKEN = re.compile("|".join(re.escape(token) for token in _PRESERVE))
 _OTSL = re.compile(r"<(?:fcel|ecel|lcel|ucel|xcel|nl)>")
-
-
-def mask_text(value: str) -> str:
-    """Mask personal text while preserving known form labels and province names."""
-    value = _RRN.sub("[주민번호]", value)
-    out: list[str] = []
-    cursor = 0
-    for match in _TOKEN.finditer(value):
-        out.append(_mask_chars(value[cursor:match.start()]))
-        out.append(match.group())
-        cursor = match.end()
-    out.append(_mask_chars(value[cursor:]))
-    return "".join(out)
-
-
-def _mask_chars(value: str) -> str:
-    chars = []
-    for char in value:
-        code = ord(char)
-        if 0xAC00 <= code <= 0xD7A3 or 0x1100 <= code <= 0x11FF or 0x3130 <= code <= 0x318F:
-            chars.append("가")
-        elif char.isdigit():
-            chars.append("9")
-        elif char.isascii() and char.isalpha():
-            chars.append("a")
-        else:
-            chars.append(char)
-    return "".join(chars)
+from .privacy import mask_text
 
 
 def _table_kind(page) -> str:
@@ -90,6 +42,9 @@ def summarize(document) -> str:
     for page in document.pages:
         lines.append(f"쪽 {page.page + 1}: OCR {page.ocr_elapsed_sec:.2f}초 / 표 {page.table_elapsed_sec:.2f}초, "
                      f"이미지 {page.image_size[0]}×{page.image_size[1]}px, JPEG {page.jpeg_bytes}바이트")
+        lines.append(f"  특수 토큰 제거 수: {page.special_token_count}, 환각 점수: {page.hallucination_score:.3f}")
+        if page.unsupported_options:
+            lines.append(f"  서버가 거부해 제거한 요청 옵션: {', '.join(page.unsupported_options)} (400)")
         lines.append(f"  OCR 줄 수: {len(page.text_lines)}")
         lines.extend(f"    {mask_text(line)}" for line in page.text_lines)
         kind = _table_kind(page)

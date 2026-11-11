@@ -18,6 +18,7 @@ from ..extractors.resident_abstract import extract, kst_today, months_between, r
 from ..schemas.models import DocType as V2DocType, DocumentInput
 from ..pipeline.ocr import run_ocr
 from ..pipeline.preprocess import PageSource, preprocess
+from .privacy import mask_text
 
 
 DOC_LABELS = {
@@ -139,7 +140,7 @@ def _run_nhis(args, gt: dict) -> None:
                 status, reason = "FAIL", failure_reason
         if label == "성명" and not validation_names.get("page_names_match", True):
             status, reason = "FAIL", "쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못함"
-        print(f"  {label}: {status} — {reason}")
+        print(f"  {label}: {status} — {mask_text(reason)}")
     if args.engine == "jbai":
         _print_jbai_timing(document)
 
@@ -148,6 +149,9 @@ def _print_jbai_timing(document) -> None:
     print(f"[전북AI] 요청 {document.request_count}회, 전체 {document.elapsed_sec:.2f}초")
     for page in document.pages:
         print(f"  쪽 {page.page + 1}: OCR {page.ocr_elapsed_sec:.2f}초 / 표 {page.table_elapsed_sec:.2f}초")
+    dropped = sorted({name for page in document.pages for name in page.unsupported_options})
+    if dropped:
+        print(f"  HTTP 400 뒤 제거한 요청 옵션: {', '.join(dropped)}")
 
 
 def main() -> None:
@@ -250,7 +254,7 @@ def main() -> None:
 
     print(f"서류 판별: {res.detected_type.value} ({res.type_confidence})")
     for w in res.warnings:
-        print(f"  경고: {w}")
+        print(f"  경고: {mask_text(w)}")
 
     print("\n[필드]  추출됨 / 신뢰도 / 정답 일치")
     def cmp(key, f):
@@ -270,12 +274,12 @@ def main() -> None:
 
     print("\n[검증]")
     for v in res.validations:
-        print(f"  {'통과' if v.passed else '실패'}  {v.name}  {v.detail}")
+        print(f"  {'통과' if v.passed else '실패'}  {mask_text(v.name)}  {mask_text(v.detail)}")
 
     print(f"\n[주소 이력] {len(res.history)}건 (시도 / 사유 / 발생일 유무 / 메모 수)")
     for i, e in enumerate(res.history):
-        print(f"  {e.no!s:>3}  {resolved_sido(res.history, i) or '?':4s}  "
-              f"{' '.join(e.reason) or '-':10s}  발생일{'O' if e.occurred else 'X'}  메모{len(e.notes)}")
+        print(f"  {e.no!s:>3}  {mask_text(resolved_sido(res.history, i) or '?'):4s}  "
+              f"{mask_text(' '.join(e.reason) or '-'):10s}  발생일{'O' if e.occurred else 'X'}  메모{len(e.notes)}")
 
     if gt.get("move_in_dates"):
         found = {d for e in res.history for d in (e.occurred, e.reported) if d}

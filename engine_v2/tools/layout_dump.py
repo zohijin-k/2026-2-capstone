@@ -3,9 +3,6 @@
   python -m engine_v2.tools.layout_dump engine_v2/data/private/초본.pdf --engine applevision
 
 양식 라벨(성명, 주소, 발생일, 신고일, 변동사유 ...)은 그대로 두고 나머지는 가린다.
-  한글 → ○   숫자 → #   영문 → x
-예)  "발생일 2018.03.02 전입"  →  "발생일 ####.##.## 전입"
-     "성명 홍길동"              →  "성명 ○○○"
 
 출력은 팀 공유 가능. 단, 공유 전에 한 번 훑어서 가려지지 않은 개인정보가 없는지 확인할 것.
 """
@@ -13,11 +10,11 @@
 from __future__ import annotations
 
 import argparse
-import re
 from pathlib import Path
 
 from ..pipeline.ocr import OcrWord, run_ocr
 from ..pipeline.preprocess import PageSource, preprocess
+from .privacy import mask_text
 
 # 양식에 고정으로 찍히는 문구만. 개인을 특정할 수 있는 단어(시군·동 이름 등)는 넣지 않는다.
 LABELS = sorted({
@@ -29,27 +26,10 @@ LABELS = sorted({
     "전라북도", "전북특별자치도", "특별자치도", "광역시", "특별시",
     "주민등록법", "제29조", "에", "의하여", "위", "와", "같이", "합니다",
 }, key=len, reverse=True)
-LABEL_RE = re.compile("|".join(map(re.escape, LABELS)))
 
 
 def mask(text: str) -> str:
-    keep = [False] * len(text)
-    for m in LABEL_RE.finditer(text):
-        for i in range(m.start(), m.end()):
-            keep[i] = True
-    out = []
-    for ch, k in zip(text, keep):
-        if k:
-            out.append(ch)
-        elif "가" <= ch <= "힣" or "ㄱ" <= ch <= "ㅣ":
-            out.append("○")
-        elif ch.isdigit():
-            out.append("#")
-        elif ch.isalpha():
-            out.append("x")
-        else:
-            out.append(ch)
-    return "".join(out)
+    return mask_text(text, labels=LABELS)
 
 
 def group_lines(words: list[OcrWord], tol: float = 0.6) -> list[list[OcrWord]]:
@@ -80,7 +60,7 @@ def main() -> None:
             continue
         r = run_ocr(args.engine, p.png, p.pixel_size)
         if r.error:
-            raise SystemExit(r.error)
+            raise SystemExit(mask_text(r.error))
         W, H = p.pixel_size
         print(f"\n===== page {p.page}  ({W}x{H}px) =====")
         print(" y%  | x%  단어들 (마스킹)                                   | conf")

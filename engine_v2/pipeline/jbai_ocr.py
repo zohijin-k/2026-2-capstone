@@ -21,7 +21,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..paths import PRIVATE_DIR
+from .jbai_quality import assess_page
 
 MODEL = "PaddlePaddle/PaddleOCR-VL"
 DEFAULT_BASE_URL = "https://ai.jb.go.kr/open-api/v1"
@@ -39,6 +40,9 @@ TASK_OCR = "OCR:"
 TASK_TABLE = "Table Recognition:"
 RENDER_DPI = 200
 JPEG_QUALITY = 95
+MAX_TOKENS_ENV = "JBAI_MAX_TOKENS"
+DEFAULT_MAX_TOKENS = 4096
+MODEL_TOKEN_RE = re.compile(r"<\|[^|\r\n]*?\|>")
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
 
@@ -110,16 +114,29 @@ class JBAIPageResult:
     table_elapsed_sec: float = 0.0
     image_size: tuple[int, int] = (0, 0)
     jpeg_bytes: int = 0
+    request_count: int = 1
+    special_token_count: int = 0
+    unsupported_options: tuple[str, ...] = ()
+    hallucination_score: float = 0.0
+    hangul_ratio: float = 0.0
+    non_local_script_ratio: float = 0.0
+    repeated_line_ratio: float = 0.0
+    repeated_phrase_ratio: float = 0.0
+    characters_per_megapixel: float = 0.0
+    hallucination_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class JBAIDocumentResult:
     pages: list[JBAIPageResult]
     elapsed_sec: float
+    request_count_override: int | None = None
 
     @property
     def request_count(self) -> int:
-        return sum((bool(page.ocr_elapsed_sec) + bool(page.table_elapsed_sec)) or 1 for page in self.pages)
+        if self.request_count_override is not None:
+            return self.request_count_override
+        return sum(page.request_count for page in self.pages)
 
 
 class _TableParser(HTMLParser):
@@ -314,6 +331,31 @@ _RRN_SEPARATED = re.compile(r"(?<!\d)(\d{6})([ \t]*[-‐‑‒–—―~][ \t]*)
 _RRN_COMPACT = re.compile(r"(?<!\d)(\d{6})(\d)(\d{6})(?!\d)")
 
 
+def _max_tokens() -> int:
+    raw = os.environ.get(MAX_TOKENS_ENV, str(DEFAULT_MAX_TOKENS)).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        raise JBAIConfigurationError(f"{MAX_TOKENS_ENV}는 양의 정수여야 합니다.") from None
+    if value < 1:
+        raise JBAIConfigurationError(f"{MAX_TOKENS_ENV}는 양의 정수여야 합니다.")
+    return value
+
+
+def _unsupported_options(response: bytes, options: dict[str, object]) -> list[str]:
+    """Return optional fields explicitly rejected by a 400 response, without exposing its body."""
+    try:
+        message = json.loads(response).get("error", {})
+        raw = json.dumps(message, ensure_ascii=False).lower()
+    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+        raw = response.decode("utf-8", errors="ignore").lower()
+    markers = ("unsupported", "not support", "not accepted", "does not accept", "unknown parameter",
+               "unrecognized", "unexpected", "extra field", "extra_forbidden", "not allowed", "unknown field")
+    if not any(marker in raw for marker in markers):
+        return []
+    return [name for name in ("temperature", "max_tokens") if name in options and name in raw]
+
+
 def mask_rrn(text: str) -> str:
     """주민등록번호 뒷자리 중 성별 자리 뒤 6자리를 `*`로 지운다.
 
@@ -435,7 +477,9 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
                  page: int = 0, source_path: str | Path | None = None,
                  is_demo_upload: bool = False,
                  sleep: Callable[[float], None] = time.sleep,
-                 timeout: float = REQUEST_TIMEOUT_SEC) -> JBAIPageResult:
+                 timeout: float = REQUEST_TIMEOUT_SEC,
+                 temperature: float | None = 0.0,
+                 max_tokens: int | None = None) -> JBAIPageResult:
     """합성/승인 문서의 한 JPEG 쪽을 요청한다. task는 OCR: 또는 Table Recognition:.
 
     `image`는 JPEG 바이트다(`render_pdf_pages_200dpi`·`image_file_to_jpeg`로 만든다).
@@ -453,25 +497,35 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
     base_url = (os.environ.get("JBAI_BASE_URL", "").strip() or DEFAULT_BASE_URL).rstrip("/")
     url = base_url + "/ocr/chat/completions"
     data_url = "data:image/jpeg;base64," + base64.b64encode(image).decode("ascii")
+    options: dict[str, object] = {}
+    if max_tokens != 0:
+        options["max_tokens"] = max_tokens if max_tokens is not None else _max_tokens()
+    if temperature is not None:
+        options["temperature"] = temperature
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": [
             {"type": "text", "text": task},
             {"type": "image_url", "image_url": {"url": data_url}},
         ]}],
+        **options,
     }
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        method="POST",
-    )
     started = time.monotonic()
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    retry_after_attempts = 0
+    request_count = 0
+    dropped: list[str] = []
+    while True:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            method="POST",
+        )
         _RATE_LIMITER.acquire()
         try:
             with _CONCURRENCY:
                 status, response_bytes, headers = _http_post(request, timeout)
+                request_count += 1
         except Exception as error:  # noqa: BLE001
             if _is_timeout(error):
                 raise JBAITimeoutError("전북AI OCR 응답 시간이 초과되었습니다.") from None
@@ -482,13 +536,23 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
                 status=401,
             )
         if status == 429:
-            if attempt == MAX_ATTEMPTS:
+            if retry_after_attempts >= MAX_ATTEMPTS - 1:
                 raise JBAIRateLimitError(
                     f"전북AI OCR이 재시도 {MAX_ATTEMPTS - 1}회 뒤에도 요청을 제한했습니다.",
                     status=429,
                 )
-            sleep(_retry_after(headers, attempt))
+            retry_after_attempts += 1
+            sleep(_retry_after(headers, retry_after_attempts + 1))
             continue
+        if status == 400:
+            unsupported = _unsupported_options(response_bytes, options)
+            if unsupported:
+                for name in unsupported:
+                    options.pop(name, None)
+                    dropped.append(name)
+                payload = {**{key: value for key, value in payload.items()
+                              if key not in {"temperature", "max_tokens"}}, **options}
+                continue
         if status < 200 or status >= 300:
             raise JBAIRequestError(f"전북AI OCR 요청이 HTTP {status}로 실패했습니다.", status=status)
         try:
@@ -496,17 +560,21 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise JBAIResponseError("전북AI OCR 응답이 JSON이 아닙니다.", status=status) from None
         # 원문(주민번호 13자리 포함)은 여기서 바로 가린다. 아래로는 가린 텍스트만 흐른다.
-        content = mask_rrn(_response_content(body))
+        response_content = _response_content(body)
+        special_count = len(MODEL_TOKEN_RE.findall(response_content))
+        content = mask_rrn(MODEL_TOKEN_RE.sub("", response_content))
         del body, response_bytes
+        elapsed = time.monotonic() - started
+        lines = _text_lines(content)
+        tables = parse_html_tables(content) or parse_otsl_tables(content)
         return JBAIPageResult(
-            page=page, text_lines=_text_lines(content),
-            tables=parse_html_tables(content) or parse_otsl_tables(content),
-            elapsed_sec=time.monotonic() - started, raw_content=content,
-            ocr_elapsed_sec=(time.monotonic() - started) if task == TASK_OCR else 0.0,
-            table_elapsed_sec=(time.monotonic() - started) if task == TASK_TABLE else 0.0,
-            image_size=size, jpeg_bytes=len(image),
+            page=page, text_lines=lines, tables=tables,
+            elapsed_sec=elapsed, raw_content=content,
+            ocr_elapsed_sec=elapsed if task == TASK_OCR else 0.0,
+            table_elapsed_sec=elapsed if task == TASK_TABLE else 0.0,
+            image_size=size, jpeg_bytes=len(image), request_count=request_count,
+            special_token_count=special_count, unsupported_options=tuple(dropped),
         )
-    raise JBAIRateLimitError("전북AI OCR 요청이 재시도 한도를 넘었습니다.", status=429)
 
 
 def _encode_jpeg(image) -> bytes:
@@ -525,12 +593,15 @@ def _encode_jpeg(image) -> bytes:
     return buffer.getvalue()
 
 
-def render_pdf_pages_200dpi(file_path: str | Path) -> list[tuple[int, bytes, tuple[int, int]]]:
-    """PDF를 쪽 순서대로 200dpi RGB(알파 없음)로 렌더링해 JPEG(품질 95)로 만든다."""
+def render_pdf_pages_200dpi(file_path: str | Path, *, dpi: int = RENDER_DPI,
+                            grayscale_contrast: bool = False) -> list[tuple[int, bytes, tuple[int, int]]]:
+    """PDF를 쪽 순서대로 렌더링해 JPEG(품질 95)로 만든다."""
     import pymupdf
-    from PIL import Image
+    from PIL import Image, ImageEnhance, ImageOps
 
-    scale = RENDER_DPI / 72
+    if dpi < 72 or dpi > 600:
+        raise ValueError("렌더 dpi는 72~600이어야 합니다.")
+    scale = dpi / 72
     rendered = []
     with pymupdf.open(file_path) as document:
         if document.needs_pass:
@@ -543,6 +614,9 @@ def render_pdf_pages_200dpi(file_path: str | Path) -> list[tuple[int, bytes, tup
             if pix.n != 3:
                 pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
             image = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            if grayscale_contrast:
+                image = ImageOps.autocontrast(ImageOps.grayscale(image))
+                image = ImageEnhance.Contrast(image).enhance(1.8)
             rendered.append((index, _encode_jpeg(image), (pix.width, pix.height)))
     return rendered
 
@@ -564,14 +638,16 @@ def image_file_to_jpeg(file_path: str | Path) -> tuple[bytes, tuple[int, int]]:
 
 
 def run_jbai_pdf(file_path: str | Path, *, task: str = TASK_OCR,
-                 is_demo_upload: bool = False) -> JBAIDocumentResult:
+                 is_demo_upload: bool = False, dpi: int = RENDER_DPI,
+                 grayscale_contrast: bool = False, temperature: float | None = 0.0,
+                 max_tokens: int | None = None) -> JBAIDocumentResult:
     """가드 검사 후 PDF를 페이지 단위로 순서대로 요청한다."""
     ensure_external_allowed(file_path, is_demo_upload=is_demo_upload)
     started = time.monotonic()
-    rendered = render_pdf_pages_200dpi(file_path)
+    rendered = render_pdf_pages_200dpi(file_path, dpi=dpi, grayscale_contrast=grayscale_contrast)
     results = [
         run_jbai_ocr(image, size, task=task, page=index, source_path=file_path,
-                     is_demo_upload=is_demo_upload)
+                     is_demo_upload=is_demo_upload, temperature=temperature, max_tokens=max_tokens)
         for index, image, size in rendered
     ]
     return JBAIDocumentResult(pages=results, elapsed_sec=time.monotonic() - started)
@@ -581,50 +657,73 @@ def run_jbai_image_pair(image: bytes, size: tuple[int, int], *, page: int = 0,
                         source_path: str | Path | None = None,
                         is_demo_upload: bool = False,
                         sleep: Callable[[float], None] = time.sleep,
-                        timeout: float = REQUEST_TIMEOUT_SEC) -> JBAIPageResult:
+                        timeout: float = REQUEST_TIMEOUT_SEC,
+                        temperature: float | None = 0.0,
+                        max_tokens: int | None = None) -> JBAIPageResult:
     """JPEG 한 쪽에 OCR과 표 인식을 각각 호출해 텍스트·표를 함께 보존한다."""
     text_result = run_jbai_ocr(image, size, task=TASK_OCR, page=page,
                                source_path=source_path, is_demo_upload=is_demo_upload,
-                               sleep=sleep, timeout=timeout)
+                               sleep=sleep, timeout=timeout, temperature=temperature,
+                               max_tokens=max_tokens)
     table_result = run_jbai_ocr(image, size, task=TASK_TABLE, page=page,
                                 source_path=source_path, is_demo_upload=is_demo_upload,
-                                sleep=sleep, timeout=timeout)
-    return JBAIPageResult(
+                                sleep=sleep, timeout=timeout, temperature=temperature,
+                                max_tokens=max_tokens)
+    merged = JBAIPageResult(
         page=page, text_lines=text_result.text_lines, tables=table_result.tables,
         elapsed_sec=text_result.elapsed_sec + table_result.elapsed_sec,
         raw_content=text_result.raw_content, table_content=table_result.raw_content,
         ocr_elapsed_sec=text_result.elapsed_sec, table_elapsed_sec=table_result.elapsed_sec,
         image_size=size, jpeg_bytes=len(image),
+        request_count=text_result.request_count + table_result.request_count,
+        special_token_count=text_result.special_token_count + table_result.special_token_count,
+        unsupported_options=tuple(dict.fromkeys(text_result.unsupported_options + table_result.unsupported_options)),
     )
+    assessment = assess_page(merged.text_lines, merged.table_content, size)
+    return replace(merged, hallucination_score=assessment.score, hangul_ratio=assessment.hangul_ratio,
+                   non_local_script_ratio=assessment.non_local_script_ratio,
+                   repeated_line_ratio=assessment.repeated_line_ratio,
+                   repeated_phrase_ratio=assessment.repeated_phrase_ratio,
+                   characters_per_megapixel=assessment.characters_per_megapixel,
+                   hallucination_reasons=assessment.reasons)
 
 
 def run_jbai_pdf_pair(file_path: str | Path, *, is_demo_upload: bool = False,
                       sleep: Callable[[float], None] = time.sleep,
-                      timeout: float = REQUEST_TIMEOUT_SEC) -> JBAIDocumentResult:
+                      timeout: float = REQUEST_TIMEOUT_SEC, dpi: int = RENDER_DPI,
+                      grayscale_contrast: bool = False, temperature: float | None = 0.0,
+                      max_tokens: int | None = None) -> JBAIDocumentResult:
     """PDF를 쪽마다 200dpi JPEG로 렌더링해 OCR·표 인식을 모두 실행한다."""
     path = Path(file_path)
     ensure_external_allowed(path, is_demo_upload=is_demo_upload)
     started = time.monotonic()
     pages = [
         run_jbai_image_pair(image, size, page=index, source_path=path,
-                            is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout)
-        for index, image, size in render_pdf_pages_200dpi(path)
+                            is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout,
+                            temperature=temperature, max_tokens=max_tokens)
+        for index, image, size in render_pdf_pages_200dpi(path, dpi=dpi,
+                                                          grayscale_contrast=grayscale_contrast)
     ]
     return JBAIDocumentResult(pages=pages, elapsed_sec=time.monotonic() - started)
 
 
 def run_jbai_file_pair(file_path: str | Path, *, is_demo_upload: bool = False,
                        sleep: Callable[[float], None] = time.sleep,
-                       timeout: float = REQUEST_TIMEOUT_SEC) -> JBAIDocumentResult:
+                       timeout: float = REQUEST_TIMEOUT_SEC, dpi: int = RENDER_DPI,
+                       grayscale_contrast: bool = False, temperature: float | None = 0.0,
+                       max_tokens: int | None = None) -> JBAIDocumentResult:
     """PDF는 쪽마다, 사진은 한 쪽으로 JPEG를 만들어 OCR·표 인식을 모두 실행한다."""
     path = Path(file_path)
     if path.suffix.lower() == ".pdf":
-        return run_jbai_pdf_pair(path, is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout)
+        return run_jbai_pdf_pair(path, is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout,
+                                 dpi=dpi, grayscale_contrast=grayscale_contrast,
+                                 temperature=temperature, max_tokens=max_tokens)
     if path.suffix.lower() not in IMAGE_SUFFIXES:
         raise JBAIRequestError("전북AI OCR은 PDF와 사진 파일만 보낼 수 있습니다.")
     ensure_external_allowed(path, is_demo_upload=is_demo_upload)
     started = time.monotonic()
     image, size = image_file_to_jpeg(path)
     page = run_jbai_image_pair(image, size, page=0, source_path=path,
-                               is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout)
+                               is_demo_upload=is_demo_upload, sleep=sleep, timeout=timeout,
+                               temperature=temperature, max_tokens=max_tokens)
     return JBAIDocumentResult(pages=[page], elapsed_sec=time.monotonic() - started)
