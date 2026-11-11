@@ -1,14 +1,24 @@
 {
   "double_savings": {
-    "서식1": "2026_두배적금_공고문.hwp",
-    "서식2": "2026_두배적금_공고문.hwp",
-    "서식3": "2026_두배적금_공고문.hwp",
-    "서식4": "2026_두배적금_공고문.hwp",
-    "서식5": "2026_두배적금_공고문.hwp"
+    "files": {
+      "savings_forms": {"filename": "2026_두배적금_공고문.hwp", "kind": "서식"}
+    },
+    "forms": {
+      "서식1": "savings_forms",
+      "서식2": "savings_forms",
+      "서식3": "savings_forms",
+      "서식4": "savings_forms",
+      "서식5": "savings_forms"
+    }
   },
   "job_package": {
-    "job_application": "2026_취업패키지_신청서.hwp",
-    "job_consent": "2026_취업패키지_신청서.hwp",
-    "job_interview_confirmation": "2026_취업패키지_신청서.hwp"
+    "files": {
+      "job_forms": {"filename": "2026_취업패키지_신청서.hwp", "kind": "서식"}
+    },
+    "forms": {
+      "job_application": "job_forms",
+      "job_consent": "job_forms",
+      "job_interview_confirmation": "job_forms"
+    }
   }
 }

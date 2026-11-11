@@ -53,7 +53,7 @@ def _filename_header(value: str, disposition: str = FILE_DISPOSITION) -> str:
     return f"{disposition}; filename*=UTF-8''{quote(value, safe='')}"
 
 
-def _manifest() -> dict[str, dict[str, str]]:
+def _manifest() -> dict[str, Any]:
     path = HWP_DIR / "manifest.json"
     if not path.is_file():
         return {}
@@ -64,12 +64,47 @@ def _manifest() -> dict[str, dict[str, str]]:
     return data if isinstance(data, dict) else {}
 
 
-def _hwp_path(program_code: str, form_no: str):
-    filename = (_manifest().get(program_code) or {}).get(form_no)
+def _hwp_entry(program_code: str, form_no: str) -> tuple[str, str, Path] | None:
+    section = _manifest().get(program_code) or {}
+    forms = section.get("forms") or {}
+    files = section.get("files") or {}
+    entry_key = forms.get(form_no)
+    entry = files.get(entry_key) if isinstance(entry_key, str) else None
+    if entry is None:
+        legacy = section.get(form_no)
+        if isinstance(legacy, str):
+            entry_key = legacy
+            entry = {"filename": legacy, "kind": "서식"}
+    if not isinstance(entry, dict):
+        return None
+    filename = entry.get("filename")
+    kind = entry.get("kind")
     if not isinstance(filename, str) or Path(filename).name != filename or not filename.lower().endswith(".hwp"):
         return None
+    if kind not in {"공고문", "서식"}:
+        return None
     wanted = unicodedata.normalize("NFC", filename)
-    return next((p for p in HWP_DIR.glob("*.hwp") if unicodedata.normalize("NFC", p.name) == wanted), None)
+    path = next((p for p in HWP_DIR.glob("*.hwp") if unicodedata.normalize("NFC", p.name) == wanted), None)
+    return (str(entry_key), str(kind), path) if path else None
+
+
+def _hwp_path(program_code: str, form_no: str):
+    entry = _hwp_entry(program_code, form_no)
+    return entry[2] if entry else None
+
+
+def _application_hwp_entries(app: Any) -> list[tuple[str, str, Path]]:
+    forms = list(available_forms(app))
+    if app.program_code != "double_savings":
+        forms.append("job_interview_confirmation")
+    entries: dict[str, tuple[str, str, Path]] = {}
+    for form_no in forms:
+        entry = _hwp_entry(app.program_code, form_no)
+        if entry:
+            _, kind, path = entry
+            unique_key = unicodedata.normalize("NFC", path.name)
+            entries[unique_key] = (unique_key, kind, path)
+    return list(entries.values())
 
 
 def _has_written_content(app: Any, form_no: str) -> bool:
@@ -153,7 +188,7 @@ def read_signature_scan(application_id: int) -> Response:
     return Response(processed.read_bytes(), media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
-def form_links(application_id: int) -> list[dict[str, Any]]:
+def form_links(application_id: int, *, include_paper_form: bool = False) -> list[dict[str, Any]]:
     """담당자 화면 "작성 서식" 탭 목록.
 
     좌표 맵이나 템플릿이 없으면 목록에서 빠진다 — P7은 선택 기능이라, 준비가
@@ -163,7 +198,7 @@ def form_links(application_id: int) -> list[dict[str, Any]]:
     paper_admin_consent = bool(((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"))
     links: list[dict[str, Any]] = []
     for form_no in available_forms(app):
-        if form_no == "서식5" and paper_admin_consent:
+        if form_no == "서식5" and paper_admin_consent and not include_paper_form:
             continue
         spec = form_coords.load(form_no)
         if spec is None or not spec.available:
@@ -175,11 +210,7 @@ def form_links(application_id: int) -> list[dict[str, Any]]:
                 "label": f"{form_no} {spec.title}",
                 "file_url": f"/api/applications/{application_id}/forms/{form_no}.pdf",
                 "file_name": f"{app.application_no}_{form_no}.pdf",
-                "files": {
-                    "filled": None if (form_no == "서식5" and paper_admin_consent) else f"/api/applications/{application_id}/forms/files/{form_no}/filled.pdf",
-                    "blank": f"/api/applications/{application_id}/forms/files/{form_no}/blank.pdf",
-                    "hwp": f"/api/applications/{application_id}/forms/files/{form_no}/source.hwp" if _hwp_path(app.program_code, form_no) else None,
-                },
+                "hwp_available": _hwp_path(app.program_code, form_no) is not None,
             }
         )
     return links
@@ -187,7 +218,7 @@ def form_links(application_id: int) -> list[dict[str, Any]]:
 
 @router.get("/{application_id}/forms")
 def list_forms(application_id: int) -> list[dict[str, Any]]:
-    return form_links(application_id)
+    return form_links(application_id, include_paper_form=True)
 
 
 @router.get("/{application_id}/forms/layouts/{form_no}")
@@ -349,24 +380,50 @@ def all_forms_archive(application_id: int) -> Response:
     app = load_application(application_id)
     output = io.BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        added_hwp: set[str] = set()
         for form_no in available_forms(app):
             spec = form_coords.load(form_no)
             if spec and spec.available:
                 archive.writestr(_form_filename(app, form_no, "pdf"), spec.template.read_bytes())
-            source = _hwp_path(app.program_code, form_no)
-            if source and source.name not in added_hwp:
-                archive.writestr(f"원본 HWP/{source.name}", source.read_bytes())
-                added_hwp.add(source.name)
         if app.program_code != "double_savings":
-            form_no = "job_interview_confirmation"
-            spec = form_coords.load(form_no)
+            spec = form_coords.load("job_interview_confirmation")
             if spec and spec.available:
-                archive.writestr(_form_filename(app, form_no, "pdf"), spec.template.read_bytes())
-            source = _hwp_path(app.program_code, form_no)
-            if source and source.name not in added_hwp:
-                archive.writestr(f"원본 HWP/{source.name}", source.read_bytes())
-    name = "2026_두배적금_서식전체.zip" if app.program_code == "double_savings" else "2026_취업패키지_서식전체.zip"
+                archive.writestr(_form_filename(app, "job_interview_confirmation", "pdf"), spec.template.read_bytes())
+    name = "2026_두배적금_빈서식PDF모음.zip" if app.program_code == "double_savings" else "2026_취업패키지_빈서식PDF모음.zip"
+    return Response(output.getvalue(), media_type="application/zip", headers={"Content-Disposition": _filename_header(name), "Cache-Control": "private, no-store"})
+
+
+def _hwp_kind_label(kind: str) -> str:
+    return "공고문 원본 HWP(서식 포함)" if kind == "공고문" else "서식 원본 HWP"
+
+
+@router.get("/{application_id}/forms/files/original-hwp/options")
+def original_hwp_options(application_id: int) -> dict[str, str | None]:
+    app = load_application(application_id)
+    entries = _application_hwp_entries(app)
+    if not entries:
+        return {"url": None, "label": None}
+    kinds = {kind for _, kind, _ in entries}
+    label = _hwp_kind_label(next(iter(kinds))) if len(kinds) == 1 else "원본 HWP 모음"
+    if len(entries) > 1:
+        label += " (zip)"
+    return {"url": f"/api/applications/{application_id}/forms/files/original-hwp", "label": label}
+
+
+@router.get("/{application_id}/forms/files/original-hwp")
+def original_hwp_bundle(application_id: int) -> Response:
+    app = load_application(application_id)
+    entries = _application_hwp_entries(app)
+    if not entries:
+        raise HTTPException(404, "원본 HWP가 없습니다.")
+    if len(entries) == 1:
+        path = entries[0][2]
+        return Response(path.read_bytes(), media_type="application/octet-stream", headers={"Content-Disposition": _filename_header(path.name), "Cache-Control": "private, no-store"})
+    output = io.BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        for _, _, path in entries:
+            archive.writestr(path.name, path.read_bytes())
+    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
+    name = f"2026_{business}_원본HWP모음.zip"
     return Response(output.getvalue(), media_type="application/zip", headers={"Content-Disposition": _filename_header(name), "Cache-Control": "private, no-store"})
 
 

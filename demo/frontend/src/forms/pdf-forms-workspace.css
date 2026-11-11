@@ -15,10 +15,11 @@
 .pdf-form-row__info { flex: 1; min-width: 0; }
 .pdf-form-row__actions { display: flex; gap: 8px; }
 .pdf-form-row__paper-mode { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; }
-.pdf-form-row__files { position: relative; }
-.pdf-form-row__files > a, .pdf-form-row__files > summary { display: block; }
-.pdf-form-row__files[open] { z-index: 2; }
-.pdf-form-row__files[open] > a { position: relative; padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-decoration: none; white-space: nowrap; }
+.pdf-form-row__paper-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pdf-form-row__paper-files p { flex-basis: 100%; margin: 2px 0; }
+.pdf-forms__bulk-menu { position: relative; width: fit-content; }
+.pdf-forms__bulk-menu > a { display: block; margin-top: 3px; padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-decoration: none; white-space: nowrap; }
+.pdf-forms__bulk-menu[open] { z-index: 3; }
 .pdf-forms__selfcheck { display: grid; gap: 12px; }
 .pdf-forms__selfcheck h3 { margin: 0; }
 .pdf-forms__selfcheck fieldset { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; }

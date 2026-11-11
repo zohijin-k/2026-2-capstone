@@ -6,7 +6,10 @@ import {
   fetchChecklist,
   putDocContext,
   deleteDocument,
-  allFormsArchiveUrl,
+  blankFormsArchiveUrl,
+  fetchOriginalHwpOptions,
+  blankFormUrl,
+  sourceFormHwpUrl,
   fetchSubsidyItems,
   saveSubsidyItems,
   uploadSignatureScan,
@@ -138,7 +141,8 @@ export default function PdfFormsWorkspace({
   const formNos = isJob ? JOB_FORMS : SAVINGS_FORMS
   const [layouts, setLayouts] = useState<Record<string, FormLayout>>({})
   const [availableFormCount, setAvailableFormCount] = useState(0)
-  const [formFiles, setFormFiles] = useState<Record<string, NonNullable<Awaited<ReturnType<typeof fetchApplicantForms>>[number]['files']>>>({})
+  const [formHwpAvailable, setFormHwpAvailable] = useState<Record<string, boolean>>({})
+  const [hwpBundle, setHwpBundle] = useState<{ url: string | null; label: string | null }>({ url: null, label: null })
   const [paperAllowed, setPaperAllowed] = useState<Record<string, boolean>>({})
   const [paperForms, setPaperForms] = useState<Record<string, boolean>>({})
   const [active, setActive] = useState<ActiveForm | null>(null)
@@ -162,12 +166,14 @@ export default function PdfFormsWorkspace({
       Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo))),
       fetchApplicantForms(applicationId),
       fetchChecklist(applicationId),
+      fetchOriginalHwpOptions(applicationId),
     ])
-      .then(([items, availableForms, checklist]) => {
+      .then(([items, availableForms, checklist, hwpOptions]) => {
         if (alive) {
           setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
           setAvailableFormCount(availableForms.length)
-          setFormFiles(Object.fromEntries(availableForms.map((item) => [item.form_no, item.files || { filled: null, blank: '', hwp: null }])))
+          setFormHwpAvailable(Object.fromEntries(availableForms.map((item) => [item.form_no, item.hwp_available])))
+          setHwpBundle(hwpOptions)
           setPaperAllowed(checklist.program.paper_forms || {})
           setPaperForms(checklist.context.paper_forms || {})
           onPaperFormsChange?.(checklist.context.paper_forms || {})
@@ -311,18 +317,6 @@ export default function PdfFormsWorkspace({
   }
 
   const hasStarted = (formNo: string): boolean => requiredItems(formNo).some(requirementSatisfied)
-
-  const hasFilledContent = (formNo: string): boolean => {
-    if (formNo === '서식2') return Object.values(answers).some(Boolean)
-    if (formNo === '서식3') return !!(consent.privacy || consent.uniqueId)
-    if (formNo === '서식4') return !!consent.thirdParty
-    if (formNo === '서식5') return !!(form5.agree || form5.signature || form5.signatureScanUploaded)
-    if (formNo === 'job_consent') return !!(consent.privacy || consent.thirdParty || readForm(form1, 'consent.job.signature'))
-    const keys = formNo === 'job_application'
-      ? ['address', 'email', 'bankName', 'accountNo', 'job.signature']
-      : ['address', 'email', 'savingPurpose', 'priorJoined', 'gender', 'householdType', 'householdSize', 'workType', 'workplaceRegion', 'bankName', 'accountNo', 'accountHolder']
-    return keys.some((key) => truthy(readForm(form1, key))) || (formNo === 'job_application' && subsidySelections.length > 0)
-  }
 
   const allReady = formNos.every((formNo) => !!layouts[formNo] && (paperForms[formNo] || missing(formNo).length === 0)) &&
     (isJob ? selfCheckItems.every((item) => !!answers[item.no]) : true)
@@ -691,7 +685,10 @@ export default function PdfFormsWorkspace({
       <header className="pdf-forms__intro">
         <h2>신청 서식 작성</h2>
         <p>원본 서식 위에 직접 입력합니다. 작성 내용은 자동 저장됩니다.</p>
-        <a className="btn" href={allFormsArchiveUrl(applicationId)}>서식 모두 내려받기</a>
+        <details className="pdf-forms__bulk-menu"><summary className="btn">서식 모두 내려받기</summary>
+          <a href={blankFormsArchiveUrl(applicationId)}>빈 서식 PDF 모음(zip)</a>
+          {hwpBundle.url && hwpBundle.label && <a href={hwpBundle.url}>{hwpBundle.label}</a>}
+        </details>
       </header>
       <ul className="pdf-forms__list">
         {formNos.map((formNo) => {
@@ -710,7 +707,11 @@ export default function PdfFormsWorkspace({
                     <option value="screen">화면에서 작성</option><option value="paper">종이에 작성 후 스캔본 제출</option>
                   </select>
                 </label>}
-                {paperForms[formNo] && <p>빈 서식 PDF·원본 HWP를 내려받아 작성하고 서명한 뒤, 서류 업로드 단계에서 올려 주세요.</p>}
+                {paperForms[formNo] && <div className="pdf-form-row__paper-files">
+                  <p>빈 서식 PDF·원본 HWP를 내려받아 작성하고 서명한 뒤, 서류 업로드 단계에서 올려 주세요.</p>
+                  <a className="btn btn--small" href={blankFormUrl(applicationId, formNo)}>빈 서식 PDF</a>
+                  {formHwpAvailable[formNo] && <a className="btn btn--small" href={sourceFormHwpUrl(applicationId, formNo)}>원본 HWP</a>}
+                </div>}
               </div>
               <div className="pdf-form-row__actions">
                 {!readOnly && !paperForms[formNo] && <button type="button" className="btn btn--primary" disabled={!layouts[formNo]} onClick={() => { setPage(0); setSignatureTarget(null); setActive({ formNo, mode: 'edit' }) }}>
@@ -718,11 +719,6 @@ export default function PdfFormsWorkspace({
                 </button>}
                 {!paperForms[formNo] && <button type="button" className="btn" disabled={!layouts[formNo] || saving} onClick={() => void startPreview(formNo)}>미리보기</button>}
                 {!readOnly && !paperForms[formNo] && <button type="button" className="btn" disabled={!layouts[formNo] || state.state === 'empty'} onClick={() => resetForm(formNo)}>다시 작성</button>}
-                <details className="pdf-form-row__files"><summary className="btn">내려받기</summary>
-                  {hasFilledContent(formNo) && !(formNo === '서식5' && paperForms[formNo]) && formFiles[formNo]?.filled && <a href={formFiles[formNo].filled}>작성한 내용 PDF</a>}
-                  <a href={formFiles[formNo]?.blank}>빈 서식 PDF</a>
-                  {formFiles[formNo]?.hwp && <a href={formFiles[formNo].hwp}>원본 HWP</a>}
-                </details>
               </div>
             </li>
           )

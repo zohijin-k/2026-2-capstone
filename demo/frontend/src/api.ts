@@ -512,14 +512,14 @@ export interface ApplicantFormSummary {
   label: string
   file_url: string
   file_name: string
-  files?: { filled: string | null; blank: string; hwp: string | null }
+  hwp_available: boolean
 }
 
-export const allFormsArchiveUrl = (id: number) => `/api/applications/${id}/forms/files/all.zip`
-export const interviewFormFiles = (id: number) => ({
-  blank: `/api/applications/${id}/forms/files/job_interview_confirmation/blank.pdf`,
-  hwp: `/api/applications/${id}/forms/files/job_interview_confirmation/source.hwp`,
-})
+export const blankFormsArchiveUrl = (id: number) => `/api/applications/${id}/forms/files/all.zip`
+export const fetchOriginalHwpOptions = (id: number) =>
+  json<{ url: string | null; label: string | null }>(`/api/applications/${id}/forms/files/original-hwp/options`)
+export const blankFormUrl = (id: number, formNo: string) => `/api/applications/${id}/forms/files/${encodeURIComponent(formNo)}/blank.pdf`
+export const sourceFormHwpUrl = (id: number, formNo: string) => `/api/applications/${id}/forms/files/${encodeURIComponent(formNo)}/source.hwp`
 export const fetchInterviewFormFileOptions = (id: number) =>
   json<{ blank: string; hwp: string | null }>(`/api/applications/${id}/forms/files/job_interview_confirmation/options`)
 

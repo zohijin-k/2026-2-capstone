@@ -485,28 +485,70 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
     old_hwp_dir = forms_api.HWP_DIR
     fake_hwp = tmp / "hwp"
     fake_hwp.mkdir()
-    fake_name = "synthetic-savings.hwp"
+    fake_name = "합성_두배적금.hwp"
     (fake_hwp / fake_name).write_bytes(b"synthetic-hwp-test")
-    fake_job_name = "synthetic-job.hwp"
+    fake_job_name = "합성_취업패키지.hwp"
     (fake_hwp / fake_job_name).write_bytes(b"synthetic-job-hwp-test")
+    fake_extra_name = "합성_추가서식.hwp"
+    (fake_hwp / fake_extra_name).write_bytes(b"synthetic-extra-hwp-test")
     (fake_hwp / "manifest.json").write_text(json.dumps({
-        "double_savings": {f"서식{i}": fake_name for i in range(1, 6)},
-        "job_package": {"job_application": fake_job_name, "job_consent": fake_job_name, "job_interview_confirmation": fake_job_name},
+        "double_savings": {
+            "files": {"savings": {"filename": fake_name, "kind": "서식"}},
+            "forms": {f"서식{i}": "savings" for i in range(1, 6)},
+        },
+        "job_package": {
+            "files": {"job": {"filename": fake_job_name, "kind": "서식"}},
+            "forms": {"job_application": "job", "job_consent": "job", "job_interview_confirmation": "job"},
+        },
     }), encoding="utf-8")
     forms_api.HWP_DIR = fake_hwp
     try:
         forms = client.get(f"/api/applications/{app_id}/forms").json()
-        check("HWP 연결 메뉴 URL", forms[-1]["files"]["hwp"], f"/api/applications/{app_id}/forms/files/서식5/source.hwp")
+        check("HWP 원본 보유 표시", forms[-1]["hwp_available"], True)
         blank = client.get(f"/api/applications/{app_id}/forms/files/서식5/blank.pdf")
         check("빈 PDF 다운로드", blank.status_code, 200)
         check_true("한글 파일명 RFC 5987", "filename*=UTF-8''" in blank.headers["content-disposition"] and "2026_두배적금_서식5" in __import__("urllib.parse", fromlist=["unquote"]).unquote(blank.headers["content-disposition"]))
         hwp = client.get(f"/api/applications/{app_id}/forms/files/서식5/source.hwp")
         check("원본 HWP 다운로드", hwp.content, b"synthetic-hwp-test")
+        check_true("원본 HWP 한글 filename*", "filename*=UTF-8''" in hwp.headers["content-disposition"] and "합성_두배적금.hwp" in __import__("urllib.parse", fromlist=["unquote"]).unquote(hwp.headers["content-disposition"]))
+        bundle_options = client.get(f"/api/applications/{app_id}/forms/files/original-hwp/options").json()
+        check("단일 HWP 메뉴 이름", bundle_options["label"], "서식 원본 HWP")
+        single_hwp = client.get(bundle_options["url"])
+        check("단일 원본은 HWP 직접 제공", single_hwp.content, b"synthetic-hwp-test")
+        announcement_manifest = {
+            "double_savings": {
+                "files": {"savings": {"filename": fake_name, "kind": "공고문"}},
+                "forms": {f"서식{i}": "savings" for i in range(1, 6)},
+            }
+        }
+        (fake_hwp / "manifest.json").write_text(json.dumps(announcement_manifest), encoding="utf-8")
+        announcement_options = client.get(f"/api/applications/{app_id}/forms/files/original-hwp/options").json()
+        check("공고문 종류 메뉴 이름", announcement_options["label"], "공고문 원본 HWP(서식 포함)")
         archive = client.get(f"/api/applications/{app_id}/forms/files/all.zip")
         with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
             names = bundle.namelist()
-        check("전체 ZIP 빈 PDF 개수", sum(name.endswith(".pdf") for name in names), 5)
-        check("전체 ZIP HWP 중복 제거", sum(name.endswith(".hwp") for name in names), 1)
+        check("빈 서식 PDF ZIP 개수", sum(name.endswith(".pdf") for name in names), 5)
+        check("빈 서식 PDF ZIP에 HWP 없음", sum(name.endswith(".hwp") for name in names), 0)
+        multi_manifest = {
+            "double_savings": {
+                "files": {
+                    "savings": {"filename": fake_name, "kind": "서식"},
+                    "savings_extra": {"filename": fake_extra_name, "kind": "서식"},
+                },
+                "forms": {"서식1": "savings", "서식2": "savings", "서식3": "savings", "서식4": "savings_extra", "서식5": "savings"},
+            },
+            "job_package": {
+                "files": {"job": {"filename": fake_job_name, "kind": "서식"}},
+                "forms": {"job_application": "job", "job_consent": "job", "job_interview_confirmation": "job"},
+            },
+        }
+        (fake_hwp / "manifest.json").write_text(json.dumps(multi_manifest), encoding="utf-8")
+        multi_options = client.get(f"/api/applications/{app_id}/forms/files/original-hwp/options").json()
+        check("여러 HWP 메뉴는 zip", multi_options["label"], "서식 원본 HWP (zip)")
+        multi_hwp = client.get(multi_options["url"])
+        with zipfile.ZipFile(io.BytesIO(multi_hwp.content)) as bundle:
+            multi_names = bundle.namelist()
+        check("여러 원본 HWP zip 구성", multi_names, [fake_name, fake_extra_name])
         job_id = client.post("/api/applications", json={"program_code": JOB_PACKAGE}).json()["id"]
         interview_options = client.get(f"/api/applications/{job_id}/forms/files/job_interview_confirmation/options").json()
         check_true("면접확인서 다운로드 메뉴에 PDF·HWP", interview_options["blank"].endswith("blank.pdf") and interview_options["hwp"].endswith("source.hwp"))
@@ -515,11 +557,16 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
         job_zip = client.get(f"/api/applications/{job_id}/forms/files/all.zip")
         with zipfile.ZipFile(io.BytesIO(job_zip.content)) as bundle:
             job_names = bundle.namelist()
-        check("취업패키지 전체 ZIP에 면접확인서 PDF 포함", sum(name.endswith(".pdf") for name in job_names), 3)
-        check("취업패키지 전체 ZIP 원본 HWP 중복 제거", sum(name.endswith(".hwp") for name in job_names), 1)
-        (fake_hwp / "manifest.json").write_text(json.dumps({"double_savings": {}}), encoding="utf-8")
+        check("취업패키지 빈 서식 PDF ZIP에 면접확인서 포함", sum(name.endswith(".pdf") for name in job_names), 3)
+        check("취업패키지 빈 서식 PDF ZIP에 HWP 없음", sum(name.endswith(".hwp") for name in job_names), 0)
+        job_bundle_options = client.get(f"/api/applications/{job_id}/forms/files/original-hwp/options").json()
+        check("취업패키지 단일 HWP 메뉴 이름", job_bundle_options["label"], "서식 원본 HWP")
+        check("취업패키지 단일 HWP 직접 제공", client.get(job_bundle_options["url"]).content, b"synthetic-job-hwp-test")
+        (fake_hwp / "manifest.json").write_text(json.dumps({"double_savings": {"files": {}, "forms": {}}}), encoding="utf-8")
         missing = client.get(f"/api/applications/{app_id}/forms").json()
-        check("HWP가 없을 때 메뉴 숨김", missing[-1]["files"]["hwp"], None)
+        missing_options = client.get(f"/api/applications/{app_id}/forms/files/original-hwp/options").json()
+        check("HWP가 없을 때 카드 링크 숨김", missing[-1]["hwp_available"], False)
+        check("HWP가 없을 때 상단 메뉴 숨김", missing_options["url"], None)
     finally:
         forms_api.HWP_DIR = old_hwp_dir
 
