@@ -909,12 +909,14 @@ def _build_form1_fields(doc: Any):
 
 def build_all(out_dir: Path = COORDS) -> list[Path]:
     import pymupdf
-    from .cut_templates import NOTICE_FORM_TO_INTERNAL, TEMPLATES_SPEC
+    from ..form_numbers import internal_form_no, order_form_numbers
+    from .cut_templates import TEMPLATES_SPEC
 
     out_dir.mkdir(parents=True, exist_ok=True)
     specs = {spec.key: spec for spec in TEMPLATES_SPEC}
     written = []
-    for key, builder in BUILDERS.items():
+    for key in order_form_numbers(BUILDERS):
+        builder = BUILDERS[key]
         spec = specs[key]
         template = TEMPLATES / f"{key}.pdf"
         if not template.exists():
@@ -926,7 +928,7 @@ def build_all(out_dir: Path = COORDS) -> list[Path]:
             payload = {
                 "form_no": key, "title": spec.title, "template": f"templates/{key}.pdf",
                 "public_form": spec.public_form,
-                "internal_form": NOTICE_FORM_TO_INTERNAL.get(spec.public_form) if spec.public_form else None,
+                "internal_form": internal_form_no(spec.public_form) if spec.public_form else None,
                 "source": {"file": spec.source,
                            "pages": [{"page": page.source_page, "title": page.title_marker}
                                      for page in spec.pages]},

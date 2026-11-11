@@ -35,7 +35,8 @@ from ..forms.render import (
     render_filled_page_png_cached,
     render_template_page_png,
 )
-from ..forms.values import BUILDERS, available_forms, form_date
+from ..forms.values import BUILDERS, FilledForm, available_forms, form_date
+from ...form_numbers import public_form_no
 from ..models import Document, get_session
 from ..forms.email import is_valid_email, normalize_email
 from .common import STORAGE, list_consents, load_application, subsidy_rows
@@ -207,13 +208,15 @@ def form_links(application_id: int, *, include_paper_form: bool = False) -> list
         spec = form_coords.load(form_no)
         if spec is None or not spec.available:
             continue
+        screen_no = public_form_no(form_no)
         links.append(
             {
                 "form_no": form_no,
+                "public_form": screen_no,
                 "title": spec.title,
-                "label": f"{form_no} {spec.title}",
+                "label": f"{screen_no} {spec.title}" if screen_no else spec.title,
                 "file_url": f"/api/applications/{application_id}/forms/{form_no}.pdf",
-                "file_name": f"{app.application_no}_{form_no}.pdf",
+                "file_name": f"{app.application_no}_{screen_no or form_no}.pdf",
                 "hwp_available": _hwp_path(app.program_code, form_no) is not None,
             }
         )
@@ -350,7 +353,7 @@ def export_form(application_id: int, form_no: str) -> Response:
     if form_no not in available_forms(app):
         raise HTTPException(404, f"이 신청 건에는 {form_no} 서식이 없습니다.")
     if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
-        raise HTTPException(404, "종이 제출 서식의 온라인 작성본은 제출 서식에 포함되지 않습니다.")
+        raise HTTPException(404, "스캔본 제출 서식의 온라인 작성본은 제출 서식에 포함되지 않습니다.")
 
     spec = form_coords.load(form_no)
     if spec is None or not spec.available:
@@ -368,7 +371,7 @@ def export_form(application_id: int, form_no: str) -> Response:
         subsidy_items=subsidy_rows(application_id),
     )
     pdf = render(spec, filled)
-    name = quote(f"{app.application_no}_{form_no}.pdf")
+    name = quote(f"{app.application_no}_{public_form_no(form_no) or form_no}.pdf")
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -466,51 +469,96 @@ def _scan_pdf(document: Document) -> bytes:
             image.save(output, format="PDF", resolution=150)
             return output.getvalue()
     except Exception as exc:
-        raise HTTPException(422, "종이 제출 스캔본을 PDF로 만들 수 없습니다.") from exc
+        raise HTTPException(422, "스캔본을 PDF로 만들 수 없습니다.") from exc
 
 
-def _completed_form_numbers(app: Any) -> list[str]:
-    numbers: list[str] = []
-    for form_no in available_forms(app):
-        spec = form_coords.load(form_no)
-        if spec is None or not spec.available:
+def _form_has_saved_values(app: Any, form_no: str) -> bool:
+    """Compatibility predicate for callers that distinguish untouched forms."""
+    form1 = app.form1_json or {}
+    if form_no == "서식2":
+        return bool(app.self_check_json)
+    if form_no in {"서식3", "서식4", "job_consent"}:
+        types = {"서식3": {"privacy", "unique_id"}, "서식4": {"third_party"}, "job_consent": {"privacy", "third_party"}}[form_no]
+        return any(c.consent_type in types for c in list_consents(app.id or 0))
+    if form_no == "서식5":
+        form5 = app.form5_json or {}
+        entered = any(value not in (None, "", [], {}) for key, value in form5.items() if not str(key).startswith("written"))
+        return entered or any(c.consent_type == "admin_info" for c in list_consents(app.id or 0))
+    if form_no in {"서식1", "job_application"}:
+        return any(
+            value not in (None, "", [], {})
+            for key, value in form1.items()
+            if not str(key).startswith("written")
+        )
+    return False
+
+
+def _blank_form_pdf(app: Any, form_no: str) -> bytes:
+    """Render an untouched form with only its automatic date fields."""
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, "서식 템플릿을 사용할 수 없습니다.")
+    filled = FilledForm(form_no=form_no)
+    written = form_date(app)
+    date_values = {"month": str(written.month), "day": str(written.day), "year": str(written.year)}
+    for key, field_spec in spec.fields.items():
+        date_part = field_spec.get("date_part")
+        if not date_part:
             continue
-        if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
-            if _paper_consent_document(app) is not None:
-                numbers.append(form_no)
-        elif _form_is_complete(app, form_no):
-            numbers.append(form_no)
-    return numbers
+        value = date_values.get(date_part)
+        if value:
+            if field_spec.get("format") == "yy":
+                value = value[-2:]
+            filled.texts[key] = value
+    return render(spec, filled)
 
 
 def _written_pdf_bytes(app: Any) -> tuple[bytes, int]:
-    completed = _completed_form_numbers(app)
-    if not completed:
-        return b"", 0
+    form_numbers = available_forms(app)
     import fitz
 
     output = fitz.open()
     try:
-        for form_no in completed:
+        for form_no in form_numbers:
             if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
                 document = _paper_consent_document(app)
-                if document is None:
-                    continue
-                payload = _scan_pdf(document)
+                if document is not None:
+                    payload = _scan_pdf(document)
+                else:
+                    from copy import copy
+
+                    printable = copy(app)
+                    identity = app.identity_json or {}
+                    form1 = dict(app.form1_json or {})
+                    form1["name"] = form1.get("name") or identity.get("name") or ""
+                    form1["birth"] = form1.get("birth") or identity.get("birth") or ""
+                    form1["mobile"] = form1.get("mobile") or ""
+                    printable.form1_json = form1
+                    form5 = dict(app.form5_json or {})
+                    form5["name"] = form5.get("name") or form1["name"]
+                    form5["birth"] = form5.get("birth") or form1["birth"]
+                    form5["phone"] = form5.get("phone") or form1["mobile"]
+                    form5.update({"agree": "", "signature": "", "signatureScanUploaded": False})
+                    printable.form5_json = form5
+                    consents = [row for row in list_consents(app.id or 0) if row.consent_type != "admin_info"]
+                    filled = BUILDERS[form_no](printable, consents=consents, storage_root=STORAGE, subsidy_items=[])
+                    spec = form_coords.load(form_no)
+                    payload = render(spec, filled) if spec is not None else b""
             else:
+                # The applicant preview always uses BUILDERS, even on an untouched
+                # form (for automatic dates and the single savings option). Keep
+                # the combined and submission-frozen PDFs on that same path.
                 payload, _ = _filled_pdf(app, form_no)
             with fitz.open(stream=payload, filetype="pdf") as source:
                 output.insert_pdf(source)
-        return output.tobytes(garbage=4, deflate=True), len(completed)
+        return output.tobytes(garbage=4, deflate=True), len(form_numbers)
     finally:
         output.close()
 
 
 def snapshot_written_pdf(app: Any) -> tuple[str | None, int]:
-    """Freeze the applicant's combined completed-form PDF at submission time."""
+    """Freeze the applicant's combined current-form PDF at submission time."""
     payload, count = _written_pdf_bytes(app)
-    if not count:
-        return None, 0
     folder = STORAGE / "forms_exports"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"{app.application_no}.pdf"
@@ -528,20 +576,6 @@ def _require_applicant_archive_access(app: Any, request: Request) -> None:
         raise HTTPException(403, "신청자 본인만 작성한 서식을 받을 수 있습니다.", headers={"Cache-Control": "no-store"})
 
 
-@router.get("/{application_id}/forms/files/written/options")
-def written_forms_options(application_id: int) -> dict[str, Any]:
-    app = load_application(application_id)
-    if app.submitted_at is not None:
-        completed = int(app.written_forms_archive_count or 0)
-    else:
-        completed = len(_completed_form_numbers(app))
-    return {
-        "url": f"/api/applications/{application_id}/forms/files/written.pdf" if completed else None,
-        "completed": completed,
-        "total": len(available_forms(app)),
-    }
-
-
 @router.get("/{application_id}/forms/files/written.pdf")
 def written_forms_pdf(application_id: int, request: Request) -> Response:
     app = load_application(application_id)
@@ -549,7 +583,7 @@ def written_forms_pdf(application_id: int, request: Request) -> Response:
     _require_applicant_archive_access(app, request)
     if app.submitted_at is not None:
         if not app.written_forms_archive_path:
-            raise HTTPException(404, "작성 완료된 서식이 없습니다.", headers={"Cache-Control": "no-store"})
+            raise HTTPException(404, "작성한 서식을 보관하지 못했습니다.", headers={"Cache-Control": "no-store"})
         path = STORAGE.parent / app.written_forms_archive_path
         if not path.is_file():
             raise HTTPException(404, "작성한 서식을 보관하지 못했습니다.", headers={"Cache-Control": "no-store"})
@@ -557,8 +591,6 @@ def written_forms_pdf(application_id: int, request: Request) -> Response:
         count = int(app.written_forms_archive_count or 0)
     else:
         payload, count = _written_pdf_bytes(app)
-    if not count:
-        raise HTTPException(404, "작성 완료된 서식이 없습니다.", headers={"Cache-Control": "no-store"})
     business = "두배적금" if app.program_code == "double_savings" else "취업지원패키지"
     filename = f"2026_{business}_신청서식_{_safe_filename(app.application_no)}.pdf"
     return Response(payload, media_type="application/pdf", headers={
@@ -610,32 +642,6 @@ def filled_form_file(application_id: int, form_no: str) -> Response:
     pdf, _ = _filled_pdf(app, form_no)
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": _filename_header(_form_filename(app, form_no, "pdf")), "Cache-Control": "private, no-store"})
 
-
-@router.get("/{application_id}/forms/files/서식5/print.pdf")
-def printable_admin_consent(application_id: int) -> Response:
-    app = load_application(application_id)
-    if app.program_code != "double_savings" or not ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
-        raise HTTPException(404, "인쇄용 서식이 없습니다.")
-    spec = form_coords.load("서식5")
-    if spec is None or not spec.available:
-        raise HTTPException(503, "서식 템플릿을 사용할 수 없습니다.")
-    from copy import copy
-    printable = copy(app)
-    identity = app.identity_json or {}
-    form1 = dict(app.form1_json or {})
-    form1["name"] = form1.get("name") or identity.get("name") or ""
-    form1["birth"] = form1.get("birth") or identity.get("birth") or ""
-    form1["mobile"] = form1.get("mobile") or ""
-    printable.form1_json = form1
-    printable.form5_json = {"name": form1["name"], "birth": form1["birth"], "phone": form1["mobile"], "agree": "", "signature": "", "signatureScanUploaded": False}
-    printable.submitted_at = None
-    consents = [row for row in list_consents(application_id) if row.consent_type != "admin_info"]
-    filled = BUILDERS["서식5"](printable, consents=consents, storage_root=STORAGE, subsidy_items=[])
-    pdf = render(spec, filled)
-    return Response(pdf, media_type="application/pdf", headers={
-        "Content-Disposition": _filename_header(_form_filename(app, "서식5", "pdf")),
-        "Cache-Control": "no-store",
-    })
 
 
 @router.get("/{application_id}/forms/files/{form_no}/blank.pdf")

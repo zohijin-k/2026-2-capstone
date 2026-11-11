@@ -11,3 +11,7 @@
 **메인 기능이 아니다.** 미구현이어도 DoD에 영향이 없는 선택 항목이라,
 좌표 맵이 없거나 템플릿이 없으면 예외 대신 "내보낼 수 없음"으로 조용히 빠진다.
 """
+
+# Keep the package submodule available to tools that patch the shared date
+# provider via ``demo.backend.forms.values`` before the API has imported it.
+from . import values as values

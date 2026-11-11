@@ -6,10 +6,7 @@ import {
   fetchChecklist,
   putDocContext,
   deleteDocument,
-  fetchWrittenFormsOptions,
-  printableForm5Url,
   fetchOriginalHwpOptions,
-  sourceFormHwpUrl,
   fetchSubsidyItems,
   saveSubsidyItems,
   uploadSignatureScan,
@@ -32,8 +29,6 @@ import { JOB_PACKAGE_SELF_CHECK_ITEMS, SELF_CHECK_ITEMS, type SelfCheckAnswers }
 import { EMPTY_FORM5, type Form5Value, type SignMode } from './form5-model.ts'
 import './pdf-forms-workspace.css'
 
-const JOB_FORMS = ['job_application', 'job_consent']
-const SAVINGS_FORMS = ['서식2', '서식1', '서식3', '서식4', '서식5']
 type ActiveForm = { formNo: string; mode: 'edit' | 'preview' }
 
 interface Props {
@@ -134,16 +129,14 @@ function fieldGroup(key: string): string {
 
 export function ApplicantFormsBulkMenu({ applicationId, refreshKey }: { applicationId: number; refreshKey?: number }) {
   const [hwp, setHwp] = useState<{ url: string | null; label: string | null }>({ url: null, label: null })
-  const [written, setWritten] = useState<{ url: string | null; completed: number; total: number }>({ url: null, completed: 0, total: 0 })
 
   useEffect(() => {
     let alive = true
     const refresh = () => {
-      Promise.all([fetchOriginalHwpOptions(applicationId), fetchWrittenFormsOptions(applicationId)])
-        .then(([hwpOptions, writtenOptions]) => {
+      fetchOriginalHwpOptions(applicationId)
+        .then((hwpOptions) => {
           if (!alive) return
           setHwp(hwpOptions)
-          setWritten(writtenOptions)
         }).catch(() => undefined)
     }
     refresh()
@@ -154,10 +147,9 @@ export function ApplicantFormsBulkMenu({ applicationId, refreshKey }: { applicat
     }
   }, [applicationId, refreshKey])
 
-  if (!written.url && !hwp.url) return null
   return (
     <details className="pdf-forms__bulk-menu"><summary className="btn"><DownloadIcon /> 다운로드 <span aria-hidden="true">▾</span></summary>
-      {written.url && <a href={written.url}><DownloadIcon /> <span>PDF 다운로드</span>{written.completed < written.total && <small>(작성 완료 {written.completed} / {written.total})</small>}</a>}
+      <a href={`/api/applications/${applicationId}/forms/files/written.pdf`}><DownloadIcon /> <span>PDF 다운로드</span></a>
       {hwp.url && hwp.label && <a href={hwp.url}><DownloadIcon /> <span>HWP 다운로드</span></a>}
     </details>
   )
@@ -175,10 +167,9 @@ export default function PdfFormsWorkspace({
   onFlush, onChangedSubsidy, onPaperFormsChange, onContinue, continuing, error, readOnly = false, onProgress,
 }: Props) {
   const isJob = program.has_subsidy_items
-  const formNos = isJob ? JOB_FORMS : SAVINGS_FORMS
+  const [formNos, setFormNos] = useState<string[]>([])
   const [layouts, setLayouts] = useState<Record<string, FormLayout>>({})
   const [availableFormCount, setAvailableFormCount] = useState(0)
-  const [formHwpAvailable, setFormHwpAvailable] = useState<Record<string, boolean>>({})
   const [paperAllowed, setPaperAllowed] = useState<Record<string, boolean>>({})
   const [paperForms, setPaperForms] = useState<Record<string, boolean>>({})
   const [active, setActive] = useState<ActiveForm | null>(null)
@@ -198,16 +189,13 @@ export default function PdfFormsWorkspace({
 
   useEffect(() => {
     let alive = true
-    Promise.all([
-      Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo))),
-      fetchApplicantForms(applicationId),
-      fetchChecklist(applicationId),
-    ])
-      .then(([items, availableForms, checklist]) => {
+    Promise.all([fetchApplicantForms(applicationId), fetchChecklist(applicationId)])
+      .then(async ([availableForms, checklist]) => {
+        const items = await Promise.all(availableForms.map(({ form_no }) => fetchFormLayout(applicationId, form_no)))
         if (alive) {
+          setFormNos(availableForms.map((item) => item.form_no))
           setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
           setAvailableFormCount(availableForms.length)
-          setFormHwpAvailable(Object.fromEntries(availableForms.map((item) => [item.form_no, item.hwp_available])))
           setPaperAllowed(checklist.program.paper_forms || {})
           setPaperForms(checklist.context.paper_forms || {})
           onPaperFormsChange?.(checklist.context.paper_forms || {})
@@ -223,12 +211,12 @@ export default function PdfFormsWorkspace({
       }).catch(() => undefined)
     }
     return () => { alive = false }
-  }, [applicationId, formNos, isJob, onPaperFormsChange, program.code])
+  }, [applicationId, isJob, onPaperFormsChange, program.code])
 
   const changePaperMode = async (formNo: string, next: boolean) => {
     if (readOnly) return
     const hasOnlineContent = formNo === '서식5' ? hasStarted('서식5') : false
-    if (next && hasOnlineContent && !window.confirm('온라인으로 작성한 내용은 제출되지 않습니다. 종이 제출로 바꾸시겠어요?')) return
+    if (next && hasOnlineContent && !window.confirm('온라인으로 작성한 내용은 제출되지 않습니다. 스캔본 제출로 바꾸시겠어요?')) return
     if (!next && paperForms[formNo]) {
       const checklist = await fetchChecklist(applicationId)
       const scan = checklist.items.find((item) => item.slot_key === 'admin_info_consent')?.documents[0]
@@ -271,6 +259,7 @@ export default function PdfFormsWorkspace({
     if (group === 'consent.uniqueId') return consent.uniqueId === option
     if (group === 'consent.thirdParty') return consent.thirdParty === option
     if (group === 'agree') return form5.agree === option
+    if (group === 'monthlyDeposit') return option === '월 10만원'
     if (group.startsWith('subsidy.')) return selectedItems.includes(group.split('.')[1])
     if (group === 'referralPaths') return form1.referralPaths.some((item) => item.startsWith(option))
     if (group === 'residencePeriod') return durationBand(form1.transferIn, program.announcement_date, false) === option
@@ -558,7 +547,8 @@ export default function PdfFormsWorkspace({
     const fieldRef = `${field.page}-${fieldIndex}`
     if (field.type === 'check') {
       const checked = readChoice(key)
-      const derived = fieldGroup(key) === 'residencePeriod' || fieldGroup(key) === 'workPeriod'
+      const group = fieldGroup(key)
+      const derived = group === 'residencePeriod' || group === 'workPeriod' || group === 'monthlyDeposit'
       if (field.control === 'radio_text') {
         const optionGroup = fieldGroup(key)
         const [gx0, gy0, gx1, gy1] = field.group_box || field.box
@@ -735,14 +725,11 @@ export default function PdfFormsWorkspace({
                 {paperAllowed[formNo] && <label className="pdf-form-row__paper-mode">
                   작성 방식
                   <select aria-label={`${formLabel(formNo)} 작성 방식`} value={paperForms[formNo] ? 'paper' : 'screen'} disabled={readOnly} onChange={(event) => void changePaperMode(formNo, event.currentTarget.value === 'paper')}>
-                    <option value="screen">온라인 작성</option><option value="paper">종이 작성 후 스캔본 제출</option>
+                    <option value="screen">온라인 작성</option><option value="paper">스캔본 제출</option>
                   </select>
+                  <small>{paperForms[formNo] ? '출력해 손으로 쓰고 서명한 뒤 올립니다. 휴대폰 사진도 됩니다.' : '이 화면에서 바로 작성하고 서명합니다.'}</small>
                 </label>}
-                {paperForms[formNo] && <div className="pdf-form-row__paper-files">
-                  <p>인쇄용 PDF를 출력해 동의란에 체크하고 서명한 뒤, 서류 업로드 단계에서 올려 주세요. 한글 프로그램이 있으면 원본 HWP를 써도 됩니다.</p>
-                  <a className="btn btn--small" href={printableForm5Url(applicationId)}>인쇄용 PDF</a>
-                  {formHwpAvailable[formNo] && <a className="btn btn--small" href={sourceFormHwpUrl(applicationId, formNo)}>원본 HWP</a>}
-                </div>}
+                {paperForms[formNo] && <p className="pdf-form-row__paper-files">위 다운로드 메뉴에서 서식을 받아 제출해 주세요.</p>}
               </div>
               <div className="pdf-form-row__actions">
                 {!readOnly && !paperForms[formNo] && <button type="button" className="btn btn--primary" disabled={!layouts[formNo]} onClick={() => { setPage(0); setSignatureTarget(null); setActive({ formNo, mode: 'edit' }) }}>
