@@ -196,7 +196,8 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     fields: dict[str, str] = {}
     bboxes: dict[str, BBox] = {}
     for key in ("성명", "생년월일", "발급일", "문서확인번호", "발급번호",
-                "가입내역", "최근취득일", "가입중"):
+                "가입내역", "보험별가입여부", "보험별가입자종별", "근로관련가입여부",
+                "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록"):
         extracted = ex.fields.get(key)
         if extracted is None:
             continue
@@ -204,6 +205,21 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
         fields[key] = value.isoformat() if isinstance(value, date) else str(value)
         if (box := _demo_bbox(extracted.bbox)) is not None:
             bboxes[key] = box
+    for row in ex.rows:
+        prefix = row.insurance_type
+        row_values = {
+            f"{prefix} 가입자종별": row.subscriber_category,
+            f"{prefix} 사업장관리번호": row.management_number,
+            f"{prefix} 사업장명칭": row.workplace_name,
+            f"{prefix} 자격취득일": row.acquired.isoformat() if row.acquired else "",
+            f"{prefix} 신고접수일": row.received.isoformat() if row.received else "",
+            f"{prefix} 상태": row.status,
+        }
+        row_box = _demo_bbox(row.bbox)
+        for key, value in row_values.items():
+            fields[key] = value
+            if row_box is not None:
+                bboxes[key] = row_box
     fields["판독검증"] = f"{sum(item.passed for item in ex.validations)}/{len(ex.validations)} 통과"
     failed = [item.name for item in ex.validations if not item.passed]
     if failed:

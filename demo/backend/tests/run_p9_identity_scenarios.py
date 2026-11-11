@@ -417,11 +417,11 @@ def test_insurance4_reader_privacy(client, tmp: Path) -> None:
     check("신청자 허용 필드 추출", body.get("extracted", {}).get("생년월일"), "1999-01-01")
     check_true("사업장명칭은 신청자 응답에 없음", "가상회사주식회사" not in json.dumps(body, ensure_ascii=False))
     raw = json.dumps(body, ensure_ascii=False)
-    check_true("신청자 응답에 주민번호 뒷자리 없음", "1234567" not in raw)
+    check_true("신청자 응답에 주민번호 뒷자리 없음", "123456" not in raw)
     with models.get_session() as session:
         saved = session.exec(select(models.Document).where(models.Document.application_id == app_id)).all()
         saved_json = json.dumps([item.ocr_json for item in saved], ensure_ascii=False)
-        check_true("DB OCR 결과에 주민번호 뒷자리 없음", "1234567" not in saved_json)
+        check_true("DB OCR 결과에 주민번호 뒷자리 없음", "123456" not in saved_json)
         parsed = json.loads(saved[0].ocr_json["fields"]["가입내역"])
         check("보험 4행 상세 판독", len(parsed), 4)
         check_true("담당자 위치 강조 bbox 저장", "가입내역" in saved[0].ocr_json["bboxes"])

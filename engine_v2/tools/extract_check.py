@@ -2,6 +2,7 @@
 
   python -m engine_v2.tools.extract_check <file.pdf> --doc nhis_payment --gt <gt.json>
   python -m engine_v2.tools.extract_check <file.pdf> --doc nhis_acquisition_loss --gt <gt.json>
+  python -m engine_v2.tools.extract_check <file.pdf> --doc insurance_4 --gt <gt.json>
 
 건강보험 서류의 출력은 필드별 상태와 값 없는 원인만 보여준다. 실제 값은 절대 출력하지 않는다.
 """
@@ -25,7 +26,8 @@ DOC_LABELS = {
     "nhis_payment": ["성명", "생년월일", "발급일", "가입구분", "고지월", "건강보험료", "장기요양보험료"],
     "nhis_acquisition_loss": ["성명", "생년월일", "발급일", "가입구분", "변동내역", "취득일"],
     "insurance_4": ["문서확인번호", "발급번호", "발급일", "성명", "생년월일",
-                    "가입내역", "최근취득일", "가입중"],
+                    "가입내역", "보험별가입여부", "보험별가입자종별", "근로관련가입여부",
+                    "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록"],
 }
 LAYOUT_LABELS = {
     "nhis_payment": ("성명", "생년월일", "주민등록번호", "발급일", "발급일자", "발행일", "출력일",
@@ -37,8 +39,9 @@ LAYOUT_LABELS = {
     "insurance_4": ("4대사회보험", "사회보험", "가입자", "가입내역", "확인서", "문서확인번호",
                     "발급번호", "발급일시", "발급일자", "발급일", "주민등록번호",
                     "외국인등록번호", "성명", "국민연금", "건강보험", "고용보험", "산재보험",
-                    "사업장", "명칭", "관리번호", "구분", "자격", "취득일", "상실일",
-                    "미가입", "해당없음", "직장", "지역"),
+                    "사업장", "명칭", "관리번호", "사업장관리번호", "사업장명칭", "가입자종별",
+                    "자격", "취득일", "자격취득일", "신고접수일", "미가입", "직장가입자",
+                    "지역가입자", "직장피부양자", "사업장가입자", "가입내역"),
 }
 
 
@@ -55,30 +58,37 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
                 expected[target] = str(gt[key]).replace(" ", "")
         if gt.get("rows"):
             rows = gt["rows"]
-            expected["가입내역"] = json.dumps([
-                {"보험종류": row["insurance_type"],
-                 "취득일": row.get("acquired") or "",
-                 "상실일": row.get("lost") or "",
-                 "가입상태": "" if row.get("status") == "가입 중" else row.get("status", "")}
+            normalized_rows = [
+                {"보험": row["insurance"], "성명": row.get("name", ""),
+                 "가입자종별": row.get("subscriber_category", ""),
+                 "사업장관리번호": row.get("management_number", ""),
+                 "사업장명칭": row.get("workplace_name", ""),
+                 "자격취득일": row.get("acquired") or "",
+                 "신고접수일": row.get("received") or "",
+                 "상태": row.get("status", "가입")}
                 for row in rows
-            ], ensure_ascii=False, separators=(",", ":"))
-            expected["최근취득일"] = json.dumps({
-                row["insurance_type"]: max(
-                    (candidate.get("acquired") or "" for candidate in rows
-                     if candidate["insurance_type"] == row["insurance_type"]),
-                    default="",
-                )
-                for row in rows
+            ]
+            expected["가입내역"] = json.dumps(normalized_rows, ensure_ascii=False, separators=(",", ":"))
+            expected["보험별가입여부"] = json.dumps({
+                insurance: any(row["보험"] == insurance and row["상태"] == "가입" for row in normalized_rows)
+                for insurance in ("국민연금", "건강보험", "산재보험", "고용보험")
             }, ensure_ascii=False, separators=(",", ":"))
-            expected["가입중"] = json.dumps({
-                row["insurance_type"]: any(
-                    candidate["insurance_type"] == row["insurance_type"]
-                    and candidate.get("status") not in {"미가입", "해당없음"}
-                    and not candidate.get("lost")
-                    for candidate in rows
-                )
-                for row in rows
+            expected["보험별가입자종별"] = json.dumps({
+                insurance: next((row["가입자종별"] for row in normalized_rows
+                                 if row["보험"] == insurance and row["상태"] == "가입"), "")
+                for insurance in ("국민연금", "건강보험", "산재보험", "고용보험")
             }, ensure_ascii=False, separators=(",", ":"))
+            work_rows = [row for row in normalized_rows if row["상태"] == "가입" and (
+                (row["보험"] == "국민연금" and row["가입자종별"] == "사업장가입자") or
+                (row["보험"] == "건강보험" and row["가입자종별"] == "직장가입자") or
+                row["보험"] in {"고용보험", "산재보험"})]
+            work_dates = sorted(row["자격취득일"] for row in work_rows if row["자격취득일"])
+            expected["근로관련가입여부"] = str(bool(work_rows))
+            expected["근로관련최초취득일"] = work_dates[0] if work_dates else ""
+            expected["근로관련최근취득일"] = work_dates[-1] if work_dates else ""
+            expected["사업장명칭목록"] = json.dumps(list(dict.fromkeys(
+                row["사업장명칭"] for row in work_rows if row["사업장명칭"])),
+                ensure_ascii=False, separators=(",", ":"))
     elif doc == "nhis_payment":
         months = gt.get("billed_by_month", {})
         if months:
@@ -174,21 +184,22 @@ def _run_nhis(args, gt: dict) -> None:
         if field is None:
             status = "못찾음"
             reason = result.diagnostics.get(label, "해당 칸 또는 구분 가능한 값을 못 찾음")
-        elif label in expected and args.doc == "insurance_4" and label in {"가입내역", "최근취득일", "가입중"}:
+        elif label in expected and args.doc == "insurance_4" and label == "가입내역":
             try:
                 actual_value = json.loads(field.value)
                 expected_value = json.loads(expected[label])
                 if label == "가입내역":
-                    indexed = {row["보험종류"]: row for row in actual_value}
-                    matches = all(
-                        row["보험종류"] in indexed and all(
-                            indexed[row["보험종류"]].get(key, "") == value
-                            for key, value in row.items() if key != "보험종류"
-                        )
-                        for row in expected_value
+                    matches = len(actual_value) == len(expected_value) and all(
+                        actual.get(key, "") == wanted.get(key, "")
+                        for actual, wanted in zip(actual_value, expected_value)
+                        for key in wanted
                     )
+                elif isinstance(expected_value, dict):
+                    matches = actual_value == expected_value
+                elif isinstance(expected_value, list):
+                    matches = actual_value == expected_value
                 else:
-                    matches = all(actual_value.get(key) == value for key, value in expected_value.items())
+                    matches = str(field.value) == expected[label]
             except (TypeError, ValueError, KeyError):
                 matches = False
             if not matches:
