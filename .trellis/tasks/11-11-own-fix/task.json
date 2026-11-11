@@ -1,0 +1,7 @@
+{
+  "id": "own-fix",
+  "title": "Typed dash parsing and label anchored issue date",
+  "status": "completed",
+  "branch": "feat/own-fix",
+  "base_branch": "main"
+}

@@ -2,7 +2,8 @@
 
 --synthetic-suite regenerates known fictitious make_synth_eval pages in memory.
 Only that mode accepts --unmasked-synthetic. A supplied file is always masked.
-No extractor, OCR, rectification or decision behavior is modified.
+--safe-issue emits only fixed keys, counts, booleans and separator classes.
+The diagnostic tool does not modify input words or decision behavior.
 """
 from __future__ import annotations
 
@@ -13,19 +14,69 @@ import json
 from pathlib import Path
 
 from ..extractors import nhis_acquisition_loss, nhis_common, nhis_payment, resident_abstract
+from ..extractors.format_text import normalize_format_text
+from ..extractors.insurance_issue import select_issue_date, date_shape_spans
 from ..pipeline.layout import group_lines, normalize
 from ..pipeline.ocr import run_ocr
 from ..pipeline.preprocess import PageImage, PageSource
 from .private_bench import quiet_dependencies, raster_pages
 from .synth_bench import EXTRACTORS
 
-DOCS = tuple(EXTRACTORS)
+DOCS = tuple(EXTRACTORS) + ("insurance_4",)
 FIELDS = {
     "resident_abstract": ("name", "birth_date", "issue_date", "address_history_count"),
     "nhis_payment": ("성명", "생년월일", "발급일", "가입구분", "건강보험료", "고지월"),
     "nhis_acquisition_loss": ("성명", "생년월일", "발급일", "가입구분", "취득일", "변동내역"),
 }
 MASKED = "[masked]"
+
+# Literal output vocabulary: no input-derived keys, values, paths or geometry.
+SAFE_ISSUE_KEYS = frozenset({
+    "schema_version", "document", "page_count", "issue_label_found",
+    "right_cell_present", "right_cell_date_format", "header_date_candidate_count",
+    "stamp_date_candidate_present", "selected_via_label", "separator_counts",
+})
+SEPARATOR_CLASSES = {
+    "-": "ASCII_HYPHEN", "\u2010": "HYPHEN", "\u2011": "NON_BREAKING_HYPHEN",
+    "\u2012": "FIGURE_DASH", "\u2013": "EN_DASH", "\u2014": "EM_DASH",
+    "\u2015": "HORIZONTAL_BAR", "\u2212": "MINUS_SIGN", "\ufe58": "SMALL_EM_DASH",
+    "\ufe63": "SMALL_HYPHEN_MINUS", "\uff0d": "FULLWIDTH_HYPHEN_MINUS",
+    "/": "SLASH", ".": "DOT",
+}
+
+
+def diagnose_safe_issue(pages):
+    """Strict value-free projection; do not serialize selection/word objects."""
+    selections = []
+    candidate_count = 0
+    stamp_present = False
+    separators = dict.fromkeys(SEPARATOR_CLASSES.values(), 0)
+    for page, result in pages:
+        words = normalize(result.words, page.page, page.pixel_size)
+        selections.append(select_issue_date(words))
+        for line in group_lines([w for w in words if w.cy <= 28]):
+            raw = " ".join(w.text for w in line)
+            for start, end in date_shape_spans(raw):
+                candidate_count += 1
+                # Translation is length-preserving, so the original separator
+                # classes can be counted without returning any date digits.
+                for char in raw[start:end]:
+                    if char in SEPARATOR_CLASSES:
+                        separators[SEPARATOR_CLASSES[char]] += 1
+        stamp_words = [w for w in words if w.x1 <= 50 and w.cy <= 28]
+        stamp_present |= any(nhis_common.DATE_RE.search(normalize_format_text(" ".join(w.text for w in line)))
+                             is not None for line in group_lines(stamp_words))
+    selected = any(s.value is not None for s in selections)
+    report = {
+        "schema_version": 2, "document": "insurance_4", "page_count": len(pages),
+        "issue_label_found": any(s.label_found for s in selections),
+        "right_cell_present": any(bool(s.cell_words) for s in selections),
+        "right_cell_date_format": any(s.value is not None for s in selections),
+        "header_date_candidate_count": candidate_count,
+        "stamp_date_candidate_present": stamp_present,
+        "selected_via_label": selected, "separator_counts": separators,
+    }
+    return {key: value for key, value in report.items() if key in SAFE_ISSUE_KEYS}
 
 
 class _SafeParser(argparse.ArgumentParser):
@@ -57,7 +108,7 @@ def diagnose(pages, doc, *, truth=None, synthetic=False, unmasked=False):
     """
     if unmasked and not synthetic:
         raise ValueError("Unmasking requires internally generated synthetic pages")
-    if doc not in DOCS:
+    if doc not in EXTRACTORS:
         raise ValueError("Unsupported document type")
     truth = truth or {}
     extracted = EXTRACTORS[doc](pages, today=date(2026, 11, 11))
@@ -147,7 +198,7 @@ def run_synthetic(*, seed=20261111, unmasked=False, include_legacy=False):
     return {"schema_version": 1, "synthetic": True, "seed": seed, "masked": not unmasked, "rows": rows}
 
 
-def run_file(path, doc, *, gt=None, engine="own"):
+def run_file(path, doc, *, gt=None, engine="own", safe_issue=False):
     """Explicit real input, always masked; no implicit files or directories."""
     pages = raster_pages(Path(path))
     pairs = []
@@ -156,6 +207,8 @@ def run_file(path, doc, *, gt=None, engine="own"):
         if result.error:
             raise RuntimeError("OCR failed")
         pairs.append((page, result))
+    if safe_issue:
+        return diagnose_safe_issue(pairs)
     truth = json.loads(Path(gt).read_text(encoding="utf-8")) if gt else None
     return {"schema_version": 1, "synthetic": False, "masked": True,
             "rows": [diagnose(pairs, doc, truth=truth)]}
@@ -168,6 +221,8 @@ def main(argv=None):
     parser.add_argument("--engine", choices=("own", "applevision"), default="own")
     parser.add_argument("--gt", type=Path, help="Optional flat extractor-field truth JSON; values never printed")
     parser.add_argument("--synthetic-suite", action="store_true")
+    parser.add_argument("--safe-issue", action="store_true",
+                        help="insurance_4 only: fixed keys, counts/booleans/classes; no values or geometry")
     parser.add_argument("--include-legacy", action="store_true")
     parser.add_argument("--unmasked-synthetic", action="store_true")
     parser.add_argument("--seed", type=int, default=20261111)
@@ -179,14 +234,24 @@ def main(argv=None):
         parser.error("--unmasked-synthetic requires --synthetic-suite")
     if args.synthetic_suite and (args.gt or args.engine != "own"):
         parser.error("Synthetic suite uses authored truth and own OCR")
+    if args.safe_issue and (args.synthetic_suite or args.doc != "insurance_4" or args.gt or args.unmasked_synthetic):
+        parser.error("--safe-issue requires an insurance_4 file and no truth/unmask options")
+    if args.doc == "insurance_4" and not args.safe_issue:
+        parser.error("insurance_4 requires --safe-issue")
     try:
         with quiet_dependencies():
-            report = run_synthetic(seed=args.seed, unmasked=args.unmasked_synthetic,
-                                   include_legacy=args.include_legacy) if args.synthetic_suite else run_file(args.file, args.doc, gt=args.gt, engine=args.engine)
+            if args.synthetic_suite:
+                report = run_synthetic(seed=args.seed, unmasked=args.unmasked_synthetic,
+                                       include_legacy=args.include_legacy)
+            elif args.safe_issue:
+                report = run_file(args.file, args.doc, engine=args.engine, safe_issue=True)
+            else:
+                report = run_file(args.file, args.doc, gt=args.gt, engine=args.engine)
         serialized = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
         if args.output:
             args.output.write_text(serialized, encoding="utf-8")
-            print(json.dumps({"ok": True, "rows": len(report["rows"]), "masked": report["masked"]}))
+            print(json.dumps({"ok": True} if args.safe_issue else
+                             {"ok": True, "rows": len(report["rows"]), "masked": report["masked"]}))
         else:
             print(serialized, end="")
         return 0

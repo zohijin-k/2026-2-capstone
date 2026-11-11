@@ -12,6 +12,8 @@ from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage, PageSource
 from ..schemas.models import BBox, ExtractedField, FieldSource
 
+from .format_text import normalize_format_text
+
 DATE_RE = re.compile(r"(?<!\d)(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?(?!\d)")
 COMPACT_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)")
 RRN_RE = re.compile(r"(\d{6})\s*-\s*([1-8])\d{6}")
@@ -37,6 +39,7 @@ class PageHeader:
 
 
 def parse_date(text: str) -> date | None:
+    text = normalize_format_text(text)
     match = DATE_RE.search(text)
     if not match:
         match = COMPACT_DATE_RE.search(re.sub(r"\s+", "", text))
@@ -60,7 +63,7 @@ def dates_in_line(line: list[Word]) -> list[tuple[date, list[Word]]]:
         parts.append(word.text)
         cursor += len(word.text)
         spans.append((start, cursor, word))
-    text = "".join(parts)
+    text = normalize_format_text("".join(parts))
     matches = list(DATE_RE.finditer(text))
     matches.extend(COMPACT_DATE_RE.finditer(re.sub(r"\s+", "", text)))
     found = []
@@ -146,7 +149,7 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                     header.name_words = [word]
                     break
         if header.birth is None and ("생년월일" in flat or "주민등록번호" in flat):
-            birth_match = DATE_RE.search(text)
+            birth_match = DATE_RE.search(normalize_format_text(text))
             birth_words = [word for word in line if parse_date(word.text)]
             if not birth_match:
                 birth_match = COMPACT_DATE_RE.search(re.sub(r"\s+", "", text))
@@ -162,7 +165,7 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                     if not candidates:
                         candidates = [w for below in lines[index + 1 :] for w in below
                                       if w.x1 >= x0 and w.x0 <= x1]
-                    birth_match = next((m for word in candidates if (m := DATE_RE.search(word.text)) or
+                    birth_match = next((m for word in candidates if (m := DATE_RE.search(normalize_format_text(word.text))) or
                                         (m := COMPACT_DATE_RE.search(re.sub(r"\s+", "", word.text)))), None)
                     if birth_match:
                         birth_words = candidates
@@ -170,14 +173,14 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                 header.birth = parse_date(birth_match.group())
                 header.birth_words = birth_words or line
             else:
-                rrn = RRN_RE.search(text)
+                rrn = RRN_RE.search(normalize_format_text(text))
                 if rrn:
                     yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
                     gender = rrn.group(2)
                     century = 2000 if gender in "3478" else 1900
                     try:
                         header.birth = date(century + yy, mm, dd)
-                        header.birth_words = [word for word in line if RRN_RE.search(word.text)] or line
+                        header.birth_words = [word for word in line if RRN_RE.search(normalize_format_text(word.text))] or line
                     except ValueError:
                         pass
         if header.issue is None and any(label in flat for label in ("발급일", "발급일자", "발행일", "출력일")):

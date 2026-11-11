@@ -16,10 +16,12 @@ from ..pipeline.preprocess import PageImage
 from ..schemas.models import BBox, DocType, ExtractedField
 from . import nhis_common as common
 from .resident_abstract import kst_today
+from .format_text import normalize_format_text
+from .insurance_issue import select_issue_date
 
 INSURANCE_NAMES = ("국민연금", "건강보험", "산재보험", "고용보험")
 DOC_NO_RE = re.compile(r"(?<!\d)(\d{4}-\d{4}-\d{4}-\d{4,5})(?!\d)")
-RRN_RE = re.compile(r"(?<!\d)(\d{6})\s*[-‐‑‒–—―]?\s*([0-8])(?=(?:\s*\d){6}(?!\d))")
+RRN_RE = re.compile(r"(?<!\d)(\d{6})\s*-?\s*([0-8])(?=(?:\s*\d){6}(?!\d))")
 ISSUE_NUMBER_RE = re.compile(r"(?<!\d)\d{14}(?!\d)")
 NAME_RE = re.compile(r"^[가-힣]{2,6}$")
 CATEGORY_NAMES = ("지역가입자", "직장가입자", "직장피부양자", "사업장가입자")
@@ -68,13 +70,13 @@ def _birth_from_rrn(front: str, gender: str) -> date | None:
 
 
 def _erase_rrn(words: list[Word]) -> date | None:
-    compact = "".join(word.text for word in words)
+    compact = normalize_format_text("".join(word.text for word in words))
     match = RRN_RE.search(compact)
     if not match:
         return None
     birth = _birth_from_rrn(match.group(1), match.group(2))
     for word in words:
-        if any(char.isdigit() for char in word.text) or re.fullmatch(r"[-‐‑‒–—―]+", word.text):
+        if any(char.isdigit() for char in word.text) or re.fullmatch(r"-+", normalize_format_text(word.text)):
             word.text = ""
     return birth
 
@@ -234,22 +236,24 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         birth = None
         birth_words: list[Word] = []
         for line in lines:
-            if RRN_RE.search("".join(word.text for word in line)):
+            if RRN_RE.search(normalize_format_text("".join(word.text for word in line))):
                 birth = _erase_rrn(line) or birth
                 birth_words.extend(line)
         for source_word, normalized_word in zip(original_words, words):
             if not normalized_word.text and any(char.isdigit() for char in source_word.text):
                 source_word.text = ""
         lines = common.group_lines(words)
-        doc_no = issue_number = issue = name = None
+        selected_issue = select_issue_date(words)
+        issue = selected_issue.value
+        doc_no = issue_number = name = None
         doc_words: list[Word] = []
         issue_number_words: list[Word] = []
-        issue_words: list[Word] = []
+        issue_words = selected_issue.source_words
         name_words: list[Word] = []
         for line in lines:
             flat = squash(line_text(line))
             if doc_no is None:
-                match = DOC_NO_RE.search("".join(word.text for word in line))
+                match = DOC_NO_RE.search(normalize_format_text("".join(word.text for word in line)))
                 if match:
                     doc_no, doc_words = match.group(1), line
             if issue_number is None and "발급" in flat:
@@ -259,10 +263,6 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
                 if match_number:
                     issue_number = match_number.group()
                     issue_number_words = candidates
-            if issue is None and "발급일시" in flat:
-                hit = _dates(line)
-                if hit:
-                    issue, issue_words = hit[0]
             if name is None and "성명" in flat:
                 label = next((word for word in line if "성명" in squash(word.text)), None)
                 if label:
