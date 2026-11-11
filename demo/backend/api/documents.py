@@ -162,9 +162,9 @@ def set_doc_context(application_id: int, body: DocContextRequest) -> dict[str, A
         criteria = read_criteria(for_application(app))
         for form_no, enabled in body.paper_forms.items():
             if form_no not in criteria["paper_forms"] or not isinstance(enabled, bool):
-                raise HTTPException(400, "종이 제출 서식 설정이 올바르지 않습니다.")
+                raise HTTPException(400, "스캔본 제출 서식 설정이 올바르지 않습니다.")
             if enabled and not criteria["paper_forms"][form_no]:
-                raise HTTPException(400, "이 서식은 종이 제출을 허용하지 않습니다.")
+                raise HTTPException(400, "이 서식은 스캔본 제출을 허용하지 않습니다.")
         old = app.doc_context_json or {}
         new_context = body.model_dump()
         # Partial client updates preserve other independent choices.

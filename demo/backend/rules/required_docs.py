@@ -417,7 +417,7 @@ def _double_savings_checklist(
             _make(
                 "admin_info_consent",
                 DocType.ADMIN_INFO_CONSENT,
-                label="서식5 행정정보 공동이용 사전동의서(자필 서명본)",
+                label="서식5 행정정보 공동이용 사전동의서(스캔본)",
                 notes=["빈 서식에 자필 서명한 뒤 스캔본을 올려 주세요."],
                 requires_signature=True,
                 check_declared_date=False,

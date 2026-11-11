@@ -140,7 +140,7 @@ def _validated(body: CriteriaUpdate, code: str) -> dict[str, Any]:
     default_paper_forms = default_criteria(code)["paper_forms"]
     paper_forms = {**default_paper_forms, **(body.paper_forms or {})}
     if set(paper_forms) != set(default_paper_forms) or any(not isinstance(value, bool) for value in paper_forms.values()):
-        raise HTTPException(400, "종이 제출 허용 설정이 올바르지 않습니다.")
+        raise HTTPException(400, "스캔본 제출 허용 설정이 올바르지 않습니다.")
     return {
         "schema_version": CRITERIA_SCHEMA_VERSION,
         "announcement_date": body.announcement_date,
