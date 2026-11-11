@@ -350,7 +350,7 @@ def export_form(application_id: int, form_no: str) -> Response:
     if form_no not in available_forms(app):
         raise HTTPException(404, f"이 신청 건에는 {form_no} 서식이 없습니다.")
     if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
-        raise HTTPException(404, "종이 제출 서식의 화면 작성본은 제출 서식에 포함되지 않습니다.")
+        raise HTTPException(404, "종이 제출 서식의 온라인 작성본은 제출 서식에 포함되지 않습니다.")
 
     spec = form_coords.load(form_no)
     if spec is None or not spec.available:
@@ -483,40 +483,38 @@ def _completed_form_numbers(app: Any) -> list[str]:
     return numbers
 
 
-def _archive_form_filename(app: Any, form_no: str) -> str:
-    spec = form_coords.load(form_no)
-    title = "".join((spec.title if spec else form_no).split())
-    public_form = spec.public_form or form_no if spec else form_no
-    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
-    return f"2026_{business}_{public_form}_{_safe_filename(title)}.pdf"
-
-
-def _written_archive_bytes(app: Any) -> tuple[bytes, int]:
+def _written_pdf_bytes(app: Any) -> tuple[bytes, int]:
     completed = _completed_form_numbers(app)
     if not completed:
         return b"", 0
-    output = io.BytesIO()
-    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+    import fitz
+
+    output = fitz.open()
+    try:
         for form_no in completed:
             if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
                 document = _paper_consent_document(app)
-                if document is not None:
-                    archive.writestr(_archive_form_filename(app, form_no), _scan_pdf(document))
-                continue
-            pdf, _ = _filled_pdf(app, form_no)
-            archive.writestr(_archive_form_filename(app, form_no), pdf)
-    return output.getvalue(), len(completed)
+                if document is None:
+                    continue
+                payload = _scan_pdf(document)
+            else:
+                payload, _ = _filled_pdf(app, form_no)
+            with fitz.open(stream=payload, filetype="pdf") as source:
+                output.insert_pdf(source)
+        return output.tobytes(garbage=4, deflate=True), len(completed)
+    finally:
+        output.close()
 
 
-def snapshot_written_archive(app: Any) -> tuple[str | None, int]:
-    """Freeze the applicant's completed-form archive at submission time."""
-    payload, count = _written_archive_bytes(app)
+def snapshot_written_pdf(app: Any) -> tuple[str | None, int]:
+    """Freeze the applicant's combined completed-form PDF at submission time."""
+    payload, count = _written_pdf_bytes(app)
     if not count:
         return None, 0
-    folder = STORAGE / "forms_archives"
+    folder = STORAGE / "forms_exports"
     folder.mkdir(parents=True, exist_ok=True)
-    target = folder / f"{app.application_no}.zip"
-    temporary = target.with_suffix(".zip.tmp")
+    target = folder / f"{app.application_no}.pdf"
+    temporary = target.with_suffix(".pdf.tmp")
     temporary.write_bytes(payload)
     temporary.replace(target)
     return str(target.relative_to(STORAGE.parent)), count
@@ -538,16 +536,16 @@ def written_forms_options(application_id: int) -> dict[str, Any]:
     else:
         completed = len(_completed_form_numbers(app))
     return {
-        "url": f"/api/applications/{application_id}/forms/files/written.zip" if completed else None,
+        "url": f"/api/applications/{application_id}/forms/files/written.pdf" if completed else None,
         "completed": completed,
         "total": len(available_forms(app)),
     }
 
 
-@router.get("/{application_id}/forms/files/written.zip")
-def written_forms_archive(application_id: int, request: Request) -> Response:
+@router.get("/{application_id}/forms/files/written.pdf")
+def written_forms_pdf(application_id: int, request: Request) -> Response:
     app = load_application(application_id)
-    logging.getLogger(__name__).info("written forms archive requested application_id=%s", application_id)
+    logging.getLogger(__name__).info("written forms PDF requested application_id=%s", application_id)
     _require_applicant_archive_access(app, request)
     if app.submitted_at is not None:
         if not app.written_forms_archive_path:
@@ -558,12 +556,12 @@ def written_forms_archive(application_id: int, request: Request) -> Response:
         payload = path.read_bytes()
         count = int(app.written_forms_archive_count or 0)
     else:
-        payload, count = _written_archive_bytes(app)
+        payload, count = _written_pdf_bytes(app)
     if not count:
         raise HTTPException(404, "작성 완료된 서식이 없습니다.", headers={"Cache-Control": "no-store"})
-    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
-    filename = f"2026_{business}_작성한서식.zip"
-    return Response(payload, media_type="application/zip", headers={
+    business = "두배적금" if app.program_code == "double_savings" else "취업지원패키지"
+    filename = f"2026_{business}_신청서식_{_safe_filename(app.application_no)}.pdf"
+    return Response(payload, media_type="application/pdf", headers={
         "Content-Disposition": _filename_header(filename),
         "Cache-Control": "no-store",
     })

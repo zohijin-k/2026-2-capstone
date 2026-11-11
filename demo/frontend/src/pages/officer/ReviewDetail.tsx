@@ -390,7 +390,7 @@ export default function ReviewDetail({
           {viewingForm && (
             <Panel title={`작성 서식 — ${viewingForm.label}`}>
               <p className="muted">
-                신청자가 화면에서 작성한 값을 원본 서식 PDF에 그대로 얹은 것입니다.
+                신청자가 온라인으로 작성한 값을 원본 서식 PDF에 그대로 얹은 것입니다.
                 항목 순서·표 구조·문구가 종이 서식과 같습니다.
               </p>
               <p className="muted">

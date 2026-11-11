@@ -156,11 +156,17 @@ export function ApplicantFormsBulkMenu({ applicationId, refreshKey }: { applicat
 
   if (!written.url && !hwp.url) return null
   return (
-    <details className="pdf-forms__bulk-menu"><summary className="btn">서식 모두 내려받기</summary>
-      {written.url && <a href={written.url}>작성한 서식 PDF(zip){written.completed < written.total ? ` (작성 완료 ${written.completed} / ${written.total})` : ''}</a>}
-      {hwp.url && hwp.label && <a href={hwp.url}>{hwp.label}</a>}
+    <details className="pdf-forms__bulk-menu"><summary className="btn"><DownloadIcon /> 다운로드 <span aria-hidden="true">▾</span></summary>
+      {written.url && <a href={written.url}><DownloadIcon /> <span>PDF 다운로드</span>{written.completed < written.total && <small>(작성 완료 {written.completed} / {written.total})</small>}</a>}
+      {hwp.url && hwp.label && <a href={hwp.url}><DownloadIcon /> <span>HWP 다운로드</span></a>}
     </details>
   )
+}
+
+function DownloadIcon() {
+  return <svg className="pdf-forms__download-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+    <path d="M10 2.5v9m0 0 3.5-3.5M10 11.5 6.5 8M3.5 13v3.5h13V13" />
+  </svg>
 }
 
 export default function PdfFormsWorkspace({
@@ -222,11 +228,11 @@ export default function PdfFormsWorkspace({
   const changePaperMode = async (formNo: string, next: boolean) => {
     if (readOnly) return
     const hasOnlineContent = formNo === '서식5' ? hasStarted('서식5') : false
-    if (next && hasOnlineContent && !window.confirm('화면에서 작성한 내용은 제출되지 않습니다. 종이 제출로 바꾸시겠어요?')) return
+    if (next && hasOnlineContent && !window.confirm('온라인으로 작성한 내용은 제출되지 않습니다. 종이 제출로 바꾸시겠어요?')) return
     if (!next && paperForms[formNo]) {
       const checklist = await fetchChecklist(applicationId)
       const scan = checklist.items.find((item) => item.slot_key === 'admin_info_consent')?.documents[0]
-      if (scan && !window.confirm('올린 스캔본은 제출되지 않습니다. 화면 작성으로 바꾸시겠어요?')) return
+      if (scan && !window.confirm('올린 스캔본은 제출되지 않습니다. 온라인 작성으로 바꾸시겠어요?')) return
       if (scan) await deleteDocument(applicationId, scan.document_id)
     }
     const checklist = await fetchChecklist(applicationId)
@@ -729,7 +735,7 @@ export default function PdfFormsWorkspace({
                 {paperAllowed[formNo] && <label className="pdf-form-row__paper-mode">
                   작성 방식
                   <select aria-label={`${formLabel(formNo)} 작성 방식`} value={paperForms[formNo] ? 'paper' : 'screen'} disabled={readOnly} onChange={(event) => void changePaperMode(formNo, event.currentTarget.value === 'paper')}>
-                    <option value="screen">화면에서 작성</option><option value="paper">종이에 작성 후 스캔본 제출</option>
+                    <option value="screen">온라인 작성</option><option value="paper">종이 작성 후 스캔본 제출</option>
                   </select>
                 </label>}
                 {paperForms[formNo] && <div className="pdf-form-row__paper-files">

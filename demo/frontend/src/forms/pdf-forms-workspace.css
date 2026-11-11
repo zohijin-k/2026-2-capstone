@@ -18,7 +18,11 @@
 .pdf-form-row__paper-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .pdf-form-row__paper-files p { flex-basis: 100%; margin: 2px 0; }
 .pdf-forms__bulk-menu { position: relative; width: fit-content; }
-.pdf-forms__bulk-menu > a { display: block; margin-top: 3px; padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-decoration: none; white-space: nowrap; }
+.pdf-forms__bulk-menu > summary { display: inline-flex; align-items: center; gap: 7px; list-style: none; cursor: pointer; }
+.pdf-forms__bulk-menu > summary::-webkit-details-marker { display: none; }
+.pdf-forms__bulk-menu > a { display: flex; align-items: center; gap: 8px; margin-top: 3px; padding: 7px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-decoration: none; white-space: nowrap; }
+.pdf-forms__bulk-menu > a small { color: var(--muted); font-size: 11px; }
+.pdf-forms__download-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .pdf-forms__bulk-menu[open] { z-index: 3; }
 .pdf-forms__selfcheck { display: grid; gap: 12px; }
 .pdf-forms__selfcheck h3 { margin: 0; }

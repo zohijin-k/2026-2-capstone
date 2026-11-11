@@ -779,7 +779,7 @@ function rollDecision(
 // ---------------------------------------------------------------- 두배적금 서류 5종
 //
 // 공고문 제출서류 중 **업로드 대상**은 5종이다 — ⑧ 초본, ⑦ 소득재산 증빙 3종,
-// ⑥ 근로확인서류 1종. ①~⑤는 화면 작성으로 갈음한다(`rules/required_docs.py`).
+// ⑥ 근로확인서류 1종. ①~⑤는 온라인 작성으로 갈음한다(`rules/required_docs.py`).
 // 이 중 ⑥만 근로유형에 따라 5종 중 하나로 갈린다 — 목록의 `근로확인서류` 칸에
 // 사람마다 다른 서류명이 뜨는 이유다.
 
@@ -2295,7 +2295,7 @@ function toOfficerDocument(entry: MockEntry, doc: MockDoc, index: number): Offic
     page_index: null,
     extracted: doc.fields,
     bboxes: Object.fromEntries(Object.keys(doc.fields).map((k, i) => [k, bboxAt(i)])),
-    // 신청서는 화면에서 작성한 값이라 판독할 것이 없다. 신뢰도를 붙이면
+    // 신청서는 온라인으로 작성한 값이라 판독할 것이 없다. 신뢰도를 붙이면
     // 담당자가 OCR 결과로 읽는다.
     ocr_confidence: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 0.97 : 0.68,
     ocr_tier: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
