@@ -1,8 +1,8 @@
 # 데모 사이트 — 전북청년 두배적금 · 취업지원패키지 신청서류 자동 검토 시스템
 
-신청자가 **종이·자필서명 없이** 신청을 끝내고, 담당자가 **파일을 한 번도 내려받지 않고**
-심사를 끝내는 것을 보여주는 데모다. 사업 2종(두배적금 · 취업지원패키지)을 같은
-파이프라인으로 처리한다.
+신청자가 공고문 서식을 원본 PDF 위에서 온라인으로 작성·서명하고, 담당자가 원본 서류를
+화면에서 확인하며 심사하는 데모다. 두배적금 서식5는 종이 작성 후 스캔본 제출도 선택할 수
+있다. 사업 2종(두배적금 · 취업지원패키지)을 같은 파이프라인으로 처리한다.
 
 - 요구사항: `.trellis/tasks/09-16-demo-site/prd.md`
 - 설계: `.trellis/tasks/09-16-demo-site/design.md`
@@ -28,15 +28,15 @@ demo/
 │   ├── reset.py        시연 초기화 (파괴적)
 │   ├── engine_adapter.py   engine/ 와의 유일한 접점
 │   ├── api/ ocr/ rules/    라우터 · 판독 3계층 · 업무 규칙
-│   ├── forms/          작성 서식 PDF 내보내기 (원본 위에 값 얹기)
-│   └── tests/          P2~P7 게이트 검증 스크립트 (pytest 없이 실행)
+│   ├── forms/          원본 PDF 위 입력·서명 렌더링 및 서식 응답
+│   └── tests/          P2\~P15 시나리오 검증 스크립트 (pytest 없이 실행)
 ├── frontend/           React + Vite (신청자 화면 · 담당자 화면)
 ├── fixtures/
 │   ├── make_samples.py 시연용 더미 서류 생성기
-│   ├── cut_templates.py     원본 시행지침 → 서식 템플릿 잘라내기 (2-up 주의)
+│   ├── cut_templates.py     원본 공고 PDF에서 서식별 A4 쪽 템플릿 생성
 │   ├── build_form_coords.py 템플릿 → 서식 좌표 맵 추출
 │   ├── samples/        생성된 더미 PDF (gitignore)
-│   ├── templates/      서식1·서식5 원본 쪽 (PDF 내보내기 템플릿, 커밋 대상)
+│   ├── templates/      두 사업 신청자 서식 PDF 템플릿 (커밋 대상)
 │   ├── form_coords/    서식별 필드 좌표 맵 JSON
 │   └── expected/       시연 시나리오 10종의 기대 결과 JSON
 ├── docs/demo-script.md 시연 대본
@@ -111,6 +111,12 @@ curl http://localhost:8000/api/programs   # 사업 2종 설정
 
 API 문서는 <http://localhost:8000/docs> (FastAPI 자동 생성).
 
+신청자 흐름은 **본인인증 → 서식 작성 → 서류 업로드 → 확인 및 제출**이다. 서식 화면은
+공고문 원본 PDF 위에서 온라인 작성·서명하며, 마이페이지는 상단 신청번호 옆 버튼으로
+언제든 연다. 서식 목록 위의 **다운로드** 메뉴에서는 작성한 서식 PDF 한 파일과 원본 HWP를
+받을 수 있다. 담당자 화면은 업로드 원본을 브라우저 안에서만 보고, 원본 파일 저장 기능은
+제공하지 않는다.
+
 ---
 
 ## 4. 시연 초기화
@@ -149,13 +155,26 @@ pytest 없이 그대로 실행된다. 전부 임시 폴더에서 돌기 때문�
 # 저장소 루트에서
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p2_scenarios  # 업로드 즉시 판정
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p3_scenarios  # 통합심사·채점
-PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p4_scenarios  # 담당자 화면·다운로드 0회
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p4_scenarios  # 담당자 원본 서류 인라인·저장 경로 검사
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p5_scenarios  # 취업지원패키지 분기
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p6_scenarios  # 리셋 후 시연 10종 재현
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p7_scenarios  # 작성 서식 PDF 내보내기
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p8_localocr_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p9_identity_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p11_criteria_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p12_subsidy_criteria_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p13_household_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p14_pdf_forms_scenarios
+PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.backend.tests.run_p15_jbai_scenarios
 ```
 
-`run_p6_scenarios`는 **리셋 → S1~S10 연속 실행 → 기대값 대조**를 두 번 반복해,
+실패한 시나리오 뒤에도 나머지를 끝까지 실행하려면 아래 반복문을 쓴다. 파일 이름 순서상 P11\~P15가 P2\~P9보다 먼저라, 첫 실패에서 멈추면 뒤 시나리오 결과를 확인할 수 없다.
+
+```bash
+for f in demo/backend/tests/run_p*_scenarios.py; do echo "== $f"; python -m demo.backend.tests.$(basename "$f" .py) || echo "FAILED $f"; done
+```
+
+`run_p6_scenarios`는 **리셋 → S1\~S10 연속 실행 → 기대값 대조**를 두 번 반복해,
 리셋이 실제로 동작하고 두 번째 시연에서도 같은 화면이 나오는지(신청번호까지)
 확인한다. 기대값은 `fixtures/expected/S*.json`에 있다.
 
@@ -175,33 +194,32 @@ npx tsc -b && npx oxlint && npx vite build
 
 ---
 
-## 6. 작성 서식 PDF 내보내기 (선택 기능)
+## 6. 신청 서식 온라인 작성·보관
 
-작성된 서식을 **원본 서식과 같은 모양의 PDF**로 내보낸다. 원본 PDF를 템플릿으로
-쓰고 그 위에 값·`✓`·전자서명을 얹는 방식이라, 결과물이 종이 서식과 구분되지 않는다.
+두배적금 서식1\~5와 취업지원패키지 신청서·동의서는 신청자가 원본 서식 PDF 위에서
+온라인으로 작성하고 서명한다. 회사가 작성하는 면접확인서도 같은 템플릿을 사용해
+화면에서 확인·인쇄할 수 있다. 화면 작성과 미리보기는 같은 서식 렌더링을 쓴다.
 
-```
-GET /api/applications/{id}/forms           # 내보낼 수 있는 서식 목록
-GET /api/applications/{id}/forms/서식1.pdf  # 인라인 (내려받지 않는다)
-GET /api/applications/{id}/forms/서식5.pdf  # 서명란에 전자서명 합성
-```
+서식 목록 위의 **다운로드** 메뉴에서 작성이 완료된 서식을 번호순으로 합친 PDF 한 파일과
+원본 HWP를 제공한다. 작성 PDF는 본인 보관용이고, 신청자 본인만 받을 수 있다. 제출 시
+작성값·서명·작성일을 고정하므로 제출 뒤에도 같은 서식 파일이 제공된다. 담당자 화면에는
+작성 서식과 업로드 원본을 브라우저 안에서 보여 주며, 원본 서류를 저장하는 경로는 없다.
 
-담당자 심사 화면의 서류 탭 오른쪽에 **"서식1 작성본 / 서식5 작성본"** 탭이 붙어,
-업로드 서류와 나란히 브라우저 안에서 본다. 여기서도 내려받는 경로는 없다.
+두배적금 서식5는 작성 방식을 온라인 작성과 종이 작성 후 스캔본 제출 중 고를 수 있다.
+종이 방식을 선택하면 인쇄용 PDF와 원본 HWP 안내가 나타나고, 서류 업로드 단계에
+「서식5 자필 서명본」 칸이 필수로 추가된다. 업로드한 스캔본은 본문 제목으로 종류를
+판별하고, 성명·생년월일·동의 여부·서명 잉크를 확인한다. 손글씨 항목을 판독하지 못하면
+자동 부적합 대신 담당자 확인으로 보낸다.
 
-대상은 **두배적금 서식1·서식5 2종**이다. 취업지원패키지는 원본 서식이 사업계획서에
-없어 내보낼 것이 없고, 서식2~4는 좌표 맵 구조만 비워 두었다.
-
-템플릿과 좌표 맵은 **원본 시행지침 PDF에서 뽑아 만든 것**이다. 원본이 개정되면
-아래 두 줄을 다시 돌린다 (저장소 루트에 시행지침 PDF가 있어야 한다).
+템플릿과 좌표 맵은 **원본 공고 PDF의 서식 쪽**에서 생성한다. 원본이 개정되면 저장소 루트에
+원본 PDF를 준비하고 다음 명령을 실행한다.
 
 ```bash
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.cut_templates
 PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.build_form_coords
 ```
 
-> ⚠️ 원본 PDF는 **2-up**이다. A4 가로 1장에 논리 2쪽이 들어 있어(물리 12쪽 = 논리
-> 23·24쪽) 반드시 반쪽씩 잘라야 한다. `cut_templates.py`가 쪽번호로 검증한다.
+각 원본 쪽은 A4 세로 페이지이며, 생성기는 서식 제목을 확인한 뒤 해당 쪽을 템플릿으로 만든다.
 
 ### 서식 글꼴
 
@@ -218,24 +236,26 @@ WOFF2, PDF 합성에는 TTF 서브셋을 사용하며, 각 글꼴 폴더에 SIL 
 
 ## 7. 알아 둘 것
 
-- **판독(OCR)은 폴백 체인**이다. ① 파일명이 `fixtures/samples/`의 시연 파일과 같으면
-  고정 결과(Tier1) ② 텍스트 레이어가 없는 초본·등본·건강보험료 납부확인서·자격득실확인서는
-  전북AI OCR(Tier1.2, 기관 확인에 따른 기본 판독) ③ 전북AI가 꺼져 있거나 오류가 나면
-  로컬 OCR(Tier1.5, Apple Vision 등) ④ 텍스트 PDF는 텍스트 레이어에서 읽는다(Tier2, PyMuPDF)
-  ⑤ 상용 API(Tier3)는 인터페이스만 있다. 시연 중 판독이 흔들려 화면이 무너지는 일이
-  없도록 Tier1을 먼저 둔 것이고, 전북AI 연결이 끊겨도 로컬 OCR이 이어받는다. 어떤 엔진이
-  읽었는지와 대체 사유는 담당자 화면의 판독 결과에만 표시한다
-  (`ocr/jbai.py`, `tests/run_p15_jbai_scenarios.py`).
+- **판독(OCR)은 단계형 체인**이다. 생성 샘플의 고정 응답을 먼저 확인하고, 지원되는
+  텍스트 레이어 없는 서류에는 전북AI OCR을 호출한다. 인증·통신·응답 오류 또는 서류별
+  필수 항목·쪽 완전성 등 판독 검증 실패 시 로컬 OCR(Apple Vision 등)로 대체한다. 검증을
+  통과한 결과는 환각 점수와 무관하게 사용하고, 잡음은 담당자 화면에 참고 표시한다.
+  텍스트 PDF는 로컬 판독기와 PyMuPDF 텍스트 계층이 처리한다. 요청에는 temperature 0을
+  사용하며 모델 특수 토큰은 제거한다. 전북AI는 좌표를 주지 않아 원본 위치 강조를 제공하지
+  못한다. 실제 초본 시험은 전북AI 판독 검증을 통과하지 못해 현재 로컬 OCR로 대체되고
+  있으며, 서류별 엔진을 실측 비교 중이다. 엔진·대체 사유·품질 메모는 담당자 화면에만
+  표시한다 (`ocr/jbai.py`, `tests/run_p15_jbai_scenarios.py`).
 - **점수는 신청자에게 절대 보이지 않는다**(공고문: "평가결과는 공개하지 않음").
   마이페이지 응답에 점수 관련 필드가 하나라도 섞이면 검증 스크립트가 잡는다.
-- **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100~130% 환산
+- **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100\~130% 환산
   기준선, 판독 신뢰도·화질 컷라인, 취업패키지 서식 구성, 선착순 기준 시각이
   여기 해당한다. 화면과 코드 양쪽에 같은 문구로 노출된다.
 - **서식 좌표는 손으로 적지 않았다.** 원본 PDF의 표 선(`get_drawings`)과 글자
   원점(`get_text("rawdict")`)에서 뽑는다. `run_p7_scenarios`가 좌표를 다시 뽑아
   커밋된 JSON과 대조하므로, 좌표를 손으로 고치면 검증이 깨진다.
-- 담당자 화면에는 **다운로드 버튼이 없다.** 백엔드에도 `attachment` 응답 경로가
-  없고, 그 사실을 `run_p4_scenarios`가 정적 검사로 확인한다.
+- 담당자는 신청자가 올린 원본 서류를 화면에서만 본다. 신청자는 본인이 작성한 서식만
+  내려받을 수 있다. P4 시나리오는 담당자 화면·API와 원본 파일 경로를 검사하고, 신청자용
+  서식 제공 파일만 명시적 허용 목록에 둔다.
 
 ## 8. 취업지원패키지 기준 확인 (2026 공고)
 
