@@ -42,6 +42,8 @@ CODE_PAST_ADDRESS_OMISSION_SUSPECTED = "PAST_ADDRESS_OMISSION_SUSPECTED"
 CODE_RESIDENT_APPLICANT_UNREADABLE = "RESIDENT_APPLICANT_UNREADABLE"
 CODE_UNKNOWN_DOCUMENT_TYPE = "UNKNOWN_DOCUMENT_TYPE"
 CODE_MISSING_REQUIRED_FIELD = "MISSING_REQUIRED_FIELD"
+#: 사진·스캔을 OCR로 읽어 필수 항목을 찾지 못함 — '안 적힌 것'과 '못 읽은 것'을 구별할 수 없어 담당자 확인
+CODE_REQUIRED_FIELD_UNREADABLE = "REQUIRED_FIELD_UNREADABLE"
 CODE_RECEIPT_AMOUNT_UNREADABLE = "RECEIPT_AMOUNT_UNREADABLE"
 #: 서류의 성명·생년월일이 본인인증 정보와 다름 (판독 확실 → 부적합)
 CODE_IDENTITY_MISMATCH = "IDENTITY_MISMATCH"
@@ -66,6 +68,7 @@ HOW_TO_FIX: dict[str, str] = {
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
     CODE_MISSING_ADDRESS_HISTORY: "정부24에서 초본을 발급할 때 '과거의 주소 변동사항(최근 5년)' 포함을 체크해 다시 발급받아 주세요.",
     CODE_MISSING_REQUIRED_FIELD: "{field}이(가) 표기된 서류로 다시 발급받아 올려 주세요. 발급 기관에 {field} 표기를 요청하시면 됩니다.",
+    CODE_REQUIRED_FIELD_UNREADABLE: "서류에 {field}이(가) 적혀 있다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. {field}이(가) 잘 보이게 다시 찍어 올리면 더 빨리 확인됩니다.",
     CODE_IDENTITY_MISMATCH: "본인 명의로 발급받은 서류만 인정됩니다. 가족이나 다른 사람 명의의 서류가 아닌지 확인하고 다시 올려 주세요.",
     CODE_IDENTITY_UNCERTAIN: "본인 서류가 맞다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다.",
     CODE_NHIS_DEPENDENT_INSURED_PERSON: "건강보험 가입자 명의 서류로 확인했습니다.",
@@ -120,6 +123,7 @@ REVIEW_ONLY_CODES = {
     CODE_SCREEN_CAPTURE,
     CODE_UNKNOWN_DOCUMENT_TYPE,
     CODE_RECEIPT_AMOUNT_UNREADABLE,
+    CODE_REQUIRED_FIELD_UNREADABLE,
 }
 
 
@@ -335,6 +339,18 @@ def check_document(
                         how_to_fix="영수증에 표시된 결제금액을 확인할 수 있도록 담당자에게 원본을 제출해 주세요.",
                         severity="NEEDS_REVIEW",
                     ))
+                    continue
+                if ocr.tier in ("localocr", "jbai") and ocr.engine != "pdftext":
+                    # 사진·스캔을 OCR로 읽었으면 '안 적힌 것'과 '못 읽은 것'을 구별할 수 없다.
+                    # 글자층 PDF에서 없을 때만 부적합으로 본다 (영수증 결제금액 미판독과 같은 처리).
+                    findings.append(
+                        _finding(
+                            CODE_REQUIRED_FIELD_UNREADABLE,
+                            f"'{req.label}'에서 {name}을(를) 자동으로 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                            req,
+                            field=name,
+                        )
+                    )
                     continue
                 findings.append(
                     _finding(

@@ -17,6 +17,7 @@ from typing import Any, Callable
 import yaml
 
 from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract, insurance_4
+from .extractors import exam_docs, interview_confirmation, receipt
 from .extractors import jbai_text
 from .extractors.resident_abstract import kst_today
 from .pipeline.ocr import OcrResult, OcrWord, run_ocr
@@ -39,6 +40,11 @@ EXTRACTORS: dict[DocType, Callable] = {
     DocType.NHIS_PAYMENT: nhis_payment.extract,
     DocType.NHIS_ACQUISITION_LOSS: nhis_acquisition_loss.extract,
     DocType.INSURANCE_4: insurance_4.extract,
+    # 취업지원패키지 추가서류
+    DocType.RECEIPT: receipt.extract,
+    DocType.EXAM_ADMISSION: exam_docs.extract,
+    DocType.EXAM_SCORE: exam_docs.extract,              # 응시확인서·성적표는 한 부품이 판별
+    DocType.INTERVIEW_CONFIRM: interview_confirmation.extract,
 }
 
 # 규칙 params 중 '필드 이름'을 담는 키 → 신뢰도 판단에 쓸 관련 필드
