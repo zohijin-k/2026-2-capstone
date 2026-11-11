@@ -1,6 +1,7 @@
 """OCR 어댑터: 엔진마다 다른 출력을 하나의 형식(OcrWord)으로 통일한다.
 
-후보
+엔진
+- own         : PP-OCRv5 Korean, ONNX Runtime CPU (비맥 기본)
 - applevision : macOS 내장 Vision (pip install ocrmac). 맥 전용 → 기준선용, 서버 배포 불가
 - easyocr     : pip install easyocr (torch 포함). 리눅스 배포 가능
 - paddle      : pip install paddlepaddle paddleocr. 리눅스 배포 가능, 설치 까다로움
@@ -12,6 +13,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -129,7 +131,18 @@ def _run_paddle(png: bytes, size) -> list[OcrWord]:
     return out
 
 
+def default_engine() -> str:
+    """Explicit environment selection, otherwise platform CPU default."""
+    return os.environ.get("ENGINE_V2_OCR") or ("applevision" if sys.platform == "darwin" else "own")
+
+
+def _run_own(png: bytes, size) -> list[OcrWord]:
+    from .own import recognize
+    return recognize(png, size)
+
+
 ENGINES = {
+    "own": _run_own,
     "applevision": _run_applevision,
     "easyocr": _run_easyocr,
     "paddle": _run_paddle,

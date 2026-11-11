@@ -26,6 +26,8 @@ from datetime import date
 from pathlib import Path
 
 from ..paths import PRIVATE_DIR
+from .privacy import mask_text
+from .synth_bench import cer, run_suite
 
 from ..pipeline.ocr import ENGINES, run_ocr
 from ..pipeline.preprocess import PageSource, preprocess
@@ -70,10 +72,27 @@ def score_gt(text: str, gt: dict) -> dict[str, bool]:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("file", type=Path)
-    ap.add_argument("--engines", nargs="+", default=list(ENGINES))
+    ap.add_argument("file", type=Path, nargs="?")
+    ap.add_argument("--env-file", type=Path, help="선택적 .env 설정 파일 (python-dotenv 필요)")
+    ap.add_argument("--synth", type=Path, help="합성 manifest.json")
+    ap.add_argument("--output", type=Path, help="결과 JSON 경로")
+    ap.add_argument("--unmasked-synthetic", action="store_true", help="합성 세트의 인식 텍스트만 가림 해제")
+    ap.add_argument("--engines", nargs="+", default=["own", "easyocr", "applevision", "jbai"])
     ap.add_argument("--gt", type=Path, help="정답 JSON (본인 PC에만)")
     args = ap.parse_args()
+    if args.env_file:
+        if not args.env_file.is_file():
+            ap.error("설정 파일을 찾지 못했습니다")
+        from dotenv import load_dotenv
+        load_dotenv(args.env_file, override=False)
+
+    if args.synth:
+        run_suite(args.synth, args.engines, args.output or args.synth.parent / "bench.json", unmasked=args.unmasked_synthetic)
+        return
+    if args.file is None:
+        ap.error("file 또는 --synth가 필요합니다")
+    if args.unmasked_synthetic:
+        ap.error("가림 해제는 --synth와 함께만 허용됩니다")
 
     pages = [p for p in preprocess(args.file) if p.source != PageSource.TEXT_LAYER]
     gt = json.loads(args.gt.read_text(encoding="utf-8")) if args.gt else None
@@ -83,8 +102,14 @@ def main() -> None:
     print(f"페이지 {len(pages)}쪽, 엔진 {args.engines}\n")
     summary = []
     for eng in args.engines:
-        if eng in {"jbai-ocr", "jbai-table"}:
-            task = TASK_OCR if eng == "jbai-ocr" else TASK_TABLE
+        from .synth_bench import available
+        reason = available(eng) if eng in {"own", "easyocr", "applevision", "jbai"} else None
+        if reason:
+            summary.append({"engine": eng, "status": "skip", "reason": reason})
+            print(f"[{eng}] SKIP — {reason}")
+            continue
+        if eng in {"jbai", "jbai-ocr", "jbai-table"}:
+            task = TASK_OCR if eng in {"jbai", "jbai-ocr"} else TASK_TABLE
             try:
                 result = run_jbai_pdf(args.file, task=task)
             except JBAIOCRError as error:
@@ -136,7 +161,7 @@ def main() -> None:
             continue
 
         full = "\n".join(texts)
-        (out_dir / f"ocr_{eng}.txt").write_text(full, encoding="utf-8")
+        (out_dir / f"ocr_{eng}.txt").write_text(mask_text(full), encoding="utf-8")
 
         confs = [w.confidence for w in all_words]
         row = {
@@ -162,6 +187,8 @@ def main() -> None:
 
     print("=== 요약 JSON (팀 공유 가능) ===")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    if args.output:
+        args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -58,3 +58,6 @@ demo/fixtures/samples/
 # ---- 엔진 v2: 본인 서류·정답 파일·OCR 결과 (개인정보) ----
 engine_v2/data/
 **/data/private/
+
+# Own OCR downloads (never commit weights)
+engine_v2/models/

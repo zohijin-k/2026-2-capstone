@@ -49,3 +49,11 @@ Questions to answer:
 <!-- What reviewers should check -->
 
 (To be filled by the team)
+
+## OCR engine compatibility
+
+- Preserve `engine_v2.pipeline.ocr` imports and top-left pixel OcrWord bounds when adding adapters.
+- Own OCR uses CPU ONNX Runtime, pinned weights/dictionary hashes and no inference-time downloads.
+- Synthetic CER and extracted field accuracy are separate: perspective can preserve text while breaking coordinate-based extraction.
+- Keep real-document masking enabled by default; only explicitly synthetic evaluation may opt out.
+- Model assets and generated evaluation images/results are ignored, never staged.
