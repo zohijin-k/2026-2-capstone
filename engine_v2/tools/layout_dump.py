@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from ..pipeline.ocr import default_engine
+
 from ..pipeline.ocr import OcrWord, run_ocr
 from ..pipeline.preprocess import PageSource, preprocess
 from .privacy import mask_text
@@ -60,7 +62,7 @@ def group_lines(words: list[OcrWord], tol: float = 0.6) -> list[list[OcrWord]]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("file", type=Path)
-    ap.add_argument("--engine", default="applevision")
+    ap.add_argument("--engine", default=default_engine())
     args = ap.parse_args()
 
     for p in preprocess(args.file):

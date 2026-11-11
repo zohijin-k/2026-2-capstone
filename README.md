@@ -34,6 +34,7 @@ git을 쓰지 않는다면 GitHub 저장소 첫 화면에서 브랜치가 `main`
 |---|---|---|
 | `main` | **최종 통합본.** 끝난 작업은 모두 PR로 여기에 합친다. | **받는다** |
 | `feat/engine-v2` | 엔진·데모 작업 브랜치. 작업이 끝날 때마다 PR로 `main`에 합친다. | 아니오 |
+| `feat/own-ocr` | 자체 OCR 작업 브랜치. 작업이 끝날 때마다 PR로 `main`에 합친다. | 받을 필요 없음 |
 | `feat/merge-demo-dashboard` | 9월의 폴더 구조 통합 시도. `main`에 합쳐지지 않았고, 이후 변경과 차이가 커서 통합을 보류했다. 대시보드 담당과 정리 예정. | 아니오 |
 | `feat/demo-site-applicant` | 신청자 화면 초기 작업. 내용이 모두 `main`에 합쳐졌다. 삭제 예정. | 아니오 |
 | `feat/ijin-demo` | 데모 초기 작업. 내용이 모두 `main`에 합쳐졌다. 삭제 예정. | 아니오 |
@@ -62,16 +63,20 @@ git을 쓰지 않는다면 GitHub 저장소 첫 화면에서 브랜치가 `main`
 - 가구원 수는 건강보험 자격확인서로만 판정한다.
 - 담당자 심사 화면에서 판정 근거와 원본 서류를 함께 확인할 수 있다.
 - 사업별 심사 기준을 버전으로 관리하며, 신청서는 생성 당시 기준 버전에 고정된다.
-- 시연용 고정 응답 뒤 실제 OCR 체인의 앞단에 도청 제공 전북AI OCR을 연결했다. 통신 오류뿐 아니라 필수 항목·쪽 완전성 등 서류별 판독 검증에 실패하면 로컬 OCR로 대체한다. 검증을 통과한 결과는 잡음 점수와 무관하게 사용하고, 잡음 여부는 담당자 화면에 참고로 표시한다. 실서류 주민등록초본 시험은 판독 검증을 통과하지 못해 현재 로컬 OCR로 대체되고 있으며, 서류별 판독 엔진은 실측 비교로 정하고 있다.
+- 자체 OCR `own`을 추가했다. 공개 사전학습 PP-OCRv5 mobile 검출·한국어 인식 모델의 ONNX 변환본을 ONNX Runtime으로 기관 내부 CPU에서 실행한다. 입력을 외부로 전송하지 않고 글자 좌표와 신뢰도를 반환하므로 기존 좌표 기반 추출기를 사용할 수 있다. 원본 모델은 Apache-2.0이며, SHA256이 고정된 내려받기 스크립트로 설치하고 저장소에는 넣지 않는다. 모델 출처·라이선스는 [`engine_v2/docs/own-ocr.md`](engine_v2/docs/own-ocr.md)에서 확인한다.
+- 실서류 시험(주민등록초본·4대보험 가입내역 각 1건)에서 own은 로컬 OCR(Apple Vision)과 비슷한 수준으로 필드를 읽었다. 발급일 등 일부 필드의 추출 규칙은 보완 중이다. 이 관찰은 해당 시험 문서에 한정한다.
+- `engine_v2.engine.run`과 CLI의 `ENGINE_V2_OCR`은 `applevision` / `own` / `easyocr` / `paddle` / `off`를 선택한다. 기본값은 macOS에서 Apple Vision, 그 밖의 환경에서 own이다. 데모 판독 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(엔진 선택에 따름) → PDF 텍스트이며, own을 신청 화면 판독 체인의 기본 엔진으로 연결하는 작업은 진행 중이다.
+- 합성 서류로 학습한 텍스트 기반 서류 분류 모델을 만들었다. 판별이 불확실하면 담당자 확인으로 넘기는 설계이며, 아직 데모 판정에는 연결하지 않았다. 분류에 파일 이름은 사용하지 않는다. 자세한 내용은 [`engine_v2/docs/classifier.md`](engine_v2/docs/classifier.md)에 있다.
 - 신청 서식은 원본 PDF 위에서 온라인으로 작성·서명한다. 작성한 서식은 현재 저장 상태 그대로 PDF 한 파일과 원본 HWP로 받을 수 있고, 두배적금 서식5는 스캔본 제출도 선택할 수 있다.
 
 ### 진행 중인 작업
 
-- 서류별 OCR 엔진 결정 (실측 비교)
-- 4대 사회보험 가입내역 확인서 판독기
-- 두배적금 자격요건 기준화와 행정 조회 체크리스트
-- 근로 요건 판정
-- 건강보험 자격확인서 판독기
+- own을 신청 화면 판독 체인의 기본 엔진으로 연결
+- 추출 규칙 보강: 문자 변형, 발급일 선택, 표 행 정렬
+- 서류 종류 판별 보강 및 분류 모델 연결
+- 학습 단계 마련: 인식 모델 미세조정, 담당자 수정 결과를 반영한 재학습
+- 담당자 화면에서 판독한 원본 위치 강조
+- 두배적금 자격요건 기준화(I)와 근로 판정(J)
 - 취업지원패키지 서류 판독기(결제영수증·응시확인서·성적표·면접확인서) — 라벨 기반 뼈대, 실서류·준실셋 평가 전
 
 ## 데모 둘러보기
@@ -169,7 +174,10 @@ git을 쓰지 않는다면 GitHub 저장소 첫 화면에서 브랜치가 `main`
 |---|---|
 | [`demo/`](demo/README.md) | 신청자·담당자 데모, FastAPI 백엔드, React 화면, 시나리오 테스트 |
 | [`engine/`](engine/README.md) | 기존 규칙 판정 엔진. 데모가 문서·자격 판정 파이프라인으로 계속 사용한다. |
-| [`engine_v2/`](engine_v2/README.md) | OCR 파이프라인·서류 추출기와 벤치 도구. 데모의 전북AI OCR·로컬 OCR 판독 경로가 사용한다. |
+| [`engine_v2/`](engine_v2/README.md) | OCR 파이프라인·서류 추출기·분류기·평가 도구. `own` 모델 파일은 `models/`에 내려받으며 커밋하지 않는다. |
+| [`engine_v2/pipeline/ocr/`](engine_v2/pipeline/ocr/) | OCR 공통 인터페이스와 엔진별 모듈(`own.py` 포함) |
+| [`engine_v2/classifier/`](engine_v2/classifier/) · [`engine_v2/docs/`](engine_v2/docs/) | 합성 서류 분류 실험 코드 · OCR/분류 설명 문서 |
+| `engine_v2/models/` | 내려받은 OCR·분류 모델 파일 (gitignore, 커밋하지 않음) |
 | [`dashboard/`](dashboard/README.md) | 목업 데이터 기반 현황 대시보드 초안. 데모 백엔드와 연동되지 않았다. |
 | [`docs/`](docs/demo-site-dev-plan.md) | 개발 계획·시연 자료·환경 설정 문서 |
 | [`.trellis/`](.trellis/workflow.md), [`.claude/`](.claude/), [`AGENTS.md`](AGENTS.md) | 작업 흐름, 에이전트 설정, 저장소 작업 지침 |
@@ -178,7 +186,7 @@ git을 쓰지 않는다면 GitHub 저장소 첫 화면에서 브랜치가 `main`
 
 ## 빠른 시작
 
-필요한 버전은 Python 3.12 이상과 Node.js 20 이상이다. macOS와 Linux에서 백엔드·프론트엔드는 실행할 수 있다. Apple Vision OCR은 macOS 전용이며 Linux에서는 사용할 수 있는 다른 OCR 엔진이 필요하다.
+필요한 버전은 Python 3.12 이상과 Node.js 20 이상이다. macOS와 Linux에서 백엔드·프론트엔드는 실행할 수 있다. Apple Vision OCR은 macOS 전용이며, 다른 환경에서는 모델을 내려받은 own CPU 엔진을 사용할 수 있다.
 
 ### 설치 및 시연 샘플 생성
 
@@ -188,6 +196,8 @@ git을 쓰지 않는다면 GitHub 저장소 첫 화면에서 브랜치가 `main`
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r demo/backend/requirements.txt
+python -m pip install -r engine_v2/requirements.txt
+python engine_v2/tools/fetch_own_models.py  # own OCR 모델 (저장소에는 커밋되지 않음)
 cd demo/frontend
 npm install
 cd ../..
@@ -196,9 +206,20 @@ python -m demo.fixtures.make_samples
 
 샘플은 가상 값으로 만든 PDF이며 `demo/fixtures/samples/`에 생성된다. 시나리오 테스트는 해당 폴더가 없을 때 자동으로 생성한다.
 
+### 평가 도구
+
+`fetch_synth_fonts.py`는 합성 평가용 글꼴을 받고, `make_synth_eval.py`는 가상 문서 평가 세트를 만든다. `ocr_bench`로 own·Apple Vision 등 OCR 엔진을 비교할 수 있다. 자세한 합성 평가와 실서류 예시는 [`engine_v2/docs/own-ocr.md`](engine_v2/docs/own-ocr.md)를 참고한다.
+
+```bash
+python engine_v2/tools/fetch_synth_fonts.py
+python engine_v2/tools/make_synth_eval.py
+python -m engine_v2.tools.ocr_bench --synth engine_v2/data/synth_eval/manifest.json --engines own applevision
+python -m engine_v2.tools.ocr_bench "<파일 경로>" --doc resident_abstract --engines own applevision
+```
+
 ### 전북AI OCR 환경
 
-기관 확인에 따라 전북AI OCR을 판독 체인의 앞단(시연 고정 응답 다음)에 연결했다. 통신 오류나 필수 항목·쪽 완전성 등 판독 검증에 실패한 경우 로컬 OCR로 대체한다. 검증이 통과하면 잡음 점수와 무관하게 전북AI 결과를 사용하며, 잡음은 담당자 화면에서 참고할 수 있다. 요청에는 `temperature=0`을 사용하고 모델 특수 토큰은 제거한다. 전북AI는 좌표를 제공하지 않아 담당자 화면에서 원본 위치를 강조할 수 없다. 실서류 주민등록초본 시험은 판독 검증에 실패해 로컬 OCR로 대체되고 있으며, 서류별 엔진을 실측 비교 중이다.
+기관 확인에 따라 전북AI OCR을 판독 체인의 앞단(시연 고정 응답 다음)에 연결했다. 통신 오류나 필수 항목·쪽 완전성 등 판독 검증에 실패한 경우 로컬 OCR로 이어진다. 검증이 통과하면 잡음 점수와 무관하게 전북AI 결과를 사용하며, 잡음은 담당자 화면에서 참고할 수 있다. 요청에는 `temperature=0`을 사용하고 모델 특수 토큰은 제거한다. 전북AI 응답에는 원본 위치 정보가 없으며, 위치가 필요한 추출에는 로컬 OCR 좌표를 사용한다.
 
 저장소 루트의 `.env`에는 `JBAI_BASE_URL`, `JBAI_API_KEY`, `JBAI_ALLOW_REAL_DOCS`를 둔다. 변수 설명은 [`.env.example`](.env.example)에 있고, 키가 든 `.env`는 커밋하지 않는다. 실제 파일을 점검할 때는 로컬에서 환경 변수를 불러온 뒤 `JBAI_ALLOW_REAL_DOCS=true`로 실행한다. 두 도구는 응답·이미지를 저장하지 않고, 텍스트를 출력하는 점검 도구는 이름·주소·번호 등 값을 가려 출력한다.
 
@@ -210,13 +231,14 @@ JBAI_ALLOW_REAL_DOCS=true python -m engine_v2.tools.jbai_bench "<파일 경로>"
 
 [`jbai_dump`](engine_v2/tools/jbai_dump.py)는 값을 가린 응답 구조를, [`jbai_bench`](engine_v2/tools/jbai_bench.py)는 입력 방식별 수치를 보여 준다. 실제 서류를 외부 OCR로 보내는 것은 기관 확인 범위 안에서만 한다.
 
-- 판독 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(Apple Vision 등) → PDF 텍스트 순이다. 전북AI는 지원 판독기가 있는 텍스트 레이어 없는 서류를 맡고, 텍스트 PDF는 로컬 판독기와 PDF 텍스트 계층이 처리한다.
+- 데모 판독 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(엔진 선택에 따름) → PDF 텍스트 순이다. 전북AI는 지원 판독기가 있는 텍스트 레이어 없는 서류를 맡고, 텍스트 PDF는 로컬 판독기와 PDF 텍스트 계층이 처리한다.
+- `engine_v2.engine.run` 및 CLI의 `ENGINE_V2_OCR` 선택값은 `applevision` / `own` / `easyocr` / `paddle` / `off`다. 기본값은 macOS에서 `applevision`, 그 밖의 환경에서 `own`이다. own을 데모 신청 화면 판독 체인의 기본 엔진으로 연결하는 일은 진행 중이다.
 - `JBAI_API_KEY`가 없거나 `JBAI_ALLOW_REAL_DOCS`가 참이 아니면 전북AI를 부르지 않고 로컬 OCR부터 동작한다.
 - 인증 실패(401), 재시도 후에도 429, 시간 초과, 연결 끊김, 응답 형식 오류 또는 서류별 필수 항목·판독 검증 실패가 나면 로컬 OCR로 대체한다. 환각 점수만으로는 대체하지 않는다. 검증을 통과한 결과에 잡음이 있으면 전북AI 결과를 유지하고 담당자 화면에 참고 표시한다. 사용한 엔진·대체 사유·잡음 표시는 담당자 화면에만 보인다.
 - 전송 이미지는 JPEG다. PDF는 쪽마다 200dpi RGB로 렌더링하고, 사진은 RGB JPEG(품질 95)로 바꿔 보낸다.
 - 응답 원문에 있는 주민등록번호는 받은 즉시 뒷자리(성별 자리 뒤 6자리)를 지운다. 원문은 DB·파일·로그·API 응답에 남기지 않고, 로그에는 엔진 이름·상태 코드·쪽 수·소요 시간만 남긴다.
 - 같은 파일(내용 해시)은 서버 메모리에 캐시한 판독 결과(뒷자리를 지운 것)를 다시 써서 전북AI를 다시 부르지 않는다.
-- 실제 서류 주민등록초본 시험에서는 전북AI 판독 검증이 통과하지 않아 로컬 OCR로 대체되고 있다. 서류별 판독 엔진은 실측 비교로 결정한다.
+- 실서류 시험 결과는 위 현재 상태에 간략히 기록했다. 이 공개 문서에는 실서류 값과 세부 판독 출력을 싣지 않는다.
 - 전북AI는 좌표를 제공하지 않으므로 담당자 화면에서 원본의 판독 위치를 강조할 수 없다.
 
 ### 백엔드와 프론트엔드 실행
@@ -245,6 +267,8 @@ for f in demo/backend/tests/run_p*_scenarios.py; do echo "== $f"; python -m demo
 python -m pytest engine_v2/tests -q
 ```
 
+현재 `engine_v2/tests`에는 147개 테스트가 있다.
+
 이 반복문은 시나리오 하나가 실패해도 나머지를 끝까지 실행한다. 파일 이름 순서상 P11\~P15가 P2\~P9보다 먼저 실행되므로, 앞에서 멈추면 뒤 시나리오 결과를 확인할 수 없다.
 
 프론트엔드 타입 검사·린트·빌드는 다음과 같이 확인한다.
@@ -264,8 +288,9 @@ npx tsc -b && npx oxlint && npx vite build
 - 파일 이름이 아니라 서류 내용으로 종류와 판정 근거를 판단한다.
 - 담당자는 신청자가 올린 원본 서류를 내려받지 않고 화면으로만 확인한다. 신청자는 본인이 작성한 서식만 내려받을 수 있으며, P4 시나리오가 이 경계를 검사한다.
 - 값을 출력하는 점검 도구는 이름·주소·번호를 가려서 출력한다.
+- OCR 모델·글꼴 등 제3자 출처와 라이선스는 [`engine_v2/docs/own-ocr.md`](engine_v2/docs/own-ocr.md)에서 확인한다. 추후 `THIRD_PARTY_NOTICES`에도 정리한다.
 - API 키를 코드·로그·커밋에 넣지 않는다.
-- 실제 신청 서류는 기관이 확인한 전북AI OCR 외의 외부 서비스로 보내지 않는다. 주민등록번호 뒷자리는 응답을 받은 즉시 지우고 원문을 남기지 않는다.
+- 모델 학습에는 개인정보가 없는 합성 데이터만 사용한다. 실서류는 기관 내부 평가에만 사용하고, 판독은 가능한 한 기관 내부 엔진으로 한다. 외부 전송은 기관의 명시 확인 범위에서만 한다. 주민등록번호 뒷자리는 응답을 받은 즉시 지우고 원문을 남기지 않는다.
 
 ## 확인이 필요한 것
 

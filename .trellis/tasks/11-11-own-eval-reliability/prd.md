@@ -1,0 +1,3 @@
+# Requirements
+Implement user A/B/C on feat/own-ocr from 906ec68. Diagnose all 21 legacy synthetic cases; only fix ground truth or metric defects. Add stronger two-level phone degradation, 2–3 pinned OFL fonts, disjoint template/font split options, opt-in quadrilateral rectification. Add PDF/image + make_gt value-free benchmark (own/applevision/jbai), optional --out only, safe errors/skips, leakage tests. Report all requested tables and commit with exact user message only after zero failures and original 85 tests retained.
+Never access/create private data directory. Never change demo/backend, scoring/extractors, existing tests, or shared specs. Never stage assets/generated outputs/secrets. No amend/push/coauthor.

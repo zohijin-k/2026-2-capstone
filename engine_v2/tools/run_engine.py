@@ -15,6 +15,8 @@ import json
 from datetime import date
 from pathlib import Path
 
+from ..pipeline.ocr import default_engine
+
 from ..paths import PRIVATE_DIR
 
 from ..engine import run
@@ -29,7 +31,7 @@ def main() -> None:
     ap.add_argument("--announce", type=date.fromisoformat, default=None, help="공고일 (기본: 오늘)")
     ap.add_argument("--issue-date", help="신청자가 입력한 발급일을 덮어쓰기 (오류 시나리오 확인용)")
     ap.add_argument("--name", help="신청자 성명 덮어쓰기 (오류 시나리오 확인용)")
-    ap.add_argument("--engine", default="applevision")
+    ap.add_argument("--engine", default=default_engine())
     args = ap.parse_args()
 
     for p in (args.file, args.input):

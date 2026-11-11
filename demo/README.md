@@ -88,6 +88,8 @@ uvicorn demo.backend.main:app --reload --port 8000 --env-file .env
 
 `.env`가 없거나 `JBAI_API_KEY`·`JBAI_ALLOW_REAL_DOCS=true` 중 하나라도 빠지면 전북AI 없이
 로컬 OCR부터 동작한다. 변수 설명은 저장소 루트의 `.env.example`에 있다.
+own을 선택하려면 저장소 루트에서 `pip install -r engine_v2/requirements.txt`와
+`python engine_v2/tools/fetch_own_models.py`를 한 번 실행한다. 모델 파일은 저장소에 포함되지 않는다.
 
 ```bash
 # 터미널 2 — 프론트엔드
@@ -238,13 +240,15 @@ WOFF2, PDF 합성에는 TTF 서브셋을 사용하며, 각 글꼴 폴더에 SIL 
 
 - **판독(OCR)은 단계형 체인**이다. 생성 샘플의 고정 응답을 먼저 확인하고, 지원되는
   텍스트 레이어 없는 서류에는 전북AI OCR을 호출한다. 인증·통신·응답 오류 또는 서류별
-  필수 항목·쪽 완전성 등 판독 검증 실패 시 로컬 OCR(Apple Vision 등)로 대체한다. 검증을
+  필수 항목·쪽 완전성 등 판독 검증 실패 시 로컬 OCR(`ENGINE_V2_OCR` 선택 엔진)로 대체한다. 검증을
   통과한 결과는 환각 점수와 무관하게 사용하고, 잡음은 담당자 화면에 참고 표시한다.
   텍스트 PDF는 로컬 판독기와 PyMuPDF 텍스트 계층이 처리한다. 요청에는 temperature 0을
   사용하며 모델 특수 토큰은 제거한다. 전북AI는 좌표를 주지 않아 원본 위치 강조를 제공하지
   못한다. 실제 초본 시험은 전북AI 판독 검증을 통과하지 못해 현재 로컬 OCR로 대체되고
-  있으며, 서류별 엔진을 실측 비교 중이다. 엔진·대체 사유·품질 메모는 담당자 화면에만
+  있으며, own을 신청 화면 로컬 OCR의 기본 엔진으로 연결하는 작업은 진행 중이다. 엔진·대체 사유·품질 메모는 담당자 화면에만
   표시한다 (`ocr/jbai.py`, `tests/run_p15_jbai_scenarios.py`).
+- 로컬 엔진 선택값은 `applevision` / `own` / `easyocr` / `paddle` / `off`다. 데모 어댑터의 현재 암묵 기본값은 macOS에서 Apple Vision, 그 밖의 환경에서 EasyOCR이며, own 연결 뒤 기본값을 own으로 바꿀 예정이다. 독립 실행형 `engine_v2.engine.run`/CLI 기본값은 macOS에서 Apple Vision, 그 밖의 환경에서 own이다.
+- 판독 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(선택 엔진) → PDF 텍스트다. 전북AI를 사용하지 않거나 서류별 검증에 실패하면 다음 로컬 계층이 시도된다.
 - **점수는 신청자에게 절대 보이지 않는다**(공고문: "평가결과는 공개하지 않음").
   마이페이지 응답에 점수 관련 필드가 하나라도 섞이면 검증 스크립트가 잡는다.
 - **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100\~130% 환산
