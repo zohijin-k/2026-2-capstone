@@ -6,7 +6,7 @@
 
 사용법
   python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf            # 요약만 (팀 공유 가능)
-  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --show     # 숫자 마스킹한 본문 (이름·주소는 보임, 공유 금지)
+  python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --show     # 개인정보를 가린 본문
   python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --dump     # 단어별 좌표 JSON 저장 (data/private/, 커밋 금지)
   python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf --render   # 페이지 PNG 저장 (OCR 실험용, 커밋 금지)
 """
@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from ..paths import PRIVATE_DIR
+from .privacy import mask_text
 
 try:
     import pymupdf as fitz
@@ -39,7 +40,7 @@ RRN_PATTERN = re.compile(r"\d{6}\s*-\s*[1-4*]")  # 주민번호 앞자리+성별
 
 
 def mask_digits(text: str) -> str:
-    return re.sub(r"\d", "#", text)
+    return mask_text(text)
 
 
 def describe_images(page: "fitz.Page") -> list[dict]:
@@ -108,15 +109,15 @@ def summarize(doc: "fitz.Document") -> dict:
         "encrypted": doc.is_encrypted,
         "needs_password": doc.needs_pass,
         "page_count": doc.page_count,
-        "producer": (doc.metadata or {}).get("producer", ""),
-        "creator": (doc.metadata or {}).get("creator", ""),
+        "producer": mask_text((doc.metadata or {}).get("producer", "")),
+        "creator": mask_text((doc.metadata or {}).get("creator", "")),
         "verdict": verdict,
         "pages": pages,
     }
 
 
 def show_masked(doc: "fitz.Document") -> None:
-    print("\n=== 본문 (숫자 마스킹, 이름·주소는 보이므로 공유 금지) ===")
+    print("\n=== 본문 (개인정보 가림) ===")
     for i, page in enumerate(doc):
         print(f"\n--- page {i} ---")
         for line in page.get_text("text").splitlines():
@@ -133,7 +134,7 @@ def dump_words(doc: "fitz.Document", src: Path) -> Path:
         for x0, y0, x1, y1, word, block, line, wno in page.get_text("words"):
             data.append({
                 "page": i, "bbox": [round(x0, 1), round(y0, 1), round(x1, 1), round(y1, 1)],
-                "text": word, "block": block, "line": line,
+                "text": mask_text(word), "block": block, "line": line,
             })
     out.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     return out
@@ -142,7 +143,7 @@ def dump_words(doc: "fitz.Document", src: Path) -> Path:
 def main() -> None:
     ap = argparse.ArgumentParser(description="서류 PDF 구조 점검 (로컬 전용)")
     ap.add_argument("pdf", type=Path)
-    ap.add_argument("--show", action="store_true", help="숫자 마스킹한 본문 출력")
+    ap.add_argument("--show", action="store_true", help="개인정보를 가린 본문 출력")
     ap.add_argument("--dump", action="store_true", help="단어별 좌표를 engine_v2/data/private/에 저장")
     ap.add_argument("--render", action="store_true", help="페이지를 300dpi PNG로 engine_v2/data/private/에 저장")
     args = ap.parse_args()

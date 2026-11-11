@@ -1,6 +1,7 @@
 # 설치: python -m pip install -r requirements.txt
 pymupdf
 pydantic>=2
+Pillow>=11.0   # 전북AI OCR 전송용 JPEG 인코딩
 
 # OCR 후보 (비교용)
 ocrmac; sys_platform == "darwin"   # Apple Vision, 맥 전용 기준선

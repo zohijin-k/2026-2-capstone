@@ -2,7 +2,7 @@
 
 import { EMPTY_YMD, type YMD } from './ymd.ts'
 
-export const SIGN_MODES = ['전자서명', '자필 스캔본 업로드'] as const
+export const SIGN_MODES = ['화면에 서명', '서명 이미지 올리기'] as const
 export type SignMode = (typeof SIGN_MODES)[number]
 
 export interface Form5Value {

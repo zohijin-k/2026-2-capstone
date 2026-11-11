@@ -59,6 +59,7 @@ class ApplicantDocInput:
     workplace_count: int = 1
     #: 서식5를 자필서명 스캔으로 내는 경우 True (데모 기본값은 전자서명).
     handwritten_admin_consent: bool = False
+    paper_admin_consent: bool = False
     #: 취업지원패키지에서 고른 지원 항목. 항목별 추가서류가 여기서 나온다.
     subsidy_selections: list[Selection] = field(default_factory=list)
 
@@ -411,13 +412,13 @@ def _double_savings_checklist(
 
     # ⑤ 행정정보 공동이용 사전동의서 (서식5).
     # 원문은 자필서명 후 스캔 첨부지만, 데모는 캔버스 전자서명으로 대체한다(R1.2).
-    if applicant.handwritten_admin_consent:
+    if applicant.handwritten_admin_consent or applicant.paper_admin_consent:
         items.append(
             _make(
                 "admin_info_consent",
                 DocType.ADMIN_INFO_CONSENT,
-                label="행정정보 공동이용 사전동의서 (서식5)",
-                notes=["자필서명 후 스캔본을 올려 주세요."],
+                label="서식5 행정정보 공동이용 사전동의서(자필 서명본)",
+                notes=["빈 서식에 자필 서명한 뒤 스캔본을 올려 주세요."],
                 requires_signature=True,
                 check_declared_date=False,
             )

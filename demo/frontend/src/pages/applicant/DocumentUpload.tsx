@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   deleteDocument,
   fetchChecklist,
+  fetchInterviewFormFileOptions,
   putDocContext,
   uploadDocument,
   type Checklist,
@@ -121,7 +122,7 @@ function DocumentResult({
           )}
           {SHOW_TECH && (
             <span className="dresult__meta">
-              {doc.ocr_tier} / 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} / {doc.elapsed_ms ?? 0}ms
+              신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} / {doc.elapsed_ms ?? 0}ms
             </span>
           )}
         </div>
@@ -239,6 +240,7 @@ function SlotCard({
   const [infoOpen, setInfoOpen] = useState(false)
   const [interviewFormOpen, setInterviewFormOpen] = useState(false)
   const [interviewPdfReady, setInterviewPdfReady] = useState(false)
+  const [interviewHwp, setInterviewHwp] = useState<string | null>(null)
   const doc = item.documents[0]
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
@@ -252,6 +254,15 @@ function SlotCard({
     : issueISO && item.min_issue_date && issueISO < item.min_issue_date
       ? `이 사업은 ${item.min_issue_date.replaceAll('-', '.')} 이후 ${basisLabel}만 인정합니다. 서류를 확인해 주세요.`
       : ''
+
+  useEffect(() => {
+    if (!/^(interview|suit)_\d+_confirmation$/.test(item.slot_key)) return
+    let alive = true
+    fetchInterviewFormFileOptions(applicationId).then((options) => {
+      if (alive) setInterviewHwp(options.hwp)
+    }).catch(() => { if (alive) setInterviewHwp(null) })
+    return () => { alive = false }
+  }, [applicationId, item.slot_key])
 
   return (
     <li
@@ -287,9 +298,11 @@ function SlotCard({
       <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
 
       {/^(interview|suit)_\d+_confirmation$/.test(item.slot_key) && (
-        <button type="button" className="btn btn--small" onClick={() => { setInterviewPdfReady(false); setInterviewFormOpen(true) }}>
-          면접확인서 양식 보기
-        </button>
+        <details className="dslot__files-menu"><summary className="btn btn--small">면접확인서 양식</summary>
+          <a href={`/api/applications/${applicationId}/forms/files/job_interview_confirmation/blank.pdf`}>빈 서식 PDF</a>
+          {interviewHwp && <a href={interviewHwp}>원본 HWP</a>}
+          <button type="button" className="btn btn--small" onClick={() => { setInterviewPdfReady(false); setInterviewFormOpen(true) }}>미리보기</button>
+        </details>
       )}
 
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
@@ -543,16 +556,7 @@ export default function DocumentUpload({
             {hasAdminConsent && (
               <li>
                 <strong>행정정보 공동이용 사전동의서 (서식5)</strong>
-                {' — '}{context.handwritten_admin_consent ? '자필서명 스캔본 업로드를 선택했습니다.' : '화면 전자서명으로 대체됩니다.'}
-                <label className="dupload__handwritten">
-                  <input
-                    type="checkbox"
-                    checked={!!context.handwritten_admin_consent}
-                    disabled={busySlot === 'work-context'}
-                    onChange={(e) => void changeContext({ handwritten_admin_consent: e.target.checked })}
-                  />
-                  서식5를 자필서명 스캔본으로 제출하겠습니다
-                </label>
+                {' — '}{context.paper_forms?.['서식5'] ? '종이 작성 스캔본을 제출합니다.' : '화면 작성 동의와 서명을 제출합니다.'}
               </li>
             )}
           </ul>

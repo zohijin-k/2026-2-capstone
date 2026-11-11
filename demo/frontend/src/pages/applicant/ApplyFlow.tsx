@@ -37,7 +37,7 @@ import IdentityCheck from './IdentityCheck.tsx'
 import MyPage from './MyPage.tsx'
 import ProgramPicker from './ProgramPicker.tsx'
 import SubsidyItems from './SubsidyItems.tsx'
-import PdfFormsWorkspace from '../../forms/PdfFormsWorkspace.tsx'
+import PdfFormsWorkspace, { ApplicantFormsBulkMenu } from '../../forms/PdfFormsWorkspace.tsx'
 import { EMPTY_CONSENT, type ConsentValue } from '../../forms/consent-model.ts'
 import { EMPTY_FORM1, type Form1Value } from '../../forms/form1-model.ts'
 import { EMPTY_FORM5, type Form5Value, type SignMode } from '../../forms/form5-model.ts'
@@ -102,7 +102,8 @@ export default function ApplyFlow() {
 
   const [consent, setConsent] = useState<ConsentValue>(EMPTY_CONSENT)
   const [form5, setForm5] = useState<Form5Value>(EMPTY_FORM5)
-  const [signMode, setSignMode] = useState<SignMode>('전자서명')
+  const [signMode, setSignMode] = useState<SignMode>('화면에 서명')
+  const [paperForms, setPaperForms] = useState<Record<string, boolean>>({})
 
   const [submitted, setSubmitted] = useState<SubmitResult | null>(null)
   /** 지원 항목이 바뀌면 업로드 화면의 체크리스트를 다시 읽게 하는 키. */
@@ -172,14 +173,14 @@ export default function ApplyFlow() {
       admin_info: {
         consent_type: 'admin_info',
         agreed: form5.agree === '동의함',
-        signature_data_url: signMode === '전자서명' ? form5.signature : undefined,
-        signature_kind: signMode === '전자서명' ? 'electronic' : 'handwritten',
+        signature_data_url: signMode === '화면에 서명' ? form5.signature : undefined,
+        signature_kind: signMode === '화면에 서명' ? 'electronic' : 'handwritten',
       },
     }
     // 어느 동의를 받아야 하는지는 사업이 정한다. 취업패키지에는 서식5가 없다.
       await postConsents(
       appId,
-      types.map((t) => values[t]),
+      types.filter((t) => !(t === 'admin_info' && paperForms['서식5'])).map((t) => values[t]),
     )
     if (types.includes('admin_info')) save({ form5 })
     setStage(program.has_subsidy_items ? 'subsidy' : 'upload')
@@ -224,9 +225,9 @@ export default function ApplyFlow() {
     consent.privacy === '동의함' &&
     (!needsUniqueId || consent.uniqueId === '동의함') &&
     consent.thirdParty === '동의함' &&
-    (!needsAdminConsent ||
+    (!needsAdminConsent || paperForms['서식5'] ||
       (form5.agree === '동의함' &&
-        (signMode === '전자서명' ? !!form5.signature : form5.signatureScanUploaded)))
+        (signMode === '화면에 서명' ? !!form5.signature : form5.signatureScanUploaded)))
 
   const submittedDone = submitted !== null
   const uploadComplete = uploadProgress.total > 0 && uploadProgress.completed >= uploadProgress.total
@@ -382,13 +383,23 @@ export default function ApplyFlow() {
               admin_info: {
                 consent_type: 'admin_info',
                 agreed: form5.agree === '동의함',
-                signature_data_url: signMode === '전자서명' ? form5.signature : undefined,
-                signature_kind: signMode === '전자서명' ? 'electronic' : 'handwritten',
+                signature_data_url: signMode === '화면에 서명' ? form5.signature : undefined,
+                signature_kind: signMode === '화면에 서명' ? 'electronic' : 'handwritten',
               },
             }
-            await postConsents(appId, consentTypesOf(program).map((type) => values[type]))
+            const selectedConsent: Record<ConsentType, string> = {
+              privacy: consent.privacy,
+              unique_id: consent.uniqueId,
+              third_party: consent.thirdParty,
+              admin_info: form5.agree,
+            }
+            await postConsents(appId, consentTypesOf(program)
+              .filter((type) => !(type === 'admin_info' && paperForms['서식5']))
+              .filter((type) => selectedConsent[type] === '동의함' || selectedConsent[type] === '동의하지 않음')
+              .map((type) => values[type]))
           }}
           onChangedSubsidy={(state) => { setSelectedSubsidyTypes(state.selections.length); setChecklistKey((key) => key + 1) }}
+          onPaperFormsChange={setPaperForms}
           onContinue={() => void continueFromForms()}
           continuing={formContinuing}
           error={formError}
@@ -482,7 +493,7 @@ export default function ApplyFlow() {
       )}
 
       {/* ── 제출 완료 ── */}
-      {stage === 'complete' && submitted && (
+      {stage === 'complete' && submitted && appId !== null && (
         <>
           <div className="flow-block flow-block--ok">
             <strong>{submitted.message}</strong>
@@ -504,6 +515,7 @@ export default function ApplyFlow() {
               {submitted.next_steps.map((s) => <li key={s}>{s}</li>)}
             </ol>
             <p className="flow-alt">{submitted.notice}</p>
+            <ApplicantFormsBulkMenu applicationId={appId} refreshKey={1} />
             <button type="button" className="btn btn--primary" onClick={openMyPage}>마이페이지</button>
           </div>
         </>

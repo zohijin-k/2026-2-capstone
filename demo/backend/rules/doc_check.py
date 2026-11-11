@@ -465,6 +465,28 @@ def check_document(
                             "담당자가 원본에서 직접 확인합니다.",
                             req,
                         ))
+        elif req.doc_type is DocType.ADMIN_INFO_CONSENT and ocr.detected_doc_type is DocType.ADMIN_INFO_CONSENT:
+            name = str(ocr.fields.get("성명") or "").strip()
+            birth = str(ocr.fields.get("생년월일") or "").strip()[:10]
+            try:
+                birth_date = date.fromisoformat(birth)
+            except ValueError:
+                birth_date = None
+            if not name or birth_date is None:
+                findings.append(CheckFinding(
+                    "ADMIN_CONSENT_IDENTITY_UNREADABLE",
+                    "서식의 본인 정보를 자동 판독하지 못했습니다. 담당자가 원본을 확인합니다.",
+                    severity="NEEDS_REVIEW",
+                    detail="종이 서식의 성명과 생년월일을 모두 읽어 본인인증 정보와 대조해야 합니다.",
+                ))
+            elif name.replace(" ", "") != identity.name or birth_date != identity.birth:
+                severity = "FAIL" if ocr.confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD else "NEEDS_REVIEW"
+                findings.append(CheckFinding(
+                    "ADMIN_CONSENT_IDENTITY_MISMATCH" if severity == "FAIL" else "ADMIN_CONSENT_IDENTITY_UNCERTAIN",
+                    "서식의 본인 정보가 본인인증 정보와 다릅니다. 담당자가 원본을 확인합니다." if severity != "FAIL" else "본인 명의 서식이 아닙니다. 본인 명의 서식으로 다시 제출해 주세요.",
+                    severity=severity,
+                    detail=f"서식 판독 성명={name}, 생년월일={birth_date.isoformat()}; 본인인증 정보와 대조 결과 불일치.",
+                ))
         elif ocr.tier != "fixture":
             _, mismatched = compare(identity, ocr.fields)
             if mismatched:

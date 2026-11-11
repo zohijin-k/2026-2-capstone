@@ -82,9 +82,12 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.make_samples
 `engine/` 을 import 할 수 있다.
 
 ```bash
-# 터미널 1 — 백엔드 (저장소 루트에서)
-uvicorn demo.backend.main:app --reload --port 8000
+# 터미널 1 — 백엔드 (저장소 루트에서, .env의 전북AI 설정을 함께 넘긴다)
+uvicorn demo.backend.main:app --reload --port 8000 --env-file .env
 ```
+
+`.env`가 없거나 `JBAI_API_KEY`·`JBAI_ALLOW_REAL_DOCS=true` 중 하나라도 빠지면 전북AI 없이
+로컬 OCR부터 동작한다. 변수 설명은 저장소 루트의 `.env.example`에 있다.
 
 ```bash
 # 터미널 2 — 프론트엔드
@@ -215,11 +218,14 @@ WOFF2, PDF 합성에는 TTF 서브셋을 사용하며, 각 글꼴 폴더에 SIL 
 
 ## 7. 알아 둘 것
 
-- **판독(OCR)은 3계층**이다. ① 파일명이 `fixtures/samples/`의 시연 파일과 같으면
-  고정 결과(Tier1) ② 아니면 PDF 텍스트 레이어에서 실제로 읽는다(Tier2, PyMuPDF)
-  ③ 스캔 이미지용 상용 API(Tier3)는 인터페이스만 있다. 시연 중 판독이 흔들려
-  화면이 무너지는 일이 없도록 Tier1을 먼저 둔 것이고, 아무 PDF나 올려도 Tier2가
-  받는다.
+- **판독(OCR)은 폴백 체인**이다. ① 파일명이 `fixtures/samples/`의 시연 파일과 같으면
+  고정 결과(Tier1) ② 텍스트 레이어가 없는 초본·등본·건강보험료 납부확인서·자격득실확인서는
+  전북AI OCR(Tier1.2, 기관 확인에 따른 기본 판독) ③ 전북AI가 꺼져 있거나 오류가 나면
+  로컬 OCR(Tier1.5, Apple Vision 등) ④ 텍스트 PDF는 텍스트 레이어에서 읽는다(Tier2, PyMuPDF)
+  ⑤ 상용 API(Tier3)는 인터페이스만 있다. 시연 중 판독이 흔들려 화면이 무너지는 일이
+  없도록 Tier1을 먼저 둔 것이고, 전북AI 연결이 끊겨도 로컬 OCR이 이어받는다. 어떤 엔진이
+  읽었는지와 대체 사유는 담당자 화면의 판독 결과에만 표시한다
+  (`ocr/jbai.py`, `tests/run_p15_jbai_scenarios.py`).
 - **점수는 신청자에게 절대 보이지 않는다**(공고문: "평가결과는 공개하지 않음").
   마이페이지 응답에 점수 관련 필드가 하나라도 섞이면 검증 스크립트가 잡는다.
 - **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100~130% 환산

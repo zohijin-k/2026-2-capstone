@@ -50,9 +50,11 @@ def test_three_page_pdf_calls_backend_in_page_order(tmp_path: Path, monkeypatch)
     assert all(url.endswith("/ocr/chat/completions") for url, _, _, _ in requests)
     first_payload = requests[0][3]
     assert first_payload["model"] == jbai_ocr.MODEL
+    assert first_payload["temperature"] == 0
+    assert first_payload["max_tokens"] == 4096
     message = first_payload["messages"][0]
     assert message["content"][0] == {"type": "text", "text": "OCR:"}
-    assert message["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert message["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_base_url_trailing_slash_keeps_endpoint_path(monkeypatch):
@@ -117,6 +119,88 @@ def test_missing_key_is_clear_and_sends_no_request(monkeypatch):
     assert sent == []
 
 
+def test_requests_temperature_zero_and_default_max_tokens(monkeypatch):
+    configure(monkeypatch)
+    sent = []
+
+    def fake_post(request, timeout):
+        sent.append(json.loads(request.data))
+        return openai_response("합성 결과")
+
+    monkeypatch.setattr(jbai_ocr, "_http_post", fake_post)
+    jbai_ocr.run_jbai_ocr(b"synthetic jpeg", (100, 100))
+    assert sent[0]["temperature"] == 0
+    assert sent[0]["max_tokens"] == 4096
+
+    monkeypatch.setenv("JBAI_MAX_TOKENS", "1234")
+    jbai_ocr.run_jbai_ocr(b"synthetic jpeg", (100, 100))
+    assert sent[1]["max_tokens"] == 1234
+
+
+def test_unsupported_generation_option_is_removed_and_reported(monkeypatch):
+    configure(monkeypatch)
+    requests = []
+
+    def fake_post(request, timeout):
+        payload = json.loads(request.data)
+        requests.append(payload)
+        if "temperature" in payload:
+            return 400, json.dumps({"error": "temperature is not supported"}).encode(), {}
+        return openai_response("결과 <|vision_marker|> 완료")
+
+    monkeypatch.setattr(jbai_ocr, "_http_post", fake_post)
+    page = jbai_ocr.run_jbai_ocr(b"synthetic jpeg", (100, 100))
+    assert "temperature" in requests[0]
+    assert "temperature" not in requests[1]
+    assert page.unsupported_options == ("temperature",)
+    assert page.special_token_count == 1
+    assert "vision_marker" not in page.raw_content
+
+
+def test_hallucination_score_flags_foreign_scripts_and_extreme_output():
+    from ..pipeline.jbai_quality import HALLUCINATION_THRESHOLDS, assess_page
+
+    normal = assess_page(["주민등록표 초본 성명 김가상 발생일 2025.01.01"], "", (1500, 2000))
+    noisy = assess_page(["無關な文句" * 300, "無關な文句" * 300], "謎の表" * 3000, (1500, 2000))
+
+    assert normal.score < HALLUCINATION_THRESHOLDS["fail_score"]
+    assert noisy.score >= HALLUCINATION_THRESHOLDS["fail_score"]
+    assert "비한국어 문자 비율 높음" in noisy.reasons
+    assert "이미지 대비 응답 과다" in noisy.reasons
+
+
+def test_jbai_bench_runs_sliced_synthetic_image_without_printing_text(monkeypatch, capsys):
+    from PIL import Image
+    from ..tools.jbai_bench import _print_document, run_variant
+
+    configure(monkeypatch)
+    buffer = __import__("io").BytesIO()
+    Image.new("RGB", (120, 200), "white").save(buffer, format="JPEG")
+    request_index = 0
+
+    def fake_post(request, timeout):
+        nonlocal request_index
+        payload = json.loads(request.data)
+        task = payload["messages"][0]["content"][0]["text"]
+        request_index += 1
+        content = "성명 김합성\n발생일 2025.01.01" if task == "OCR:" else (
+            "<table><tr><td>주소 전북 전주시 가상로</td></tr></table>")
+        return openai_response(content)
+
+    monkeypatch.setattr(jbai_ocr, "_http_post", fake_post)
+    result = run_variant([(0, buffer.getvalue(), (120, 200))], stripe_count=4,
+                         temperature=0.0, max_tokens=1234)
+
+    assert request_index == 8
+    assert result.request_count == 8
+    assert len(result.pages) == 1
+    assert result.pages[0].image_size == (120, 200)
+    assert "김합성" in "\n".join(result.pages[0].text_lines)
+    _print_document("합성", result)
+    output = capsys.readouterr().out
+    assert "김합성" not in output and "전주시" not in output and "가상로" not in output
+
+
 def test_private_file_and_demo_upload_are_blocked_by_default(tmp_path: Path, monkeypatch):
     configure(monkeypatch)
     private_root = tmp_path / "private"
@@ -173,3 +257,65 @@ def test_jbai_page_result_keeps_otls_content_for_replay(monkeypatch):
 
     assert page.raw_content == content
     assert [[cell.text for cell in row] for row in page.tables[0].rows] == [["월별", "금액"], ["10월", "100"]]
+
+
+def test_all_value_dump_tools_mask_synthetic_multiscript_values(capsys):
+    from ..tools.jbai_dump import mask_text, summarize
+    from ..tools.inspect_pdf import show_masked
+    from ..tools.layout_dump import mask as layout_mask
+
+    source = "성명 김가상 (金假想 𠀀 﨑) 주소 전북특별자치도 전주시 가상로 12 주민등록번호 990101-2712345 カタカナ Привет ไทย हिंदी <|vision_token|>"
+    masked = mask_text(source)
+
+    for private_value in ("김가상", "金假想", "𠀀", "﨑", "전주시", "가상로", "990101-2712345",
+                          "カタカナ", "Привет", "ไทย", "हिंदी", "vision_token"):
+        assert private_value not in masked
+    assert "[주민번호]" in masked
+    assert "[토큰]" in masked
+    assert "성명" in masked and "주소" in masked and "전북특별자치도" in masked
+    assert masked.count("漢") >= 4 and "カ" in masked and "?" in masked
+
+    layout_masked = layout_mask(source)
+    assert "金假想" not in layout_masked and "カタカナ" not in layout_masked and "Привет" not in layout_masked
+
+    class SyntheticPage:
+        def get_text(self, kind):
+            assert kind == "text"
+            return source
+
+    show_masked([SyntheticPage()])
+    inspect_output = capsys.readouterr().out
+    for private_value in ("김가상", "金假想", "𠀀", "﨑", "전주시", "가상로", "990101-2712345",
+                          "カタカナ", "Привет", "ไทย", "हिंदी"):
+        assert private_value not in inspect_output
+
+    page = jbai_ocr.JBAIPageResult(
+        page=0,
+        text_lines=[source],
+        tables=[jbai_ocr.JBAITable([[jbai_ocr.JBAITableCell("金假想"),
+                                    jbai_ocr.JBAITableCell("전주시 가상로 12")]])],
+        elapsed_sec=0.2,
+        raw_content=source,
+        table_content="<table><tr><td>김합성</td><td>전주시 가상로 12</td></tr></table>",
+        ocr_elapsed_sec=0.1,
+        table_elapsed_sec=0.1,
+        image_size=(1200, 1600),
+        jpeg_bytes=1234,
+    )
+    output = summarize(jbai_ocr.JBAIDocumentResult([page], 0.2))
+    for private_value in ("김가상", "金假想", "전주시", "가상로", "990101-2712345", "カタカナ", "Привет"):
+        assert private_value not in output
+
+
+def test_jbai_page_pair_reports_request_timing_and_image_size(monkeypatch):
+    configure(monkeypatch)
+    monkeypatch.setattr(jbai_ocr, "_http_post", lambda *_: openai_response("합성 결과"))
+
+    result = jbai_ocr.run_jbai_image_pair(b"synthetic jpeg bytes", (1200, 1600))
+    document = jbai_ocr.JBAIDocumentResult([result], result.elapsed_sec)
+
+    assert document.request_count == 2
+    assert result.image_size == (1200, 1600)
+    assert result.jpeg_bytes == len(b"synthetic jpeg bytes")
+    assert result.ocr_elapsed_sec > 0
+    assert result.table_elapsed_sec > 0

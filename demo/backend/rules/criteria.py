@@ -11,7 +11,7 @@ from ..models import Application, ProgramCriteriaVersion, get_session
 from .programs import PROGRAMS
 from .subsidy import criteria_catalog_defaults
 
-CRITERIA_SCHEMA_VERSION = 4
+CRITERIA_SCHEMA_VERSION = 5
 
 
 def default_criteria(program_code: str) -> dict[str, Any]:
@@ -62,6 +62,11 @@ def default_criteria(program_code: str) -> dict[str, Any]:
         # 취업패키지 지원 항목의 금액·지급 방식·횟수·필요 서류·날짜 종류는
         # 신규 기준 버전에 스냅샷으로 저장한다. 기본값은 기존 룰팩에서 만든다.
         "subsidy_catalog": subsidy_catalog,
+        "paper_forms": (
+            {"서식1": False, "서식2": False, "서식3": False, "서식4": False, "서식5": True}
+            if program_code == "double_savings"
+            else {"job_application": False, "job_consent": False}
+        ),
     }
 
 
@@ -89,6 +94,10 @@ def read_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
         **(stored.get("supplement") or {}),
     }
     merged["subsidy_catalog"] = stored.get("subsidy_catalog") or defaults["subsidy_catalog"]
+    merged["paper_forms"] = {
+        **defaults["paper_forms"],
+        **(stored.get("paper_forms") or {}),
+    }
     return merged
 
 
@@ -219,6 +228,7 @@ def public_criteria(row: ProgramCriteriaVersion) -> dict[str, Any]:
         "nhis_acquisition_loss_years": data["nhis_acquisition_loss_years"],
         "supplement": data["supplement"],
         "subsidy_catalog": data["subsidy_catalog"],
+        "paper_forms": data["paper_forms"],
     }
 
 

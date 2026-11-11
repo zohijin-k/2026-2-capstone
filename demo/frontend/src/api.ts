@@ -242,7 +242,6 @@ export interface UploadedDocument {
   findings: Finding[]
   extracted: Record<string, string>
   ocr_confidence: number | null
-  ocr_tier: string | null
   elapsed_ms: number | null
   page_index: number | null
   uploaded_at: string
@@ -281,6 +280,7 @@ export interface DocContext {
   admin_fixed_term?: boolean
   workplace_count?: number
   handwritten_admin_consent?: boolean
+  paper_forms?: Record<string, boolean>
 }
 
 /** 업로드 화면이 사업 코드로 분기하지 않도록 서버가 내려주는 안내. */
@@ -296,6 +296,7 @@ export interface ChecklistProgram {
   application_period_2: string[] | null
   asks_work_category: boolean
   has_subsidy_items: boolean
+  paper_forms: Record<string, boolean>
 }
 
 export interface Checklist {
@@ -443,6 +444,7 @@ export interface CriteriaData {
   nhis_acquisition_loss_years: number
   supplement: { allowed: boolean; days: number | null }
   subsidy_catalog: CriteriaSubsidyItem[]
+  paper_forms: Record<string, boolean>
 }
 export interface CriteriaVersion extends CriteriaData { changed_at?: string; changed_role?: string }
 export interface CriteriaHistory { current: CriteriaVersion; history: CriteriaVersion[] }
@@ -510,7 +512,17 @@ export interface ApplicantFormSummary {
   label: string
   file_url: string
   file_name: string
+  hwp_available: boolean
 }
+
+export const fetchWrittenFormsOptions = (id: number) =>
+  json<{ url: string | null; completed: number; total: number }>(`/api/applications/${id}/forms/files/written/options`)
+export const fetchOriginalHwpOptions = (id: number) =>
+  json<{ url: string | null; label: string | null }>(`/api/applications/${id}/forms/files/original-hwp/options`)
+export const printableForm5Url = (id: number) => `/api/applications/${id}/forms/files/서식5/print.pdf`
+export const sourceFormHwpUrl = (id: number, formNo: string) => `/api/applications/${id}/forms/files/${encodeURIComponent(formNo)}/source.hwp`
+export const fetchInterviewFormFileOptions = (id: number) =>
+  json<{ blank: string; hwp: string | null }>(`/api/applications/${id}/forms/files/job_interview_confirmation/options`)
 
 export const fetchFormLayout = async (id: number, formNo: string): Promise<FormLayout> => {
   const layout = await json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
@@ -586,6 +598,7 @@ export const putDocContext = (id: number, context: DocContext) =>
       admin_fixed_term: context.admin_fixed_term ?? false,
       workplace_count: context.workplace_count ?? 1,
       handwritten_admin_consent: context.handwritten_admin_consent ?? false,
+      paper_forms: context.paper_forms ?? {},
     }),
   })
 
@@ -851,6 +864,10 @@ export interface OfficerDocument {
   bboxes: Record<string, BBox>
   ocr_confidence: number | null
   ocr_tier: string | null
+  /** 실제로 글자를 읽은 엔진 (jbai·applevision·pdftext 등). 담당자 화면 전용 */
+  ocr_engine: string | null
+  /** 앞 엔진이 실패해 다른 엔진으로 대체한 사유 (예: 전북AI 응답 시간 초과) */
+  ocr_fallback_reason: string | null
   declared_issue_date: string | null
   uploaded_at: string
 }

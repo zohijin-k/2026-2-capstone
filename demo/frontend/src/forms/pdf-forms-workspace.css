@@ -5,6 +5,7 @@
 .pdf-form-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-md); }
 .pdf-form-row--done { border-left: 4px solid var(--success, #278451); }
 .pdf-form-row--draft { border-left: 4px solid var(--warning, #bb7b16); }
+.pdf-form-row--paper { border-left: 4px solid var(--brand); }
 .pdf-form-row--empty { border-left: 4px solid var(--border-strong); }
 .pdf-form-row__info { display: flex; flex-direction: column; gap: 4px; }
 .pdf-form-row__info span { color: var(--muted); font-size: 12px; }
@@ -13,6 +14,12 @@
 .pdf-form-row__thumb:disabled { cursor: default; }
 .pdf-form-row__info { flex: 1; min-width: 0; }
 .pdf-form-row__actions { display: flex; gap: 8px; }
+.pdf-form-row__paper-mode { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-size: 12px; }
+.pdf-form-row__paper-files { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pdf-form-row__paper-files p { flex-basis: 100%; margin: 2px 0; }
+.pdf-forms__bulk-menu { position: relative; width: fit-content; }
+.pdf-forms__bulk-menu > a { display: block; margin-top: 3px; padding: 6px 10px; background: var(--surface); color: var(--text); border: 1px solid var(--border); text-decoration: none; white-space: nowrap; }
+.pdf-forms__bulk-menu[open] { z-index: 3; }
 .pdf-forms__selfcheck { display: grid; gap: 12px; }
 .pdf-forms__selfcheck h3 { margin: 0; }
 .pdf-forms__selfcheck fieldset { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 12px; }

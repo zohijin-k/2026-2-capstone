@@ -2299,6 +2299,8 @@ function toOfficerDocument(entry: MockEntry, doc: MockDoc, index: number): Offic
     // 담당자가 OCR 결과로 읽는다.
     ocr_confidence: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 0.97 : 0.68,
     ocr_tier: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
+    ocr_engine: doc.docType === '신청서' ? null : doc.status === 'PASS' ? 'pdftext' : 'fallback',
+    ocr_fallback_reason: null,
     declared_issue_date: dateShown.startsWith('(') ? null : dateShown || null,
     uploaded_at: entry.row.submitted_at ?? '',
   }
