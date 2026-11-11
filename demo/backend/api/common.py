@@ -195,6 +195,9 @@ def document_dict(d: Document) -> dict[str, Any]:
     } or d.expected_doc_type in {
         "건강보험료납부확인서", "건강보험자격확인서",
     }
+    visible_fields = set(APPLICANT_VISIBLE_FIELDS)
+    if d.doc_type == "4대보험가입내역확인서" or d.expected_doc_type == "4대보험가입내역확인서":
+        visible_fields.add("생년월일")
     return {
         "document_id": d.id,
         "slot_key": d.slot_key,
@@ -212,7 +215,7 @@ def document_dict(d: Document) -> dict[str, Any]:
         "extracted": {
             k: v
             for k, v in ((d.ocr_json or {}).get("fields") or {}).items()
-            if k in APPLICANT_VISIBLE_FIELDS and not (nhis_subscriber_document and k == "성명")
+            if k in visible_fields and not (nhis_subscriber_document and k == "성명")
         },
         "ocr_confidence": (d.ocr_json or {}).get("confidence"),
         # 판독 계층·엔진·대체 사유는 담당자 화면에만 싣는다 (계층 이름이 곧 외부 엔진 이름이다).

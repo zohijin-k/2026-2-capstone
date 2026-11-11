@@ -19,7 +19,7 @@ from pathlib import Path
 from ..paths import PRIVATE_DIR
 
 OUT = PRIVATE_DIR / "초본.gt.json"
-DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss"}
+DOCS = {"resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"}
 
 
 def ask_amount(prompt: str) -> str | None:
@@ -137,12 +137,40 @@ def _acquisition_gt() -> dict:
     return gt
 
 
+def _insurance4_gt() -> dict:
+    print("4대 사회보험 가입내역 확인서를 보고 입력하세요. 주민등록번호는 입력하지 않습니다.\n")
+    gt: dict = {}
+    name = input("1) 성명: ").strip()
+    if name:
+        gt["name"] = name
+    if birth := ask_date("2) 생년월일: "):
+        gt["birth_date"] = birth
+    if issue := ask_date("3) 발급일: "):
+        gt["issue_date"] = issue
+    confirmation = input("4) 문서확인번호 (하이픈 포함, 모르면 엔터): ").strip()
+    if confirmation:
+        gt["document_number"] = confirmation
+    print("5) 보험별 행을 추가합니다. 보험 이름은 국민연금/건강보험/고용보험/산재보험입니다.")
+    rows = []
+    while insurance := input("   보험 종류 (끝나면 엔터): ").strip():
+        if insurance not in ("국민연금", "건강보험", "고용보험", "산재보험"):
+            print("  알려진 보험 종류를 입력해 주세요.")
+            continue
+        acquired = ask_date("   자격취득일 (없으면 엔터): ")
+        lost = ask_date("   자격상실일 (없으면 엔터): ")
+        status = input("   가입 상태 (미가입/해당없음/가입 중, 모르면 엔터): ").strip()
+        rows.append({"insurance_type": insurance, "acquired": acquired, "lost": lost, "status": status})
+    if rows:
+        gt["rows"] = rows
+    return gt
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--doc", choices=sorted(DOCS), default="resident_abstract")
     args = parser.parse_args()
     gt = {"resident_abstract": _resident_gt, "nhis_payment": _payment_gt,
-          "nhis_acquisition_loss": _acquisition_gt}[args.doc]()
+          "nhis_acquisition_loss": _acquisition_gt, "insurance_4": _insurance4_gt}[args.doc]()
     out = OUT if args.doc == "resident_abstract" else PRIVATE_DIR / f"{args.doc}.gt.json"
 
     if not gt:

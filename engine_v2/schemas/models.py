@@ -32,6 +32,7 @@ class DocType(str, Enum):
     RESIDENT_REGISTER = "resident_register"      # 주민등록표 등본
     NHIS_PAYMENT = "nhis_payment"                  # 건강보험료 납부확인서
     NHIS_ACQUISITION_LOSS = "nhis_acquisition_loss"  # 건강보험 자격득실확인서
+    INSURANCE_4 = "insurance_4"                    # 4대 사회보험 가입내역 확인서
     HEALTH_INSURANCE = "health_insurance"        # 건강보험 자격득실확인서
     INTERVIEW_CONFIRM = "interview_confirm"      # 면접확인서
     RECEIPT = "receipt"                          # 결제영수증 (정장대여·사진관·자격증)

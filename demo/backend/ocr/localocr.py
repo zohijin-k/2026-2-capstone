@@ -50,12 +50,13 @@ def _import_v2():
         sys.path.insert(0, str(_REPO_ROOT))
     from engine_v2.extractors import resident_abstract
     from engine_v2.extractors import nhis_acquisition_loss, nhis_payment
+    from engine_v2.extractors import insurance_4
     from engine_v2.engine import _load_pages
     from engine_v2.pipeline.ocr import run_ocr
     from engine_v2.pipeline.preprocess import PageSource, preprocess
     from engine_v2.schemas.models import DocType as V2DocType, DocumentInput
 
-    return resident_abstract, nhis_payment, nhis_acquisition_loss, run_ocr, PageSource, preprocess, V2DocType, DocumentInput, _load_pages
+    return resident_abstract, nhis_payment, nhis_acquisition_loss, run_ocr, PageSource, preprocess, V2DocType, DocumentInput, _load_pages, insurance_4
 
 
 def _quality(pages) -> float:
@@ -190,6 +191,43 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
     )
 
 
+def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
+    """4대보험 결과를 데모 필드 계약으로 변환한다."""
+    fields: dict[str, str] = {}
+    bboxes: dict[str, BBox] = {}
+    for key in ("성명", "생년월일", "발급일", "문서확인번호", "발급번호",
+                "가입내역", "최근취득일", "가입중"):
+        extracted = ex.fields.get(key)
+        if extracted is None:
+            continue
+        value = extracted.value
+        fields[key] = value.isoformat() if isinstance(value, date) else str(value)
+        if (box := _demo_bbox(extracted.bbox)) is not None:
+            bboxes[key] = box
+    fields["판독검증"] = f"{sum(item.passed for item in ex.validations)}/{len(ex.validations)} 통과"
+    failed = [item.name for item in ex.validations if not item.passed]
+    if failed:
+        fields["판독검증실패"] = ", ".join(failed)
+    if ex.warnings:
+        fields["판독경고"] = " ".join(ex.warnings)
+    issue = ex.fields.get("발급일")
+    issue_date = date.fromisoformat(str(issue.value)) if issue else None
+    confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    detected = DocType.INSURANCE_4 if ex.detected_type.value == "insurance_4" else None
+    return OcrResult(
+        detected_doc_type=detected,
+        confidence=round(min(confidence, ex.type_confidence), 2),
+        image_quality=_quality([page for page, _ in pages]),
+        issue_date=issue_date,
+        fields=fields,
+        bboxes=bboxes,
+        page_count=len(pages),
+        tier=NAME,
+        classification_evidence=classification_evidence,
+        classification_confidence=0.97 if detected else 0.0,
+    )
+
+
 def _generic(pages, path: Path) -> OcrResult | None:
     """초본·등본이 아닌 서류: OCR 텍스트에 Tier2 정규식을 적용한다.
 
@@ -260,27 +298,36 @@ class LocalOcr:
             if classified is None:
                 return None
             detected = classified.detected_doc_type
-            if detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS):
+            if detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
         elif engine == "off":
             return None
 
         try:
-            ra, payment_extractor, acquisition_extractor, run_ocr, PageSource, preprocess, v2types, V2DocumentInput, load_pages = _import_v2()
+            ra, payment_extractor, acquisition_extractor, run_ocr, PageSource, preprocess, v2types, V2DocumentInput, load_pages, insurance4_extractor = _import_v2()
         except ImportError:
             return None
 
         if text_pdf:
-            v2type = v2types.NHIS_PAYMENT if detected == DocType.NHIS_PAYMENT else v2types.NHIS_ACQUISITION_LOSS
+            v2type = {
+                DocType.NHIS_PAYMENT: v2types.NHIS_PAYMENT,
+                DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
+                DocType.INSURANCE_4: v2types.INSURANCE_4,
+            }[detected]
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
-            extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
-            result = _from_nhis(
-                extractor.extract(pages), pages, v2types,
-                classified.classification_evidence, detected,
-            )
+            if detected == DocType.INSURANCE_4:
+                result = _from_insurance4(
+                    insurance4_extractor.extract(pages), pages, classified.classification_evidence
+                )
+            else:
+                extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+                result = _from_nhis(
+                    extractor.extract(pages), pages, v2types,
+                    classified.classification_evidence, detected,
+                )
             result.engine = "pdftext"  # 텍스트 레이어를 그대로 읽었다 (OCR 엔진 미사용)
             return result
 
@@ -303,9 +350,12 @@ class LocalOcr:
         if detected is None:
             return None
 
-        if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS):
-            extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
-            result = _from_nhis(extractor.extract(pages), pages, v2types, evidence, detected)
+        if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
+            if detected == DocType.INSURANCE_4:
+                result = _from_insurance4(insurance4_extractor.extract(pages), pages, evidence)
+            else:
+                extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+                result = _from_nhis(extractor.extract(pages), pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result

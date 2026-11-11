@@ -24,6 +24,8 @@ from .privacy import mask_text
 DOC_LABELS = {
     "nhis_payment": ["성명", "생년월일", "발급일", "가입구분", "고지월", "건강보험료", "장기요양보험료"],
     "nhis_acquisition_loss": ["성명", "생년월일", "발급일", "가입구분", "변동내역", "취득일"],
+    "insurance_4": ["문서확인번호", "발급번호", "발급일", "성명", "생년월일",
+                    "가입내역", "최근취득일", "가입중"],
 }
 LAYOUT_LABELS = {
     "nhis_payment": ("성명", "생년월일", "주민등록번호", "발급일", "발급일자", "발행일", "출력일",
@@ -32,6 +34,11 @@ LAYOUT_LABELS = {
     "nhis_acquisition_loss": ("성명", "생년월일", "주민등록번호", "발급일", "발급일자", "발행일",
                               "출력일", "조회기간", "대상기간", "가입자구분", "자격구분", "자격취득일",
                               "취득일", "자격상실일", "상실일", "사업장명칭", "사업장명", "사업장"),
+    "insurance_4": ("4대사회보험", "사회보험", "가입자", "가입내역", "확인서", "문서확인번호",
+                    "발급번호", "발급일시", "발급일자", "발급일", "주민등록번호",
+                    "외국인등록번호", "성명", "국민연금", "건강보험", "고용보험", "산재보험",
+                    "사업장", "명칭", "관리번호", "구분", "자격", "취득일", "상실일",
+                    "미가입", "해당없음", "직장", "지역"),
 }
 
 
@@ -41,7 +48,38 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
                            ("insurance_type", "가입구분")):
         if gt.get(source) is not None:
             expected[target] = ("".join(str(gt[source]).split()) if source == "name" else str(gt[source]))
-    if doc == "nhis_payment":
+    if doc == "insurance_4":
+        for key, target in (("name", "성명"), ("birth_date", "생년월일"),
+                            ("issue_date", "발급일"), ("document_number", "문서확인번호")):
+            if gt.get(key) is not None:
+                expected[target] = str(gt[key]).replace(" ", "")
+        if gt.get("rows"):
+            rows = gt["rows"]
+            expected["가입내역"] = json.dumps([
+                {"보험종류": row["insurance_type"],
+                 "취득일": row.get("acquired") or "",
+                 "상실일": row.get("lost") or "",
+                 "가입상태": "" if row.get("status") == "가입 중" else row.get("status", "")}
+                for row in rows
+            ], ensure_ascii=False, separators=(",", ":"))
+            expected["최근취득일"] = json.dumps({
+                row["insurance_type"]: max(
+                    (candidate.get("acquired") or "" for candidate in rows
+                     if candidate["insurance_type"] == row["insurance_type"]),
+                    default="",
+                )
+                for row in rows
+            }, ensure_ascii=False, separators=(",", ":"))
+            expected["가입중"] = json.dumps({
+                row["insurance_type"]: any(
+                    candidate["insurance_type"] == row["insurance_type"]
+                    and candidate.get("status") not in {"미가입", "해당없음"}
+                    and not candidate.get("lost")
+                    for candidate in rows
+                )
+                for row in rows
+            }, ensure_ascii=False, separators=(",", ":"))
+    elif doc == "nhis_payment":
         months = gt.get("billed_by_month", {})
         if months:
             expected["고지월"] = ",".join(sorted(months))
@@ -88,7 +126,11 @@ def _layout(doc: str, pages) -> None:
 def _run_nhis(args, gt: dict) -> None:
     from ..engine import _load_pages
 
-    doc_type = V2DocType.NHIS_PAYMENT if args.doc == "nhis_payment" else V2DocType.NHIS_ACQUISITION_LOSS
+    doc_type = {
+        "nhis_payment": V2DocType.NHIS_PAYMENT,
+        "nhis_acquisition_loss": V2DocType.NHIS_ACQUISITION_LOSS,
+        "insurance_4": V2DocType.INSURANCE_4,
+    }[args.doc]
     input_doc = DocumentInput(doc_id="private-check", declared_type=doc_type, file_path=str(args.file))
     try:
         if args.engine == "jbai":
@@ -110,7 +152,11 @@ def _run_nhis(args, gt: dict) -> None:
         _layout(args.doc, pages)
     try:
         if pages is not None:
-            extractor = nhis_payment.extract if args.doc == "nhis_payment" else nhis_acquisition_loss.extract
+            if args.doc == "insurance_4":
+                from ..extractors import insurance_4
+                extractor = insurance_4.extract
+            else:
+                extractor = nhis_payment.extract if args.doc == "nhis_payment" else nhis_acquisition_loss.extract
             result = extractor(pages)
     except Exception:
         print("추출 처리: 못찾음 — 서류 구조 또는 입력 처리 실패")
@@ -128,6 +174,29 @@ def _run_nhis(args, gt: dict) -> None:
         if field is None:
             status = "못찾음"
             reason = result.diagnostics.get(label, "해당 칸 또는 구분 가능한 값을 못 찾음")
+        elif label in expected and args.doc == "insurance_4" and label in {"가입내역", "최근취득일", "가입중"}:
+            try:
+                actual_value = json.loads(field.value)
+                expected_value = json.loads(expected[label])
+                if label == "가입내역":
+                    indexed = {row["보험종류"]: row for row in actual_value}
+                    matches = all(
+                        row["보험종류"] in indexed and all(
+                            indexed[row["보험종류"]].get(key, "") == value
+                            for key, value in row.items() if key != "보험종류"
+                        )
+                        for row in expected_value
+                    )
+                else:
+                    matches = all(actual_value.get(key) == value for key, value in expected_value.items())
+            except (TypeError, ValueError, KeyError):
+                matches = False
+            if not matches:
+                status = "FAIL"
+                reason = "정답과 불일치 (실제·정답 값 숨김)"
+            else:
+                status = "OK"
+                reason = "정답과 일치"
         elif label in expected and str(field.value) != expected[label]:
             status = "FAIL"
             reason = "정답과 불일치 (실제·정답 값 숨김)"
@@ -141,6 +210,10 @@ def _run_nhis(args, gt: dict) -> None:
         if label == "성명" and not validation_names.get("page_names_match", True):
             status, reason = "FAIL", "쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못함"
         print(f"  {label}: {status} — {mask_text(reason)}")
+    if args.doc == "insurance_4":
+        print("[검증]")
+        for validation in result.validations:
+            print(f"  {'OK' if validation.passed else 'FAIL'} {validation.name}")
     if args.engine == "jbai":
         _print_jbai_timing(document)
 
@@ -159,10 +232,13 @@ def main() -> None:
     ap.add_argument("file", type=Path)
     ap.add_argument("--gt", type=Path)
     ap.add_argument("--engine", default="applevision")
-    ap.add_argument("--doc", choices=("resident_abstract", "nhis_payment", "nhis_acquisition_loss"),
+    ap.add_argument("--doc", choices=("resident_abstract", "nhis_payment", "nhis_acquisition_loss", "insurance_4"),
                     default="resident_abstract")
     ap.add_argument("--layout", action="store_true", help="칸·열 제목 위치만 값 가림 형태로 표시")
     args = ap.parse_args()
+
+    if args.doc == "insurance_4" and args.engine == "jbai":
+        raise SystemExit("4대 사회보험 확인서는 좌표 기반 OCR 엔진만 지원합니다.")
 
     if args.engine == "jbai":
         import os
