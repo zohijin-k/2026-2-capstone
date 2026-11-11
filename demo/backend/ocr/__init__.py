@@ -32,12 +32,15 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
     started = time.perf_counter()
     result: OcrResult | None = None
     fallback_reasons: list[str] = []
+    fallback_result: OcrResult | None = None
 
     for adapter in CHAIN:
         try:
             result = adapter.read(file_path, expected)
         except OcrFallback as fallback:
             fallback_reasons.append(fallback.reason)  # 담당자 화면에 대체 사유로 남긴다
+            if fallback.fallback_result is not None:
+                fallback_result = fallback.fallback_result
             result = None
         except NotImplementedError:
             result = None  # 미구성 계층은 조용히 건너뛴다
@@ -47,13 +50,15 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
             break
 
     if result is None:
-        result = OcrResult(
+        result = fallback_result or OcrResult(
             detected_doc_type=None,
             confidence=0.0,
             image_quality=0.5,
             fields={"판독실패": "자동 판독이 되지 않아 담당자가 직접 확인합니다."},
             tier="none",
         )
+        if fallback_result is not None:
+            result.confidence = min(result.confidence, 0.4)
 
     # 어느 엔진으로 읽었는지와 대체 사유는 담당자 화면 전용이다 (신청자 응답에는 싣지 않는다).
     if not result.engine:

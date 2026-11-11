@@ -106,12 +106,20 @@ class JBAIPageResult:
     elapsed_sec: float
     raw_content: str = ""
     table_content: str = ""
+    ocr_elapsed_sec: float = 0.0
+    table_elapsed_sec: float = 0.0
+    image_size: tuple[int, int] = (0, 0)
+    jpeg_bytes: int = 0
 
 
 @dataclass(frozen=True)
 class JBAIDocumentResult:
     pages: list[JBAIPageResult]
     elapsed_sec: float
+
+    @property
+    def request_count(self) -> int:
+        return sum((bool(page.ocr_elapsed_sec) + bool(page.table_elapsed_sec)) or 1 for page in self.pages)
 
 
 class _TableParser(HTMLParser):
@@ -494,6 +502,9 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
             page=page, text_lines=_text_lines(content),
             tables=parse_html_tables(content) or parse_otsl_tables(content),
             elapsed_sec=time.monotonic() - started, raw_content=content,
+            ocr_elapsed_sec=(time.monotonic() - started) if task == TASK_OCR else 0.0,
+            table_elapsed_sec=(time.monotonic() - started) if task == TASK_TABLE else 0.0,
+            image_size=size, jpeg_bytes=len(image),
         )
     raise JBAIRateLimitError("전북AI OCR 요청이 재시도 한도를 넘었습니다.", status=429)
 
@@ -582,6 +593,8 @@ def run_jbai_image_pair(image: bytes, size: tuple[int, int], *, page: int = 0,
         page=page, text_lines=text_result.text_lines, tables=table_result.tables,
         elapsed_sec=text_result.elapsed_sec + table_result.elapsed_sec,
         raw_content=text_result.raw_content, table_content=table_result.raw_content,
+        ocr_elapsed_sec=text_result.elapsed_sec, table_elapsed_sec=table_result.elapsed_sec,
+        image_size=size, jpeg_bytes=len(image),
     )
 
 

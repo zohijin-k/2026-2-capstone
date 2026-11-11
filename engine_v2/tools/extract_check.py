@@ -94,7 +94,8 @@ def _run_nhis(args, gt: dict) -> None:
             from ..pipeline.jbai_ocr import run_jbai_pdf_pair
             from ..extractors.jbai_text import extract as extract_jbai
 
-            result = extract_jbai(run_jbai_pdf_pair(args.file), doc_type)
+            document = run_jbai_pdf_pair(args.file)
+            result = extract_jbai(document, doc_type)
             pages = None
         else:
             pages = _load_pages(input_doc, args.engine)
@@ -139,6 +140,14 @@ def _run_nhis(args, gt: dict) -> None:
         if label == "성명" and not validation_names.get("page_names_match", True):
             status, reason = "FAIL", "쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못함"
         print(f"  {label}: {status} — {reason}")
+    if args.engine == "jbai":
+        _print_jbai_timing(document)
+
+
+def _print_jbai_timing(document) -> None:
+    print(f"[전북AI] 요청 {document.request_count}회, 전체 {document.elapsed_sec:.2f}초")
+    for page in document.pages:
+        print(f"  쪽 {page.page + 1}: OCR {page.ocr_elapsed_sec:.2f}초 / 표 {page.table_elapsed_sec:.2f}초")
 
 
 def main() -> None:
@@ -176,7 +185,8 @@ def main() -> None:
     if args.engine == "jbai":
         from ..extractors.jbai_text import extract as extract_jbai
         from ..pipeline.jbai_ocr import run_jbai_pdf_pair
-        res = extract_jbai(run_jbai_pdf_pair(args.file), V2DocType.RESIDENT_ABSTRACT)
+        document = run_jbai_pdf_pair(args.file)
+        res = extract_jbai(document, V2DocType.RESIDENT_ABSTRACT)
         pages = []
     else:
         pages = []
@@ -207,6 +217,35 @@ def main() -> None:
                 found = True
         if not found:
             print("쪽 1: 신청인 라벨을 못 찾음")
+        if args.engine == "jbai":
+            _print_jbai_timing(document)
+        return
+
+    if args.engine == "jbai":
+        gt = json.loads(gt_path.read_text(encoding="utf-8")) if gt_path else {}
+        print(f"서류 판별: {res.detected_type.value}")
+        for key in ("issue_date", "name", "birth_date", "applicant_name", "applicant_birth_date",
+                    "current_address", "address_history"):
+            if key not in res.fields:
+                continue
+            field = res.fields[key]
+            expected_match = None
+            if key == "name" and "name" in gt:
+                expected_match = field.value == gt["name"].replace(" ", "")
+            elif key in ("birth_date", "issue_date") and key in gt:
+                expected_match = field.value == date.fromisoformat(gt[key])
+            label = "못찾음" if field is None else ("OK" if expected_match is True else
+                  "FAIL" if expected_match is False else "추출됨")
+            print(f"  {key}: {label}")
+        print("[검증]")
+        for validation in res.validations:
+            print(f"  {'OK' if validation.passed else 'FAIL'} {validation.name}")
+        print(f"[주소 이력] {len(res.history)}건")
+        if gt.get("move_in_dates"):
+            found = {d for entry in res.history for d in (entry.occurred, entry.reported) if d}
+            hits = [date.fromisoformat(value) in found for value in gt["move_in_dates"]]
+            print(f"정답 이력 날짜: {'OK' if all(hits) else 'FAIL'} ({sum(hits)}/{len(hits)})")
+        _print_jbai_timing(document)
         return
 
     print(f"서류 판별: {res.detected_type.value} ({res.type_confidence})")

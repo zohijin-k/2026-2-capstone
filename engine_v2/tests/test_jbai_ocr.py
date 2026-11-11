@@ -173,3 +173,48 @@ def test_jbai_page_result_keeps_otls_content_for_replay(monkeypatch):
 
     assert page.raw_content == content
     assert [[cell.text for cell in row] for row in page.tables[0].rows] == [["월별", "금액"], ["10월", "100"]]
+
+
+def test_jbai_dump_masks_synthetic_person_id_and_address():
+    from ..tools.jbai_dump import mask_text, summarize
+
+    source = "성명 김합성 주소 전북특별자치도 전주시 가상로 12 주민등록번호 990101-2712345"
+    masked = mask_text(source)
+
+    assert "김합성" not in masked
+    assert "전주시" not in masked
+    assert "가상로" not in masked
+    assert "990101-2712345" not in masked
+    assert "[주민번호]" in masked
+    assert "성명" in masked and "주소" in masked and "전북특별자치도" in masked
+
+    page = jbai_ocr.JBAIPageResult(
+        page=0,
+        text_lines=[source],
+        tables=[jbai_ocr.JBAITable([[jbai_ocr.JBAITableCell("김합성"),
+                                    jbai_ocr.JBAITableCell("전주시 가상로 12")]])],
+        elapsed_sec=0.2,
+        raw_content=source,
+        table_content="<table><tr><td>김합성</td><td>전주시 가상로 12</td></tr></table>",
+        ocr_elapsed_sec=0.1,
+        table_elapsed_sec=0.1,
+        image_size=(1200, 1600),
+        jpeg_bytes=1234,
+    )
+    output = summarize(jbai_ocr.JBAIDocumentResult([page], 0.2))
+    for private_value in ("김합성", "전주시", "가상로", "990101-2712345"):
+        assert private_value not in output
+
+
+def test_jbai_page_pair_reports_request_timing_and_image_size(monkeypatch):
+    configure(monkeypatch)
+    monkeypatch.setattr(jbai_ocr, "_http_post", lambda *_: openai_response("합성 결과"))
+
+    result = jbai_ocr.run_jbai_image_pair(b"synthetic jpeg bytes", (1200, 1600))
+    document = jbai_ocr.JBAIDocumentResult([result], result.elapsed_sec)
+
+    assert document.request_count == 2
+    assert result.image_size == (1200, 1600)
+    assert result.jpeg_bytes == len(b"synthetic jpeg bytes")
+    assert result.ocr_elapsed_sec > 0
+    assert result.table_elapsed_sec > 0

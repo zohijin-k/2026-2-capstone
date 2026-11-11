@@ -84,9 +84,10 @@ class OcrFallback(Exception):
     `reason`은 담당자 화면에 그대로 보이므로 키·응답 본문·서류 내용을 넣지 않는다.
     """
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, fallback_result: OcrResult | None = None) -> None:
         super().__init__(reason)
         self.reason = reason
+        self.fallback_result = fallback_result
 
 
 @runtime_checkable

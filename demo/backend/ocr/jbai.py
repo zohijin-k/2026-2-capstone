@@ -49,6 +49,74 @@ DEFAULT_TIMEOUT_SEC = 60.0
 MAX_RETRY_WAIT_SEC = 10.0
 CACHE_SIZE = 64
 
+# JBAI results are accepted only when their document-specific core checks pass.
+# Keep thresholds and required validations in this one table for review.
+QUALITY_RULES = {
+    DocType.RESIDENT_ABSTRACT: {
+        "required_fields": ("issue_date", "name", "birth_date"),
+        "required_validations": ("pages_complete", "name_consistent"),
+        "minimum_history": 1,
+    },
+    DocType.RESIDENT_CERTIFICATE: {
+        "required_fields": ("issue_date", "name", "birth_date"),
+        "required_validations": ("pages_complete", "name_consistent"),
+        "minimum_history": 1,
+    },
+    DocType.NHIS_PAYMENT: {
+        "required_fields": ("성명", "생년월일", "발급일", "고지월", "건강보험료"),
+        "required_validations": ("document_type", "성명_consistent", "생년월일_consistent",
+                                 "발급일_consistent", "page_names_match", "insurance_type_found",
+                                 "monthly_rows_found", "monthly_amounts_numeric", "months_continuous",
+                                 "monthly_total_matches"),
+    },
+    DocType.NHIS_ACQUISITION_LOSS: {
+        "required_fields": ("성명", "생년월일", "발급일", "자격이력자료", "가입구분"),
+        "required_validations": ("document_type", "성명_consistent", "생년월일_consistent",
+                                 "발급일_consistent", "page_names_match", "history_dates_read",
+                                 "acquisition_before_loss"),
+    },
+}
+
+
+def _quality_failure(detected: DocType, extracted, document) -> str | None:
+    rules = QUALITY_RULES[detected]
+    fields = extracted.fields
+    validations = {item.name: item.passed for item in extracted.validations}
+    if detected in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
+        if len(extracted.history) < rules["minimum_history"]:
+            return "주소 이력 없음"
+        if "issue_date" not in fields:
+            return "발급일 없음"
+        if "name" not in fields:
+            return "성명 없음"
+        if not validations.get("pages_complete", False):
+            return "쪽 번호 검증 실패"
+        if not validations.get("name_consistent", False):
+            return "쪽마다 성명 일치 검증 실패"
+    for key in rules["required_fields"]:
+        if key not in fields or fields[key].value in (None, ""):
+            return f"핵심 항목 없음: {key}"
+    for key in rules["required_validations"]:
+        if not validations.get(key, False):
+            labels = {
+                "pages_complete": "쪽 번호 검증 실패",
+                "name_consistent": "쪽마다 성명 일치 검증 실패",
+                "page_names_match": "쪽마다 성명 일치 검증 실패",
+                "monthly_rows_found": "월별 표 없음",
+                "monthly_amounts_numeric": "월별 금액 판독 실패",
+                "monthly_total_matches": "월별 합계 검증 실패",
+                "document_type": "서류 종류 검증 실패",
+                "성명_consistent": "성명 검증 실패",
+                "생년월일_consistent": "생년월일 검증 실패",
+                "발급일_consistent": "발급일 검증 실패",
+                "insurance_type_found": "가입구분 판독 실패",
+                "months_continuous": "월별 기간 연속성 검증 실패",
+                "history_dates_read": "자격 이력 날짜 판독 실패",
+                "acquisition_before_loss": "자격 날짜 순서 검증 실패",
+            }
+            return labels.get(key, f"검증 실패: {key}")
+    return None
+
 #: 전북AI 판독기가 있는 서류. 이 칸에 올라온 파일만 전북AI로 보낸다.
 SUPPORTED: tuple[DocType, ...] = (
     DocType.RESIDENT_ABSTRACT,
@@ -223,6 +291,7 @@ class JbaiOcr:
             DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
         }[detected]
         extracted = v2.jbai_text.extract(document, v2type)
+        quality_reason = _quality_failure(detected, extracted, document)
         # 판독기가 열 순서 처리에만 쓰는 임시 격자. 화면 좌표로는 쓰지 않는다.
         pages = v2.jbai_text.virtual_pages(document, v2type)
 
@@ -243,4 +312,6 @@ class JbaiOcr:
             _merge_image_heuristics(result, path)
         result.tier = NAME
         result.engine = NAME
+        if quality_reason:
+            raise OcrFallback(f"전북AI 판독 검증 실패: {quality_reason}", fallback_result=result)
         return result

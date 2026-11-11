@@ -316,6 +316,40 @@ def test_fallback(tmp: Path) -> None:
     check("서류 종류 판별 실패 → LocalOcr 대체·사유",
           (ocr.tier, ocr.fallback_reason), ("localocr", "전북AI 판독 결과로 서류 종류를 알아보지 못함"))
 
+    print("  -- 판독 검증 실패 → LocalOcr로 대체, 이유를 담당자 메타데이터에 기록")
+    jbai_adapter.clear_cache()
+    FAKE.serve(synthetic("resident_abstract"))
+    from engine_v2.extractors import jbai_text
+    original = jbai_text.extract
+    def empty_history(document, doc_type):
+        from dataclasses import replace
+        extracted = original(document, doc_type)
+        return replace(extracted, history=[])
+    jbai_text.extract = empty_history
+    try:
+        install_fake_ocr(fake_abstract_words())
+        result = read_document(str(pdf), DocType.RESIDENT_ABSTRACT)
+    finally:
+        jbai_text.extract = original
+    check("주소 이력 0건 → 로컬 OCR 결과 사용", (result.tier, result.engine), ("localocr", "fake"))
+    check("품질 fallback 사유 기록", result.fallback_reason, "전북AI 판독 검증 실패: 주소 이력 없음")
+
+    print("  -- LocalOcr를 사용할 수 없음 → JBAI 결과를 확인필요 수준으로 낮춤")
+    jbai_adapter.clear_cache()
+    FAKE.serve(synthetic("resident_abstract"))
+    jbai_text.extract = empty_history
+    try:
+        install_fake_ocr([])
+        result = read_document(str(pdf), DocType.RESIDENT_ABSTRACT)
+    finally:
+        jbai_text.extract = original
+    check("로컬 OCR 미사용 시 JBAI 결과 유지", (result.tier, result.engine), ("jbai", "jbai"))
+    check("로컬 OCR 미사용 시 신뢰도 낮춤", result.confidence, 0.4)
+    check("로컬 OCR 미사용 시 사유 보존", result.fallback_reason, "전북AI 판독 검증 실패: 주소 이력 없음")
+    review = check_document(slot("resident_abstract"), result, date(2026, 11, 10),
+                            identity=Identity("김가상", date(1999, 1, 1)))
+    check("품질 실패 결과는 확인필요", review.status, "NEEDS_REVIEW")
+
     os.environ["JBAI_TIMEOUT_SEC"] = "5"
     jbai_adapter.clear_cache()
     FAKE.serve(synthetic("resident_abstract"), "timeout")
@@ -344,6 +378,7 @@ def test_api_privacy_cache_and_views(client, tmp: Path) -> None:
     print("\n[라·마·사] 업로드 API — 주민번호 뒷자리 폐기, 결과 캐시, 담당자 전용 엔진 정보")
     from ..api.common import list_documents
     from ..api.officer import _document_view
+    from engine_v2.extractors import jbai_text
 
     capture = _Capture()
     root = logging.getLogger()
@@ -411,6 +446,29 @@ def test_api_privacy_cache_and_views(client, tmp: Path) -> None:
                    all("jbai" not in r.text and "전북AI" not in r.text for r in responses))
         check("담당자 화면 엔진", (officer[0]["ocr_tier"], officer[0]["ocr_engine"]), ("jbai", "jbai"))
         check("담당자 화면 대체 사유(없음)", officer[0]["ocr_fallback_reason"], None)
+
+        print("  -- 품질 검증 fallback 사유는 담당자 판독 엔진 줄에 표시")
+        jbai_adapter.clear_cache()
+        quality_app = new_app(client)
+        identify(client, quality_app, "김전북", "1999-01-01")
+        FAKE.serve(pages)
+        original_extract = jbai_text.extract
+        def quality_failure(document, doc_type):
+            from dataclasses import replace
+            return replace(original_extract(document, doc_type), history=[])
+        jbai_text.extract = quality_failure
+        try:
+            install_fake_ocr(fake_abstract_words())
+            with pdf.open("rb") as fh:
+                response = client.post(f"/api/applications/{quality_app}/documents",
+                    files={"file": (pdf.name, fh, "application/pdf")},
+                    data={"slot_key": "resident_abstract", "declared_issue_date": "2026-11-10"})
+        finally:
+            jbai_text.extract = original_extract
+        check("품질 실패 업로드는 이어짐", response.status_code, 200)
+        quality_view = _document_view(list_documents(quality_app)[0], {"resident_abstract": "주민등록초본"})
+        check("판독 엔진 줄에 품질 대체 사유", quality_view["ocr_fallback_reason"],
+              "전북AI 판독 검증 실패: 주소 이력 없음")
 
         print("  -- (다) 시연 중 네트워크가 끊겨도 업로드는 끝난다")
         jbai_adapter.clear_cache()
