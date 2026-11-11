@@ -1,46 +1,10 @@
-"""OCR 엔진 비교 — 반드시 본인 PC에서 실행.
-
-  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf
-  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf --engines applevision easyocr
-  python -m engine_v2.tools.ocr_bench engine_v2/data/private/초본.pdf --gt engine_v2/data/private/초본.gt.json
-
-출력 (터미널) — 팀 공유 가능: 엔진별 시간, 인식 단어 수, 평균 신뢰도, 키워드 적중, 정답 필드 맞음/틀림
-저장 (data/private/ocr_<엔진>.txt) — 엔진별 전체 인식 텍스트. 개인정보 포함, 공유·커밋 금지
-
-정답 파일 형식 (data/private/초본.gt.json, 본인 PC에만):
-{
-  "name": "홍길동",
-  "birth_date": "1999-01-01",
-  "issue_date": "2026-11-10",
-  "address_contains": ["전주시", "완산구"],
-  "move_in_dates": ["2018-03-02", "2021-07-15"]
-}
-"""
-
+"""Synthetic evaluation or explicit-input, value-free document benchmark."""
 from __future__ import annotations
 
 import argparse
-import json
-import re
 from datetime import date
 from pathlib import Path
-
-from ..paths import PRIVATE_DIR
-from .privacy import mask_text
-from .synth_bench import cer, run_suite
-
-from ..pipeline.ocr import ENGINES, run_ocr
-from ..pipeline.preprocess import PageSource, preprocess
-from ..pipeline.jbai_ocr import (
-    JBAIOCRError, TASK_OCR, TASK_TABLE, run_jbai_pdf,
-)
-
-# 초본에 거의 항상 등장하는 고정 문구 — 읽혔는지로 기본 인식력 확인 (개인정보 아님)
-KEYWORDS = ["주민등록표", "초본", "성명", "주민등록번호", "주소", "발생일", "신고일",
-            "변동사유", "전입", "세대주", "발급", "시장", "군수", "구청장", "읍", "면", "동"]
-
-DATE_RE = re.compile(r"(19|20)\d{2}\s*[.\-/년]\s*\d{1,2}\s*[.\-/월]\s*\d{1,2}")
-
+import re
 
 def squash(s: str) -> str:
     return re.sub(r"\s+", "", s)
@@ -70,126 +34,51 @@ def score_gt(text: str, gt: dict) -> dict[str, bool]:
     return res
 
 
+class SafeParser(argparse.ArgumentParser):
+    def error(self, message):
+        # argparse normally echoes invalid arguments (which may contain values).
+        self.exit(2, "argument_error: O\n")
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser()
+    ap = SafeParser()
     ap.add_argument("file", type=Path, nargs="?")
-    ap.add_argument("--env-file", type=Path, help="선택적 .env 설정 파일 (python-dotenv 필요)")
-    ap.add_argument("--synth", type=Path, help="합성 manifest.json")
-    ap.add_argument("--output", type=Path, help="결과 JSON 경로")
-    ap.add_argument("--unmasked-synthetic", action="store_true", help="합성 세트의 인식 텍스트만 가림 해제")
-    ap.add_argument("--engines", nargs="+", default=["own", "easyocr", "applevision", "jbai"])
-    ap.add_argument("--gt", type=Path, help="정답 JSON (본인 PC에만)")
+    ap.add_argument("--env-file", type=Path)
+    ap.add_argument("--synth", type=Path)
+    ap.add_argument("--output", type=Path, help="합성 결과 JSON 경로")
+    ap.add_argument("--out", type=Path, help="값 미출력 결과 JSON; 생략 시 화면만")
+    ap.add_argument("--unmasked-synthetic", action="store_true")
+    ap.add_argument("--rectify-phone", action="store_true")
+    ap.add_argument("--engines", nargs="+", default=["own", "applevision", "jbai"])
+    ap.add_argument("--gt", type=Path)
+    ap.add_argument("--doc", choices=["resident_abstract", "nhis_payment", "nhis_acquisition_loss"], default="resident_abstract")
+    ap.add_argument("--today", type=date.fromisoformat)
     args = ap.parse_args()
+    from .private_bench import quiet_dependencies
     if args.env_file:
-        if not args.env_file.is_file():
-            ap.error("설정 파일을 찾지 못했습니다")
-        from dotenv import load_dotenv
-        load_dotenv(args.env_file, override=False)
-
+        try:
+            with quiet_dependencies():
+                from dotenv import load_dotenv
+                if not args.env_file.is_file():
+                    raise ValueError("missing configuration")
+                load_dotenv(args.env_file, override=False)
+        except Exception:
+            ap.error("configuration")
     if args.synth:
-        run_suite(args.synth, args.engines, args.output or args.synth.parent / "bench.json", unmasked=args.unmasked_synthetic)
+        if args.file or args.gt or args.out:
+            ap.error("mixed modes")
+        from .synth_bench import run_suite
+        run_suite(args.synth, args.engines, args.output or args.synth.parent / "bench.json",
+                  unmasked=args.unmasked_synthetic, rectify_phone=args.rectify_phone)
         return
-    if args.file is None:
-        ap.error("file 또는 --synth가 필요합니다")
-    if args.unmasked_synthetic:
-        ap.error("가림 해제는 --synth와 함께만 허용됩니다")
-
-    pages = [p for p in preprocess(args.file) if p.source != PageSource.TEXT_LAYER]
-    gt = json.loads(args.gt.read_text(encoding="utf-8")) if args.gt else None
-    out_dir = PRIVATE_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    print(f"페이지 {len(pages)}쪽, 엔진 {args.engines}\n")
-    summary = []
-    for eng in args.engines:
-        from .synth_bench import available
-        reason = available(eng) if eng in {"own", "easyocr", "applevision", "jbai"} else None
-        if reason:
-            summary.append({"engine": eng, "status": "skip", "reason": reason})
-            print(f"[{eng}] SKIP — {reason}")
-            continue
-        if eng in {"jbai", "jbai-ocr", "jbai-table"}:
-            task = TASK_OCR if eng in {"jbai", "jbai-ocr"} else TASK_TABLE
-            try:
-                result = run_jbai_pdf(args.file, task=task)
-            except JBAIOCRError as error:
-                print(f"[{eng}] 실패 — {error}\n")
-                summary.append({"engine": eng, "error": str(error)})
-                continue
-            content = "\n".join(
-                "\n".join(page.text_lines) + "\n" + "\n".join(
-                    cell.text for table in page.tables for row in table.rows for cell in row
-                )
-                for page in result.pages
-            )
-            row = {
-                "engine": eng,
-                "sec_total": round(result.elapsed_sec, 1),
-                "sec_per_page": round(result.elapsed_sec / max(len(result.pages), 1), 1),
-                "pages": len(result.pages),
-                "text_lines": sum(len(page.text_lines) for page in result.pages),
-                "tables": sum(len(page.tables) for page in result.pages),
-                "table_cells": sum(
-                    len(row) for page in result.pages for table in page.tables for row in table.rows
-                ),
-            }
-            if gt:
-                matches = score_gt(content, gt)
-                row["gt_correct"] = f"{sum(matches.values())}/{len(matches)}"
-                row["gt_detail"] = matches
-            summary.append(row)
-            print(f"[{eng}]")
-            for key, value in row.items():
-                if key != "engine":
-                    print(f"  {key}: {value}")
-            print("  인식 내용은 화면에 출력하거나 파일로 저장하지 않았습니다.\n")
-            continue
-
-        all_words, elapsed, err, texts = [], 0.0, None, []
-        for p in pages:
-            r = run_ocr(eng, p.png, p.pixel_size)
-            if r.error:
-                err = r.error
-                break
-            all_words += r.words
-            elapsed += r.elapsed_sec
-            texts.append(f"--- page {p.page} ---\n{r.text}")
-
-        if err:
-            print(f"[{eng}] 실패 — {err}\n")
-            summary.append({"engine": eng, "error": err})
-            continue
-
-        full = "\n".join(texts)
-        (out_dir / f"ocr_{eng}.txt").write_text(mask_text(full), encoding="utf-8")
-
-        confs = [w.confidence for w in all_words]
-        row = {
-            "engine": eng,
-            "sec_total": round(elapsed, 1),
-            "sec_per_page": round(elapsed / max(len(pages), 1), 1),
-            "words": len(all_words),
-            "mean_conf": round(sum(confs) / len(confs), 3) if confs else 0,
-            "low_conf_ratio(<0.8)": round(sum(c < 0.8 for c in confs) / len(confs), 3) if confs else 0,
-            "keywords_hit": f"{sum(k in squash(full) for k in KEYWORDS)}/{len(KEYWORDS)}",
-            "dates_found": len(DATE_RE.findall(full)),
-        }
-        if gt:
-            g = score_gt(full, gt)
-            row["gt_correct"] = f"{sum(g.values())}/{len(g)}"
-            row["gt_detail"] = g
-        summary.append(row)
-        print(f"[{eng}]")
-        for k, v in row.items():
-            if k != "engine":
-                print(f"  {k}: {v}")
-        print(f"  전체 텍스트: {out_dir / f'ocr_{eng}.txt'} (공유 금지)\n")
-
-    print("=== 요약 JSON (팀 공유 가능) ===")
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
-    if args.output:
-        args.output.write_text(json.dumps(summary, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+    if args.file is None or args.gt is None or args.output or args.unmasked_synthetic or args.rectify_phone:
+        ap.error("explicit file and ground truth required")
+    from .private_bench import run_private
+    run_private(args.file, args.gt, args.engines, doc=args.doc, out=args.out, today=args.today)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        raise SystemExit("interrupted: O") from None

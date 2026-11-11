@@ -20,8 +20,8 @@ import pymupdf
 from PIL import Image, ImageFilter
 from demo.fixtures.make_samples import BODY_HINTS
 
-OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "synth_eval"
-STAGES = ("clean", "scan300", "blur", "noise", "rotate", "jpeg", "phone")
+OUT_DIR = Path(__file__).resolve().parents[1] / "data" / "synth_eval" / "revised"
+STAGES = ("clean", "scan300", "blur", "noise", "rotate", "jpeg", "phone_weak", "phone_strong")
 TODAY = "2026-11-11"
 
 
@@ -67,11 +67,11 @@ def documents():
         yield kind, sorted(cells, key=lambda c: (c[1], c[0])), fields
 
 
-def render(cells):
+def render(cells, font_path=None):
     with pymupdf.open() as doc:
         page = doc.new_page(width=595, height=842)
         writer = pymupdf.TextWriter(page.rect)
-        font = pymupdf.Font("cjk")  # same bundled font as demo.fixtures.make_samples
+        font = pymupdf.Font(fontfile=str(font_path)) if font_path else pymupdf.Font("cjk")
         for x, y, text in cells:
             writer.append((x*5.95, y*8.42), text, font=font, fontsize=10)
         writer.write_text(page)
@@ -80,6 +80,9 @@ def render(cells):
 
 
 def degrade(base, stage, rng):
+    """Compatibility image-only API; geometry is available from degrade_with_geometry."""
+    if stage in {"phone_weak", "phone_strong"}:
+        return phone_capture(base, stage, rng)[0]
     if stage == "clean":
         return base.copy()
     if stage == "scan300":
@@ -111,26 +114,129 @@ def degrade(base, stage, rng):
     raise ValueError(stage)
 
 
-def generate(out_dir=OUT_DIR, seed=20261111):
+SPLITS = {
+    "train": {"fonts": ("nanumgothiccoding",), "template": "stacked_header_v1"},
+    "test": {"fonts": ("nanumgothic", "nanummyeongjo"), "template": "inline_header_v1"},
+}
+
+
+def split_documents(split):
+    """Template families are assigned before degradation, never by image/seed."""
+    for kind, cells, fields in documents():
+        if split == "train":
+            # A structurally different header: values appear below their labels.
+            # Tables keep their semantics but use a narrower, lower body.
+            updated = []
+            for x, y, text in cells:
+                if kind == "resident_abstract" and y == 20:
+                    x, y = ({10: 10, 25: 10, 53: 55, 72: 55}[x],
+                            20 if x in (10, 53) else 24)
+                elif kind != "resident_abstract" and y in (14, 18, 22):
+                    col = {14: 10, 18: 38, 22: 68}[y]
+                    x, y = col, 15 if x == 10 else 19
+                elif y >= 27 and y < 75:
+                    x, y = 5 + x*.9, y + 3
+                updated.append((x, y, text))
+            cells = sorted(updated, key=lambda c: (c[1], c[0]))
+        yield kind, cells, fields
+
+
+def phone_capture(base, stage, rng):
+    """Four independent corner displacements + desk, shading, optical blur.
+
+    Offsets are 3–5% (weak) or 6–8% (strong) of page width/height.
+    Metadata describes image formation; never supplied to the OCR/preprocessor.
+    """
+    import cv2
+    w, h = base.size
+    strong = stage == "phone_strong"
+    low, high = (.06, .08) if strong else (.03, .05)
+    insets = rng.uniform(low, high, (4, 2))
+    margin = .10 if strong else .07
+    mw, mh = round(w*margin), round(h*margin)
+    cw, ch = w + 2*mw, h + 2*mh
+    src = np.float32([[0,0], [w-1,0], [w-1,h-1], [0,h-1]])
+    # Alternating inward/outward corners produce real trapezoid/skew rather
+    # than four almost equal insets merely shrinking the whole sheet.
+    signs = np.float32([[1,1], [-1,-1], [1,-1], [-1,1]])
+    signs *= rng.choice([-1,1])
+    offsets = insets * signs
+    dst = np.float32(src + [mw,mh] + offsets * [w,h])
+    matrix = cv2.getPerspectiveTransform(src, dst)
+    # Illumination gradient and broad oblique shadow happen on the document.
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    xx, yy = xx/w, yy/h
+    gradient = 1 - (.24 if strong else .13)*xx - (.16 if strong else .08)*yy
+    shadow = np.exp(-((xx - .75*yy - .10)/(.17 if strong else .22))**2)
+    light = gradient * (1 - (.38 if strong else .20)*shadow)
+    sheet = np.uint8(np.clip(np.asarray(base)*light[:,:,None], 0, 255))
+    sheet = cv2.GaussianBlur(sheet, (0,0), 1.15 if strong else .65)
+    # Wood-toned background stays clearly visible around every corner.
+    by, bx = np.mgrid[0:ch, 0:cw].astype(np.float32)
+    texture = 4*np.sin(bx/31) + 2*np.sin(by/83)
+    desk = np.empty((ch,cw,3), dtype=np.uint8)
+    for channel, level in enumerate((105, 87, 68)):
+        desk[:,:,channel] = np.clip(level + texture, 0, 255)
+    warped = cv2.warpPerspective(sheet, matrix, (cw,ch), flags=cv2.INTER_CUBIC)
+    mask = cv2.warpPerspective(np.full((h,w),255,np.uint8), matrix, (cw,ch))
+    alpha = mask.astype(np.float32)[:,:,None]/255
+    capture = np.uint8(np.clip(warped*alpha + desk*(1-alpha), 0,255))
+    metadata = {"corner_displacement_magnitudes": insets.tolist(), "corner_offsets": offsets.tolist(), "document_corners_px": dst.tolist(),
+                "background_margin": margin, "blur_sigma_px": 1.15 if strong else .65,
+                "shadow_opacity": .38 if strong else .20}
+    return Image.fromarray(capture), matrix, metadata
+
+
+def degrade_with_geometry(base, stage, rng):
+    import cv2
+    if stage in {"phone_weak", "phone_strong"}:
+        return phone_capture(base, stage, rng)
+    if stage == "rotate":
+        angle = float(rng.choice([-1, 1])) * float(rng.uniform(.8, 2))
+        w, h = base.size
+        affine = cv2.getRotationMatrix2D((w/2,h/2), angle, 1)
+        image = cv2.warpAffine(np.asarray(base), affine, (w,h),
+                               flags=cv2.INTER_CUBIC, borderValue=(255,255,255))
+        matrix = np.vstack((affine, [0,0,1]))
+        return Image.fromarray(image), matrix, {"angle_degrees": angle}
+    return degrade(base, stage, rng), np.eye(3), {}
+
+
+def generate(out_dir=OUT_DIR, seed=20261111, *, split="test", fonts=None):
+    from engine_v2.tools.fetch_synth_fonts import font_path
+    if split not in SPLITS:
+        raise ValueError("Unknown split")
+    selected = tuple(fonts) if fonts else SPLITS[split]["fonts"]
+    if not selected or not set(selected).issubset(SPLITS[split]["fonts"]):
+        raise ValueError("Fonts must belong to selected split; train/test fonts cannot overlap")
+    # Verify all font assets before creating outputs.
+    paths = {name: font_path(name) for name in selected}
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     records = []
-    for doc_index, (kind, cells, fields) in enumerate(documents()):
-        base = render(cells)
-        lines = []
-        for y in sorted({c[1] for c in cells}):
-            lines.append(" ".join(c[2] for c in cells if c[1] == y))
-        for stage_index, stage in enumerate(STAGES):
-            sample_id = f"sample_{doc_index+1:02}_{stage_index:02}"
-            rng = np.random.default_rng(np.random.SeedSequence([seed, doc_index, stage_index]))
-            img = degrade(base, stage, rng)
-            img.save(out_dir / f"{sample_id}.png", dpi=(300, 300))
-            record = {"id": sample_id, "image": f"{sample_id}.png", "document_type": kind,
-                      "degradation": stage, "synthetic": True, "seed": seed,
-                      "page_size_pt": [595,842], "text_lines": lines, "fields": fields}
-            (out_dir / f"{sample_id}.json").write_text(json.dumps(record, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
-            records.append(record)
-    manifest = {"version": 1, "synthetic": True, "seed": seed, "today": TODAY, "samples": records}
+    for font_name in selected:
+        font_index = ("nanumgothic", "nanummyeongjo", "nanumgothiccoding").index(font_name)
+        for doc_index, (kind, cells, fields) in enumerate(split_documents(split)):
+            base = render(cells, paths[font_name])
+            ys = sorted({c[1] for c in cells})
+            lines = [" ".join(c[2] for c in cells if c[1] == y) for y in ys]
+            for stage_index, stage in enumerate(STAGES):
+                sample_id = f"{split}_{font_name}_{doc_index+1:02}_{stage_index:02}"
+                rng = np.random.default_rng(np.random.SeedSequence([seed, font_index, doc_index, stage_index]))
+                img, matrix, degradation_params = degrade_with_geometry(base, stage, rng)
+                img.save(out_dir / f"{sample_id}.png", dpi=(300, 300))
+                record = {"id": sample_id, "image": f"{sample_id}.png", "document_type": kind,
+                          "degradation": stage, "synthetic": True, "seed": seed,
+                          "font": font_name, "split": split,
+                          "template_id": kind+":"+SPLITS[split]["template"],
+                          "page_size_pt": [595,842], "text_lines": lines, "fields": fields,
+                          "original_size_px": list(base.size), "page_transform": matrix.tolist(),
+                          "cells": cells, "line_baselines_px": [y*base.height/100 for y in ys],
+                          "degradation_params": degradation_params}
+                (out_dir / f"{sample_id}.json").write_text(json.dumps(record, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
+                records.append(record)
+    manifest = {"version": 2, "synthetic": True, "seed": seed, "today": TODAY,
+                "split": split, "split_policy": SPLITS, "samples": records}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")
     return manifest
 
@@ -139,8 +245,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--output", type=Path, default=OUT_DIR)
     ap.add_argument("--seed", type=int, default=20261111)
+    ap.add_argument("--split", choices=sorted(SPLITS), default="test")
+    ap.add_argument("--fonts", nargs="+", help="Subset of fonts allocated to this split")
     args = ap.parse_args()
-    manifest = generate(args.output, args.seed)
+    manifest = generate(args.output, args.seed, split=args.split, fonts=args.fonts)
     print(f"Generated {len(manifest['samples'])} synthetic pages: {args.output}")
 
 if __name__ == "__main__":

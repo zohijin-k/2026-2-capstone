@@ -1,0 +1,2 @@
+# Design
+Separate synthetic-only diagnostics from private metrics. Preserve engine and extractor contracts. Metric layout sorting must be geometric, not optimized using truth text. Preserve NFC/whitespace-only normalization. Capture legacy evidence before generator changes. Use explicit split metadata and deterministic seeds. Perspective correction standalone and benchmark opt-in; no engine default changes. Private benchmark uses fixed allowlisted field keys and suppresses dependency stdout/stderr including errors; do not serialize values or paths.
