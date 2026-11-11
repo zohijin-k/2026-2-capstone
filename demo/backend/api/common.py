@@ -89,6 +89,7 @@ def doc_context(app: Application) -> ApplicantDocInput:
         admin_fixed_term=bool(raw.get("admin_fixed_term")),
         workplace_count=int(raw.get("workplace_count") or 1),
         handwritten_admin_consent=bool(raw.get("handwritten_admin_consent")),
+        paper_admin_consent=bool((raw.get("paper_forms") or {}).get("서식5")),
         subsidy_selections=subsidy_selections(app.id or 0),
     )
 
@@ -113,6 +114,10 @@ def checklist_for(app: Application) -> list[DocRequirement]:
         req.min_issue_date, req.max_issue_date = (
             issue_bounds(criteria, req.slot_key, application_date) if basis != "none" else (None, None)
         )
+        if req.slot_key == "admin_info_consent" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+            req.check_declared_date = False
+            req.min_issue_date = req.max_issue_date = None
+            req.date_basis = "none"
         if req.slot_key == "nhis_payment":
             req.premium_months = list(criteria["nhis_payment_months"])
         if req.slot_key == "nhis_acquisition_loss":
@@ -171,7 +176,7 @@ def list_consents(application_id: int) -> list[Consent]:
 #: 전입일·가구원수·건강보험료(배점·소득 판정 근거), 판독 검증 결과 같은 담당자용 값은
 #: 신청자 응답에 아예 싣지 않는다 — 화면에서 숨기는 것만으로는 개발자 도구에 그대로 보인다.
 #: 담당자 화면은 officer.py가 따로 만들므로 전부 보인다.
-APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액")
+APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액", "동의여부", "서명잉크확인")
 
 
 def document_dict(d: Document) -> dict[str, Any]:

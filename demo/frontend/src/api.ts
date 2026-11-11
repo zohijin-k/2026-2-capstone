@@ -280,6 +280,7 @@ export interface DocContext {
   admin_fixed_term?: boolean
   workplace_count?: number
   handwritten_admin_consent?: boolean
+  paper_forms?: Record<string, boolean>
 }
 
 /** 업로드 화면이 사업 코드로 분기하지 않도록 서버가 내려주는 안내. */
@@ -295,6 +296,7 @@ export interface ChecklistProgram {
   application_period_2: string[] | null
   asks_work_category: boolean
   has_subsidy_items: boolean
+  paper_forms: Record<string, boolean>
 }
 
 export interface Checklist {
@@ -442,6 +444,7 @@ export interface CriteriaData {
   nhis_acquisition_loss_years: number
   supplement: { allowed: boolean; days: number | null }
   subsidy_catalog: CriteriaSubsidyItem[]
+  paper_forms: Record<string, boolean>
 }
 export interface CriteriaVersion extends CriteriaData { changed_at?: string; changed_role?: string }
 export interface CriteriaHistory { current: CriteriaVersion; history: CriteriaVersion[] }
@@ -509,7 +512,16 @@ export interface ApplicantFormSummary {
   label: string
   file_url: string
   file_name: string
+  files?: { filled: string | null; blank: string; hwp: string | null }
 }
+
+export const allFormsArchiveUrl = (id: number) => `/api/applications/${id}/forms/files/all.zip`
+export const interviewFormFiles = (id: number) => ({
+  blank: `/api/applications/${id}/forms/files/job_interview_confirmation/blank.pdf`,
+  hwp: `/api/applications/${id}/forms/files/job_interview_confirmation/source.hwp`,
+})
+export const fetchInterviewFormFileOptions = (id: number) =>
+  json<{ blank: string; hwp: string | null }>(`/api/applications/${id}/forms/files/job_interview_confirmation/options`)
 
 export const fetchFormLayout = async (id: number, formNo: string): Promise<FormLayout> => {
   const layout = await json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
@@ -585,6 +597,7 @@ export const putDocContext = (id: number, context: DocContext) =>
       admin_fixed_term: context.admin_fixed_term ?? false,
       workplace_count: context.workplace_count ?? 1,
       handwritten_admin_consent: context.handwritten_admin_consent ?? false,
+      paper_forms: context.paper_forms ?? {},
     }),
   })
 

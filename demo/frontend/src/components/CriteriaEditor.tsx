@@ -46,6 +46,7 @@ const init = (data: CriteriaData) => ({
   nhis_acquisition_loss_years: data.nhis_acquisition_loss_years,
   supplement: data.supplement,
   subsidy_catalog: data.subsidy_catalog,
+  paper_forms: data.paper_forms ?? {},
 })
 
 export default function CriteriaEditor({
@@ -159,6 +160,21 @@ export default function CriteriaEditor({
           </tr>
         })}</tbody>
       </table>
+
+      <fieldset disabled={busy}>
+        <legend>종이 제출 허용 서식</legend>
+        <p>허용한 서식은 신청자가 화면 작성 또는 종이 작성 후 스캔 제출을 선택할 수 있습니다.</p>
+        <table className="criteria-editor__table">
+          <thead><tr><th>서식</th><th>종이 제출 허용</th></tr></thead>
+          <tbody>{Object.entries(form.paper_forms).map(([formNo, allowed]) => <tr key={formNo}>
+            <th scope="row">{formNo}</th>
+            <td><label><input type="checkbox" checked={allowed} onChange={(event) => setForm({
+              ...form,
+              paper_forms: { ...form.paper_forms, [formNo]: event.currentTarget.checked },
+            })} /> 허용</label></td>
+          </tr>)}</tbody>
+        </table>
+      </fieldset>
 
       {code === 'job_package' && <fieldset disabled={busy}>
         <legend>취업패키지 지원 항목 기준</legend>

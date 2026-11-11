@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlmodel import select
 
 from ..models import UNASSIGNED_SLOT, Application, Document, SubsidyItem, get_session
@@ -57,6 +57,7 @@ class DocContextRequest(BaseModel):
     admin_fixed_term: bool = False
     workplace_count: int = 1
     handwritten_admin_consent: bool = False
+    paper_forms: dict[str, bool] = Field(default_factory=dict)
 
 
 #: 다른 라우터와 같은 조회·직렬화를 쓴다 (`api/common.py` 참고).
@@ -119,6 +120,7 @@ def _checklist_response(app: Application) -> dict[str, Any]:
             "application_period": criteria["application_period"],
             "application_period_2": criteria.get("application_period_2"),
             "criteria_version": criteria_version.version,
+            "paper_forms": criteria["paper_forms"],
             "nhis_payment_months": criteria["nhis_payment_months"],
             "nhis_acquisition_loss_years": criteria["nhis_acquisition_loss_years"],
             #: 근로확인서류가 있는 사업에서만 근로유형을 묻는다.
@@ -154,7 +156,21 @@ def set_doc_context(application_id: int, body: DocContextRequest) -> dict[str, A
         app = s.get(Application, application_id)
         if app is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
-        app.doc_context_json = body.model_dump()
+        from ..models import STATUS_DRAFT
+        if app.status != STATUS_DRAFT:
+            raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+        criteria = read_criteria(for_application(app))
+        for form_no, enabled in body.paper_forms.items():
+            if form_no not in criteria["paper_forms"] or not isinstance(enabled, bool):
+                raise HTTPException(400, "종이 제출 서식 설정이 올바르지 않습니다.")
+            if enabled and not criteria["paper_forms"][form_no]:
+                raise HTTPException(400, "이 서식은 종이 제출을 허용하지 않습니다.")
+        old = app.doc_context_json or {}
+        new_context = body.model_dump()
+        # Partial client updates preserve other independent choices.
+        if not body.paper_forms:
+            new_context["paper_forms"] = old.get("paper_forms", {})
+        app.doc_context_json = new_context
         app.updated_at = datetime.now()
         s.add(app)
         s.commit()
@@ -359,6 +375,13 @@ async def upload_document(
     path.write_bytes(await file.read())
 
     ocr = read_document(str(path), req.doc_type)
+    paper_admin_consent = bool(((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"))
+    if req.slot_key == "admin_info_consent" and paper_admin_consent and ocr.detected_doc_type is DocType.ADMIN_INFO_CONSENT:
+        from ..ocr.admin_consent_scan import inspect_admin_consent_scan
+
+        observations = inspect_admin_consent_scan(str(path))
+        ocr.fields.update(observations)
+        ocr.has_signature = True if observations["서명잉크확인"] == "있음" else None
     suggested_slot_label = _suggested_other_slot_label(
         req, checklist, _list_documents(application_id), ocr.detected_doc_type,
     )
@@ -366,6 +389,25 @@ async def upload_document(
         req, ocr, declared, path.suffix.lstrip(".").lower(), identity_of(app.identity_json),
         suggested_slot_label=suggested_slot_label,
     )
+    if req.slot_key == "admin_info_consent" and paper_admin_consent and ocr.detected_doc_type is DocType.ADMIN_INFO_CONSENT:
+        consent_value = ocr.fields.get("동의여부")
+        if consent_value == "동의하지 않음":
+            result.findings.append(CheckFinding(
+                "ADMIN_CONSENT_NOT_GIVEN", "행정정보 공동이용에 동의하지 않은 것으로 확인됩니다. 서류를 확인해 주세요.", severity="FAIL"
+            ))
+            result.status = "FAIL"
+        elif consent_value != "동의함":
+            result.findings.append(CheckFinding(
+                "ADMIN_CONSENT_MARK_UNREADABLE", "동의 표시를 자동 판독하지 못했습니다. 담당자가 원본을 확인합니다.", severity="NEEDS_REVIEW"
+            ))
+            if result.status == "PASS":
+                result.status = "NEEDS_REVIEW"
+        if ocr.fields.get("서명잉크확인") != "있음":
+            result.findings.append(CheckFinding(
+                "ADMIN_CONSENT_SIGNATURE_UNREADABLE", "서명란을 자동 확인하지 못했습니다. 담당자가 원본을 확인합니다.", severity="NEEDS_REVIEW"
+            ))
+            if result.status == "PASS":
+                result.status = "NEEDS_REVIEW"
     if req.slot_key.endswith("_receipt") and ocr.tier == "none" and not ocr.is_encrypted:
         # 판독 계층이 하나도 결과를 내지 못했을 때 낮은 기본 화질 점수로
         # 실비 영수증을 자동 부적합 처리하지 않고 담당자 확인으로 보낸다.

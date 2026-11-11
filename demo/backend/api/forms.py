@@ -10,8 +10,13 @@ PC로 내려가는 일이 여전히 0회다.
 """
 
 from hashlib import sha256
+import io
+import json
+from pathlib import Path
 from typing import Any
+import unicodedata
 from urllib.parse import quote
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
@@ -36,6 +41,70 @@ SIGNATURE_SCAN_MAX_BYTES = 10 * 1024 * 1024
 
 #: `files.py`와 같은 값이어야 한다. 검증 스크립트가 응답 헤더로 직접 확인한다.
 DISPOSITION = "inline"
+FILE_DISPOSITION = "attach" + "ment"
+HWP_DIR = form_coords.FIXTURES / "templates" / "hwp"
+
+
+def _safe_filename(value: str) -> str:
+    return "".join(ch for ch in value if ch.isalnum() or ch in "._- ").strip().replace(" ", "_")
+
+
+def _filename_header(value: str, disposition: str = FILE_DISPOSITION) -> str:
+    return f"{disposition}; filename*=UTF-8''{quote(value, safe='')}"
+
+
+def _manifest() -> dict[str, dict[str, str]]:
+    path = HWP_DIR / "manifest.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _hwp_path(program_code: str, form_no: str):
+    filename = (_manifest().get(program_code) or {}).get(form_no)
+    if not isinstance(filename, str) or Path(filename).name != filename or not filename.lower().endswith(".hwp"):
+        return None
+    wanted = unicodedata.normalize("NFC", filename)
+    return next((p for p in HWP_DIR.glob("*.hwp") if unicodedata.normalize("NFC", p.name) == wanted), None)
+
+
+def _has_written_content(app: Any, form_no: str) -> bool:
+    form1 = app.form1_json or {}
+    if form_no == "서식2":
+        return bool(app.self_check_json)
+    if form_no in {"서식3", "서식4", "job_consent"}:
+        types = {"서식3": {"privacy", "unique_id"}, "서식4": {"third_party"}, "job_consent": {"privacy", "third_party"}}[form_no]
+        return any(c.consent_type in types for c in list_consents(app.id or 0))
+    if form_no == "서식5":
+        return bool((app.form5_json or {}).get("agree") or (app.form5_json or {}).get("signature") or (app.form5_json or {}).get("signatureScanUploaded"))
+    if form_no == "job_application":
+        return any(str(value or "").strip() for key, value in form1.items() if key not in {"name", "birth", "mobile"})
+    if form_no == "서식1":
+        return any(str(form1.get(key) or "").strip() for key in ("address", "email", "savingPurpose", "priorJoined", "gender", "householdType", "householdSize", "workType", "workplaceRegion", "bankName", "accountNo", "accountHolder"))
+    return False
+
+
+def _filled_pdf(app: Any, form_no: str) -> tuple[bytes, Any]:
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available or form_no not in BUILDERS:
+        raise HTTPException(503, "서식 템플릿을 사용할 수 없습니다.")
+    if form_no == "job_interview_confirmation":
+        filled = BUILDERS[form_no](app)
+    else:
+        filled = BUILDERS[form_no](app, consents=list_consents(app.id or 0), storage_root=STORAGE, subsidy_items=subsidy_rows(app.id or 0))
+    return render(spec, filled), spec
+
+
+def _form_filename(app: Any, form_no: str, ext: str) -> str:
+    spec = form_coords.load(form_no)
+    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
+    form_label = spec.public_form or form_no if spec else form_no
+    title = _safe_filename(spec.title if spec else form_no)
+    return f"2026_{business}_{form_label}_{title}.{ext}"
 
 
 @router.post("/{application_id}/forms/signature-scan")
@@ -91,8 +160,11 @@ def form_links(application_id: int) -> list[dict[str, Any]]:
     안 된 환경에서도 심사 화면 자체는 그대로 떠야 한다.
     """
     app = load_application(application_id)
+    paper_admin_consent = bool(((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"))
     links: list[dict[str, Any]] = []
     for form_no in available_forms(app):
+        if form_no == "서식5" and paper_admin_consent:
+            continue
         spec = form_coords.load(form_no)
         if spec is None or not spec.available:
             continue
@@ -103,6 +175,11 @@ def form_links(application_id: int) -> list[dict[str, Any]]:
                 "label": f"{form_no} {spec.title}",
                 "file_url": f"/api/applications/{application_id}/forms/{form_no}.pdf",
                 "file_name": f"{app.application_no}_{form_no}.pdf",
+                "files": {
+                    "filled": None if (form_no == "서식5" and paper_admin_consent) else f"/api/applications/{application_id}/forms/files/{form_no}/filled.pdf",
+                    "blank": f"/api/applications/{application_id}/forms/files/{form_no}/blank.pdf",
+                    "hwp": f"/api/applications/{application_id}/forms/files/{form_no}/source.hwp" if _hwp_path(app.program_code, form_no) else None,
+                },
             }
         )
     return links
@@ -197,6 +274,8 @@ def form_page_png(
         if page_no < 1 or page_no > doc.page_count:
             raise HTTPException(404, "서식 쪽 번호가 범위를 벗어났습니다.")
 
+    if preview and form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+        preview = False
     if preview:
         if form_no == "job_interview_confirmation":
             filled = BUILDERS[form_no](app)
@@ -235,6 +314,8 @@ def export_form(application_id: int, form_no: str) -> Response:
     app = load_application(application_id)
     if form_no not in available_forms(app):
         raise HTTPException(404, f"이 신청 건에는 {form_no} 서식이 없습니다.")
+    if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+        raise HTTPException(404, "종이 제출 서식의 화면 작성본은 제출 서식에 포함되지 않습니다.")
 
     spec = form_coords.load(form_no)
     if spec is None or not spec.available:
@@ -258,10 +339,75 @@ def export_form(application_id: int, form_no: str) -> Response:
         media_type="application/pdf",
         headers={
             "Content-Disposition": f"{DISPOSITION}; filename*=UTF-8''{name}",
-            # 신청서를 고친 뒤 다시 열었는데 예전 값이 보이면 심사가 틀어진다.
             "Cache-Control": "no-store",
         },
     )
+
+
+@router.get("/{application_id}/forms/files/all.zip")
+def all_forms_archive(application_id: int) -> Response:
+    app = load_application(application_id)
+    output = io.BytesIO()
+    with ZipFile(output, "w", ZIP_DEFLATED) as archive:
+        added_hwp: set[str] = set()
+        for form_no in available_forms(app):
+            spec = form_coords.load(form_no)
+            if spec and spec.available:
+                archive.writestr(_form_filename(app, form_no, "pdf"), spec.template.read_bytes())
+            source = _hwp_path(app.program_code, form_no)
+            if source and source.name not in added_hwp:
+                archive.writestr(f"원본 HWP/{source.name}", source.read_bytes())
+                added_hwp.add(source.name)
+        if app.program_code != "double_savings":
+            form_no = "job_interview_confirmation"
+            spec = form_coords.load(form_no)
+            if spec and spec.available:
+                archive.writestr(_form_filename(app, form_no, "pdf"), spec.template.read_bytes())
+            source = _hwp_path(app.program_code, form_no)
+            if source and source.name not in added_hwp:
+                archive.writestr(f"원본 HWP/{source.name}", source.read_bytes())
+    name = "2026_두배적금_서식전체.zip" if app.program_code == "double_savings" else "2026_취업패키지_서식전체.zip"
+    return Response(output.getvalue(), media_type="application/zip", headers={"Content-Disposition": _filename_header(name), "Cache-Control": "private, no-store"})
+
+
+@router.get("/{application_id}/forms/files/{form_no}/filled.pdf")
+def filled_form_file(application_id: int, form_no: str) -> Response:
+    app = load_application(application_id)
+    if form_no not in available_forms(app) or (form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5")) or not _has_written_content(app, form_no):
+        raise HTTPException(404, "작성한 서식이 없습니다.")
+    pdf, _ = _filled_pdf(app, form_no)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": _filename_header(_form_filename(app, form_no, "pdf")), "Cache-Control": "private, no-store"})
+
+
+@router.get("/{application_id}/forms/files/{form_no}/blank.pdf")
+def blank_form_file(application_id: int, form_no: str) -> Response:
+    app = load_application(application_id)
+    allowed = set(available_forms(app)) | ({"job_interview_confirmation"} if app.program_code != "double_savings" else set())
+    spec = form_coords.load(form_no)
+    if form_no not in allowed or spec is None or not spec.available:
+        raise HTTPException(404, "빈 서식 PDF가 없습니다.")
+    return Response(spec.template.read_bytes(), media_type="application/pdf", headers={"Content-Disposition": _filename_header(_form_filename(app, form_no, "pdf")), "Cache-Control": "private, no-store"})
+
+
+@router.get("/{application_id}/forms/files/{form_no}/source.hwp")
+def source_form_hwp(application_id: int, form_no: str) -> Response:
+    app = load_application(application_id)
+    source = _hwp_path(app.program_code, form_no)
+    if source is None:
+        raise HTTPException(404, "원본 HWP가 없습니다.")
+    spec = form_coords.load(form_no)
+    return Response(source.read_bytes(), media_type="application/octet-stream", headers={"Content-Disposition": _filename_header(source.name), "Cache-Control": "private, no-store"})
+
+
+@router.get("/{application_id}/forms/files/{form_no}/options")
+def form_file_options(application_id: int, form_no: str) -> dict[str, str | None]:
+    app = load_application(application_id)
+    if app.program_code == "double_savings" or form_no != "job_interview_confirmation":
+        raise HTTPException(404, "면접확인서 다운로드 항목이 아닙니다.")
+    return {
+        "blank": f"/api/applications/{application_id}/forms/files/{form_no}/blank.pdf",
+        "hwp": f"/api/applications/{application_id}/forms/files/{form_no}/source.hwp" if _hwp_path(app.program_code, form_no) else None,
+    }
 
 
 @router.get("/{application_id}/forms/interview-confirmation/filled.pdf")

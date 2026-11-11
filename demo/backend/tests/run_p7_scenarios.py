@@ -26,10 +26,12 @@ pytest 없이 돌아간다. DB와 저장소는 임시 경로에 만들고 끝나
 """
 
 import argparse
+import io
 import json
 import re
 import shutil
 import tempfile
+import zipfile
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -435,11 +437,146 @@ def test_export_headers(client, ds_id: int, jp_id: int) -> None:
         client.get(f"/api/applications/{jp_id}/forms/서식1.pdf").status_code,
         404,
     )
-    check(
-        "없는 서식 요청",
-        client.get(f"/api/applications/{ds_id}/forms/서식9.pdf").status_code,
-        404,
+    check("없는 서식 요청", client.get(f"/api/applications/{ds_id}/forms/서식9.pdf").status_code, 404)
+
+
+def _synthetic_admin_scan(tmp: Path, *, signed: bool) -> bytes:
+    import pymupdf as fitz
+
+    from ..forms import coords as coords
+
+    spec = coords.load("서식5")
+    assert spec is not None
+    doc = fitz.open(spec.template)
+    page = doc[0]
+    font = DEMO_ROOT / "frontend" / "src" / "assets" / "fonts" / "NotoSansKR" / "NotoSansKR-subset.ttf"
+    page.insert_text((28, 28), "행정정보 공동이용 사전동의서", fontfile=str(font), fontsize=9)
+    page.insert_text((28, 43), "성명: 김가상", fontfile=str(font), fontsize=9)
+    page.insert_text((28, 58), "생년월일: 1998-06-15", fontfile=str(font), fontsize=9)
+    consent_box = fitz.Rect(*spec.fields["agree.동의함"]["box"])
+    page.draw_line((consent_box.x0 + 1, consent_box.y0 + 1), (consent_box.x1 - 1, consent_box.y1 - 1), color=(0, 0, 0), width=1.3)
+    page.draw_line((consent_box.x0 + 1, consent_box.y1 - 1), (consent_box.x1 - 1, consent_box.y0 + 1), color=(0, 0, 0), width=1.3)
+    if signed:
+        signature = fitz.Rect(*spec.fields["signature"]["box"])
+        page.draw_line((signature.x0 + 5, signature.y1 - 3), (signature.x0 + 21, signature.y0 + 4), color=(0, 0, 0), width=1.7)
+        page.draw_line((signature.x0 + 21, signature.y0 + 4), (signature.x0 + 34, signature.y1 - 5), color=(0, 0, 0), width=1.7)
+        page.draw_line((signature.x0 + 34, signature.y1 - 5), (signature.x0 + 50, signature.y0 + 5), color=(0, 0, 0), width=1.7)
+    return doc.tobytes()
+
+
+def test_form_files_and_paper_flow(client, tmp: Path) -> None:
+    from ..api import forms as forms_api
+    from .. import models
+    from ..models import Application
+    from ..api.review import _blockers
+    from ..api.common import load_application
+    from ..ocr.admin_consent_scan import inspect_admin_consent_scan
+    from ..rules.doc_types import DocType
+    from ..ocr import read_document
+
+    print("\n[10] 서식 다운로드·종이 제출")
+    criteria = client.get("/api/programs/double_savings/criteria").json()
+    check("기본 종이 제출 허용 기준", criteria["paper_forms"].get("서식5"), True)
+    check("다른 서식 기본 불허", criteria["paper_forms"].get("서식4"), False)
+    app_id = client.post("/api/applications", json={"program_code": DOUBLE_SAVINGS}).json()["id"]
+    check("미작성 작성본 파일 요청 거부", client.get(f"/api/applications/{app_id}/forms/files/서식5/filled.pdf").status_code, 404)
+
+    # HWP test data is synthetic so the user-provided source contents are never opened.
+    old_hwp_dir = forms_api.HWP_DIR
+    fake_hwp = tmp / "hwp"
+    fake_hwp.mkdir()
+    fake_name = "synthetic-savings.hwp"
+    (fake_hwp / fake_name).write_bytes(b"synthetic-hwp-test")
+    fake_job_name = "synthetic-job.hwp"
+    (fake_hwp / fake_job_name).write_bytes(b"synthetic-job-hwp-test")
+    (fake_hwp / "manifest.json").write_text(json.dumps({
+        "double_savings": {f"서식{i}": fake_name for i in range(1, 6)},
+        "job_package": {"job_application": fake_job_name, "job_consent": fake_job_name, "job_interview_confirmation": fake_job_name},
+    }), encoding="utf-8")
+    forms_api.HWP_DIR = fake_hwp
+    try:
+        forms = client.get(f"/api/applications/{app_id}/forms").json()
+        check("HWP 연결 메뉴 URL", forms[-1]["files"]["hwp"], f"/api/applications/{app_id}/forms/files/서식5/source.hwp")
+        blank = client.get(f"/api/applications/{app_id}/forms/files/서식5/blank.pdf")
+        check("빈 PDF 다운로드", blank.status_code, 200)
+        check_true("한글 파일명 RFC 5987", "filename*=UTF-8''" in blank.headers["content-disposition"] and "2026_두배적금_서식5" in __import__("urllib.parse", fromlist=["unquote"]).unquote(blank.headers["content-disposition"]))
+        hwp = client.get(f"/api/applications/{app_id}/forms/files/서식5/source.hwp")
+        check("원본 HWP 다운로드", hwp.content, b"synthetic-hwp-test")
+        archive = client.get(f"/api/applications/{app_id}/forms/files/all.zip")
+        with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
+            names = bundle.namelist()
+        check("전체 ZIP 빈 PDF 개수", sum(name.endswith(".pdf") for name in names), 5)
+        check("전체 ZIP HWP 중복 제거", sum(name.endswith(".hwp") for name in names), 1)
+        job_id = client.post("/api/applications", json={"program_code": JOB_PACKAGE}).json()["id"]
+        interview_options = client.get(f"/api/applications/{job_id}/forms/files/job_interview_confirmation/options").json()
+        check_true("면접확인서 다운로드 메뉴에 PDF·HWP", interview_options["blank"].endswith("blank.pdf") and interview_options["hwp"].endswith("source.hwp"))
+        interview_blank = client.get(interview_options["blank"])
+        check("면접확인서 빈 PDF 다운로드", interview_blank.status_code, 200)
+        job_zip = client.get(f"/api/applications/{job_id}/forms/files/all.zip")
+        with zipfile.ZipFile(io.BytesIO(job_zip.content)) as bundle:
+            job_names = bundle.namelist()
+        check("취업패키지 전체 ZIP에 면접확인서 PDF 포함", sum(name.endswith(".pdf") for name in job_names), 3)
+        check("취업패키지 전체 ZIP 원본 HWP 중복 제거", sum(name.endswith(".hwp") for name in job_names), 1)
+        (fake_hwp / "manifest.json").write_text(json.dumps({"double_savings": {}}), encoding="utf-8")
+        missing = client.get(f"/api/applications/{app_id}/forms").json()
+        check("HWP가 없을 때 메뉴 숨김", missing[-1]["files"]["hwp"], None)
+    finally:
+        forms_api.HWP_DIR = old_hwp_dir
+
+    changed = client.put(f"/api/applications/{app_id}/doc-context", json={"paper_forms": {"서식5": True}})
+    check("종이 제출 기준 선택", changed.status_code, 200)
+    denied = client.put(f"/api/applications/{app_id}/doc-context", json={"paper_forms": {"서식4": True}})
+    check("기준이 불허한 서식은 종이 제출 불가", denied.status_code, 400)
+    checklist = client.get(f"/api/applications/{app_id}/required-documents").json()
+    paper = next((row for row in checklist["items"] if row["slot_key"] == "admin_info_consent"), None)
+    check_true("서식5 스캔 칸 필수 추가", paper and paper["upload"] and paper["required"] and not paper["check_declared_date"])
+    check_true("미업로드면 제출 차단 사유에 포함", any(item.get("target") == "admin_info_consent" for item in _blockers(load_application(app_id))))
+    saved = client.patch(f"/api/applications/{app_id}", json={"form5": {"agree": "동의함", "signature": "kept-online-value"}})
+    check("온라인 값 저장", saved.status_code, 200)
+    back = client.put(f"/api/applications/{app_id}/doc-context", json={"paper_forms": {"서식5": False}})
+    check("화면 작성으로 복귀", back.status_code, 200)
+    check("화면 작성값 보존", client.get(f"/api/applications/{app_id}").json()["form5_json"].get("signature"), "kept-online-value")
+
+    client.put(f"/api/applications/{app_id}/doc-context", json={"paper_forms": {"서식5": True}})
+    with models.get_session() as session:
+        application = session.get(Application, app_id)
+        application.identity_json = {"name": "김가상", "birth": "1998-06-15"}
+        session.add(application)
+        session.commit()
+
+    signed_path = tmp / "synthetic-admin-signed.pdf"
+    signed_path.write_bytes(_synthetic_admin_scan(tmp, signed=True))
+    unsigned_path = tmp / "synthetic-admin-unsigned.pdf"
+    unsigned_path.write_bytes(_synthetic_admin_scan(tmp, signed=False))
+    signed_observations = inspect_admin_consent_scan(str(signed_path))
+    unsigned_observations = inspect_admin_consent_scan(str(unsigned_path))
+    check("합성 스캔의 동의 표시 판독", signed_observations["동의여부"], "동의함")
+    check("합성 스캔의 서명 잉크 판독", signed_observations["서명잉크확인"], "있음")
+    check("서명 없는 합성 스캔은 불확실", unsigned_observations["서명잉크확인"], "확인필요")
+    recognized = read_document(str(signed_path), DocType.ADMIN_INFO_CONSENT)
+    check("스캔 본문으로 서식 종류 판별", recognized.detected_doc_type, DocType.ADMIN_INFO_CONSENT)
+    signed_response = client.post(
+        f"/api/applications/{app_id}/documents",
+        files={"file": ("synthetic-signed.pdf", signed_path.read_bytes(), "application/pdf")},
+        data={"slot_key": "admin_info_consent"},
     )
+    check("합성 종이 서식 종류 판별", signed_response.json().get("detected_doc_type"), str(DocType.ADMIN_INFO_CONSENT))
+    unsigned_response = client.post(
+        f"/api/applications/{app_id}/documents",
+        files={"file": ("synthetic-unsigned.pdf", unsigned_path.read_bytes(), "application/pdf")},
+        data={"slot_key": "admin_info_consent"},
+    )
+    check("서명 없는 스캔은 담당자 확인", unsigned_response.json().get("status"), "NEEDS_REVIEW")
+    check_true("서명 판독 불확실 사유", any(f.get("code") == "ADMIN_CONSENT_SIGNATURE_UNREADABLE" for f in unsigned_response.json().get("findings", [])))
+
+    flow_id, _ = seed(client, tmp)
+    context = client.put(f"/api/applications/{flow_id}/doc-context", json={
+        "work_category": "직장가입자", "workplace_count": 1,
+        "paper_forms": {"서식5": True},
+    })
+    check("종이 방식이 제출 플로우에 저장", context.status_code, 200)
+    _submit(client, flow_id, DS_UPLOADS, {"admin_info_consent": _synthetic_admin_scan(tmp, signed=True)})
+    check("제출 뒤 작성 방식 변경 잠금", client.put(f"/api/applications/{flow_id}/doc-context", json={"paper_forms": {"서식5": False}}).status_code, 409)
 
 
 # ---------------------------------------------------------------- 3. 왕복 검증
@@ -900,7 +1037,7 @@ DS_UPLOADS = {
 }
 
 
-def _submit(client, application_id: int, uploads: dict[str, str]) -> None:
+def _submit(client, application_id: int, uploads: dict[str, str], extra_uploads: dict[str, bytes] | None = None) -> None:
     """심사 화면에 뜨려면 제출 상태여야 한다.
 
     작성 서식 탭은 **업로드 서류 탭과 나란히** 있어야 의미가 있으므로, 서류도
@@ -914,6 +1051,13 @@ def _submit(client, application_id: int, uploads: dict[str, str]) -> None:
                 files={"file": (filename, fh, "application/pdf")},
                 data={"slot_key": slot, "declared_issue_date": "2026-03-05"},
             )
+    for slot, content in (extra_uploads or {}).items():
+        response = client.post(
+            f"/api/applications/{application_id}/documents",
+            files={"file": ("synthetic-paper-form.pdf", content, "application/pdf")},
+            data={"slot_key": slot},
+        )
+        check(f"종이 서식 업로드 {slot}", response.status_code, 200)
     res = client.post(f"/api/applications/{application_id}/submit")
     check(f"제출 {application_id}", res.status_code, 200)
 
@@ -933,6 +1077,7 @@ def main(clock_day: date | None = None) -> int:
         with TestClient(app) as client:
             ds_id, jp_id = seed(client, tmp)
             test_export_headers(client, ds_id, jp_id)
+            test_form_files_and_paper_flow(client, tmp)
             test_form1_roundtrip(client, ds_id)
             test_email_format_validation(client, ds_id)
             test_self_check_marks(client, ds_id)

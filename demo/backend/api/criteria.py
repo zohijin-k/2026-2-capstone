@@ -37,6 +37,7 @@ class CriteriaUpdate(BaseModel):
     nhis_acquisition_loss_years: int
     supplement: dict[str, Any] | None = None
     subsidy_catalog: list[dict[str, Any]] | None = None
+    paper_forms: dict[str, bool] | None = None
 
 
 def _program(code: str) -> None:
@@ -136,6 +137,10 @@ def _validated(body: CriteriaUpdate, code: str) -> dict[str, Any]:
                     raise HTTPException(400, "서류 기준 날짜 종류가 올바르지 않습니다.")
     else:
         catalog = []
+    default_paper_forms = default_criteria(code)["paper_forms"]
+    paper_forms = {**default_paper_forms, **(body.paper_forms or {})}
+    if set(paper_forms) != set(default_paper_forms) or any(not isinstance(value, bool) for value in paper_forms.values()):
+        raise HTTPException(400, "종이 제출 허용 설정이 올바르지 않습니다.")
     return {
         "schema_version": CRITERIA_SCHEMA_VERSION,
         "announcement_date": body.announcement_date,
@@ -148,6 +153,7 @@ def _validated(body: CriteriaUpdate, code: str) -> dict[str, Any]:
         "nhis_acquisition_loss_years": body.nhis_acquisition_loss_years,
         "supplement": {"allowed": allowed, "days": days},
         "subsidy_catalog": catalog,
+        "paper_forms": paper_forms,
     }
 
 

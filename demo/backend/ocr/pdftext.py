@@ -78,6 +78,8 @@ _PAYMENT_RE = re.compile(
     r"(?:결제금액|승인금액|총결제금액|받은금액|판매금액|합계)\s*[:：]?\s*"
     r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,})"
 )
+_ADMIN_NAME_RE = re.compile(r"(?:신청인|성명)\s*[:：]?\s*([가-힣]{2,6})")
+_ADMIN_BIRTH_RE = re.compile(r"(?:생년월일|주민등록번호)\s*[:：]?\s*(\d{4})\s*[.\-/년]?\s*(\d{2})\s*[.\-/월]?\s*(\d{2})")
 
 #: 흔한 모니터 해상도. 화면 캡처 휴리스틱에 쓴다.
 SCREEN_RESOLUTIONS = [
@@ -251,6 +253,25 @@ def read_page_text(text: str, page, page_index: int) -> OcrResult:
             name, birth = applicant
             fields["초본신청인성명"] = name
             fields["초본신청인생년월일"] = birth.isoformat()
+
+    if doc_type is DocType.ADMIN_INFO_CONSENT:
+        name_match = _ADMIN_NAME_RE.search(text)
+        birth_match = _ADMIN_BIRTH_RE.search(text)
+        if name_match:
+            fields["성명"] = name_match.group(1)
+            box = _locate(page, name_match.group(1), page_index) if page else None
+            if box:
+                bboxes["성명"] = box
+        if birth_match:
+            try:
+                birth = date(int(birth_match.group(1)), int(birth_match.group(2)), int(birth_match.group(3)))
+            except ValueError:
+                birth = None
+            if birth:
+                fields["생년월일"] = birth.isoformat()
+                box = _locate(page, birth_match.group(0), page_index) if page else None
+                if box:
+                    bboxes["생년월일"] = box
 
     # 취업지원패키지 추가서류. 응시일이 없으면 체크리스트의 `required_fields`
     # 검사에서 부적합으로 떨어진다 — 사업계획서 "(응시일 표기 필수)".

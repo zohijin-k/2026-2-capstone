@@ -184,7 +184,10 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
                 )
 
     agreed = {c.consent_type for c in list_consents(app.id or 0) if c.agreed}
+    paper_admin_consent = bool(((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"))
     for consent_type in program.consent_types:
+        if consent_type == "admin_info" and paper_admin_consent:
+            continue
         label = CONSENT_LABELS.get(consent_type, consent_type)
         if consent_type not in agreed:
             items.append(
@@ -457,7 +460,8 @@ def _run_review(app: Application) -> Review:
     admin_consent = next(
         (c for c in consents if c.consent_type == "admin_info" and c.agreed), None
     )
-    if admin_consent and not any(r["slot_key"] == "admin_info_consent" for r in rows):
+    paper_admin_consent = bool(((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"))
+    if admin_consent and not paper_admin_consent and not any(r["slot_key"] == "admin_info_consent" for r in rows):
         rows.append(
             electronic_consent_row(
                 admin_consent.agreed_at.date(), admin_consent.signature_path
