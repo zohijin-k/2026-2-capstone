@@ -4,11 +4,11 @@
 
 ## 기존 구조와 호환 계약
 
-기존 `pipeline/ocr.py`를 `pipeline/ocr/__init__.py`로 이동했다. `engine_v2.pipeline.ocr` import와 `run_ocr(engine, png, size)` 인터페이스는 유지한다. Apple Vision은 정규화된 좌하단 좌표를 좌상단 픽셀로 변환하고, EasyOCR/Paddle은 다각형의 외접 사각형을 반환한다. `OcrWord(text, confidence, bbox_px)`의 confidence는 0~1, 좌표는 입력 이미지의 좌상단 원점 `(x0,y0,x1,y1)`이다. 텍스트 읽기 순서는 기존의 `(round(y0/15), x0)`를 따른다. 기존 세 추출기는 수정하지 않았다.
+기존 `pipeline/ocr.py`를 `pipeline/ocr/__init__.py`로 이동했다. `engine_v2.pipeline.ocr` import와 `run_ocr(engine, png, size)` 인터페이스는 유지한다. Apple Vision은 정규화된 좌하단 좌표를 좌상단 픽셀로 변환하고, EasyOCR/Paddle은 다각형의 외접 사각형을 반환한다. `OcrWord(text, confidence, bbox_px)`의 confidence는 0~1, 좌표는 입력 이미지의 좌상단 원점 `(x0,y0,x1,y1)`이다. 텍스트 읽기 순서는 기존의 `(round(y0/15), x0)`를 따른다. 최초 OCR 도입에서는 기존 세 추출기를 수정하지 않았다. 아래 대시·발급일 수정에서는 형식 파서 입력만 정규화하며 판정·점수 규칙은 유지한다.
 
 `own`은 DB 확률맵 → 윤곽선/영역 평균 점수 → polygon unclip → 원본 좌표 복원 → 원근 보정 crop → Korean CTC 순이다. 검출은 긴 변 최대 1600, 32배수 크기; 인식은 높이 48, 최소 폭 320이다. DB 임계값 0.3/box 점수 0.5/unclip 1.5를 고정했다. 세로 crop은 회전하지만 180도 방향 분류 모델은 포함하지 않는다. CPUExecutionProvider만 사용하며 스레드는 intra=2/inter=1이다. 네트워크 다운로드는 fetch 명령에서만 수행한다. 추론 시작 시 모든 파일 해시, 사전·출력 클래스 수, 모델 내장 문자 목록을 검증한다.
 
-`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`를 우선하고, 없으면 macOS=`applevision`, 그 외=`own`이다. **demo/backend의 기존 비맥 easyocr 기본값은 변경하지 않았다.** 해당 기본값은 그 디렉터리에 있으므로 변경 금지/체인 연결 제외 조건을 우선했다. demo 연결은 후속 작업이다.
+`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`를 우선하고, 없으면 macOS=`applevision`, 그 외=`own`이다. **demo/backend의 기존 비맥 easyocr 기본값은 변경하지 않았다.** 해당 기본값은 그 디렉터리에 있으므로 변경 금지/체인 연결 제외 조건을 우선했다. 현재 demo의 로컬 OCR 어댑터는 환경변수로 명시한 `own`도 공용 `run_ocr`에 전달할 수 있다. 이 작업에서 기본 연결은 바꾸지 않는다. 공용 로컬 엔진 선택지는 `own | applevision | easyocr | paddle`이며, `off`는 demo 어댑터의 비활성화 값이다. `jbai`는 별도 어댑터/벤치 경로이며 공용 `run_ocr` 선택지가 아니다. `extract_diag`는 `--engine own | applevision`을 명시적으로 지원한다.
 
 ## 모델 선택과 라이선스
 
@@ -213,7 +213,7 @@ EasyOCR 미설치로 실제 own 대 EasyOCR 우열은 아직 판단할 수 없�
   --engines own applevision jbai --env-file .env --out metrics.json
 # 4대보험 가입내역: make_gt --doc insurance_4로 만든 정답 형식 그대로 사용
 .venv/bin/python -m engine_v2.tools.ocr_bench \
-  engine_v2/data/private/4대보험_1111.pdf \
+  <4대보험 PDF 경로> \
   --gt engine_v2/data/private/insurance_4.gt.json \
   --doc insurance_4 --engines own applevision jbai --env-file .env
 ```
@@ -405,3 +405,61 @@ D의 가상 좌표 샘플을 이미지로 렌더링한 own CPU 실서류 CLI 실
 | 새 합성 own 벤치 | 60 실행 | 0 엔진 오류 |
 
 시나리오는 요청된 중단하지 않는 반복문을 그대로 실행하고 stdout/stderr를 로그로 보관해 파일별 집계했다. 샌드박스 TestClient 정지는 환경 문제로 외부 실행하여 완료했다. 기존 테스트 파일·demo/backend·판정/점수/추출기·공용 `.trellis/spec/`는 변경하지 않았다. 실서류·모델·글꼴·생성물은 커밋하지 않는다. 합성 시험의 더 낮은 필드 성공률은 강화된 신규 입력 조건에서 드러난 한계이며, 기존 85개 테스트와 기존 21쪽 기준 동작은 유지했다.
+
+## 대시 정규화와 4대보험 발급일 (2026-11-11)
+
+`extractors/format_text.py:normalize_format_text`는 U+2010~2015, U+2212, U+FE58, U+FE63, U+FF0D만 ASCII `-`로 옮기는 길이 보존 함수다. 날짜·주민번호·문서확인번호·연월 형식 매칭 직전 복사본에만 적용한다. 초본은 직접 사용하고, NHIS 공통 날짜/생년월일 파서, 납부확인서 연월 파서, 자격득실확인서의 공용 날짜 호출과 4대보험 파서가 공유한다. 현재 이 다섯 추출기에는 전화번호 파서가 없다. 새로운 전화번호 추출이나 허용 형식 확장은 추가하지 않는다.
+
+슬래시·점은 변환하지 않는다. 초본 주소 이력 날짜는 기존 `-`/`.` 문법을 유지하며 `/`를 새로 허용하지 않는다. NHIS의 기존 `/` 허용은 유지한다. 전각 슬래시·전각 점·가운뎃점 등은 허용하지 않는다. 성명·주소·사업장명·금액 판정에는 정규화를 적용하지 않고 OCR 원문·근거 상자는 보존한다. 4대보험의 기존 주민번호 원문 즉시 폐기와 공용 가림 함수도 유지한다.
+
+`extractors/insurance_issue.py:select_issue_date`는 기존 4대보험 서식의 머리 표(페이지 y 18~28%, 라벨 x 50% 이상)에서 `발급일시` 라벨을 찾는다. 공백·콜론 변형과 나뉜 라벨/합쳐진 OCR 영역을 지원한다. 라벨 오른쪽 같은 행의 칸만 검사하며 다음 라벨에서 멈춘다. 행 허용 폭은 작은 글자 높이로 제한해 큰 도장 상자가 주변 행을 끌어들이지 않게 한다. 도장·본문·왼쪽 날짜·아래 행은 발급일 후보로 사용하지 않는다. 다른 서식의 라벨 별칭을 추측하거나 OCR 오자를 교정하지 않는다.
+
+오른쪽 칸 전체가 유효한 날짜 또는 날짜+시각이어야 한다. OCR이 날짜와 시각 사이 공백을 없앤 경우에도 전체 `YYYY-MM-DDHH:MM` 또는 초 포함 시각이 명확히 맞을 때만 날짜를 분리한다. 시각은 00~23시/00~59분·초 형식, 날짜는 실제 달력 날짜여야 한다. 라벨 누락, 빈칸, 깨진 형식, 복수 라벨/날짜는 값 없음으로 남긴다. 기존 `발급일_consistent`, `issue_not_future`, `dates_not_after_issue` 실패와 담당자 확인 경로를 그대로 사용한다. 신뢰도 공식·판정·점수 규칙은 바꾸지 않는다. 고정 머리 표 범위를 벗어난 서식은 추측하지 않고 담당자 확인이 필요하다.
+
+NHIS `header_for_page`의 발급일 선택/납부확인서 확인문 날짜 대체 경로는 4대보험 선택기를 호출하지 않는다. main `92eadc2`와 정상 합성 입력 5종(초본, 납부 일반/요양 분리/확인문 발급일, 자격득실)을 비교해 모든 필드·원문 근거·상자·신뢰도·검증·경고가 동일함을 확인했고 새 테스트에 기준 스냅샷을 고정했다. 대시가 있는 입력의 형식 인식만 회복한다. 기존 조회기간 오선택 등 별도 NHIS 레이아웃 문제는 이 수정의 대상이 아니다.
+
+### 합성 재현 결과
+
+기존 D 생성기 `make_synth_eval.render`/`extract_diag.synthetic_cases`와 seed `20261111`을 재사용했다. 단위 테스트는 가짜 `OcrWord`, 통합 테스트는 실제 CPU own OCR을 사용한다. 모델·글꼴이 없으면 설치 이유와 명령을 표시하고 통합 테스트를 skip한다. 실서류는 사용하지 않았다.
+
+| 조건 | 수정 전 | 수정 후 |
+|---|---:|---:|
+| (a) 발급일 대시 10종, 가짜 OCR | 0/10 | 10/10 |
+| (b) 왼쪽 같은 행/근처 큰 도장, 가짜 OCR | 오선택 | 오른쪽 값 선택 |
+| (c) 빈칸/깨진 칸 + 도장, 가짜 OCR | 도장으로 대체 | 값 없음·검증 실패 |
+| (d) 라벨 누락 + 도장, 가짜 OCR | 값 없음 | 값 없음·검증 실패 |
+| (e) 초본 주민번호/이력 대시 10종, 가짜 OCR | 형식 실패 | 이름·생년월일·이력 회복 |
+
+명조 초본 실제 own 재측정은 동일 이미지·seed·열화 조건에서 수행했다. 이름/생년월일은 주민번호 대시가 선호 추출 경로를 막아 함께 실패했던 것이며, 성명 문자 자체를 바꿔 복원한 것이 아니다.
+
+| 명조 초본 조건 | 수정 전 필드 | 수정 후 필드 | 회복한 필드 |
+|---|---:|---:|---|
+| clean | 2/4 | 4/4 | 이름·생년월일 |
+| scan300 | 2/4 | 4/4 | 이름·생년월일 |
+| rotate | 2/4 | 4/4 | 이름·생년월일 |
+| blur | 3/4 | 4/4 | 주소이력 건수 |
+
+네 조건 모두 4/4로 회복했다. 이 네 합성 조건에서는 대시 형식 처리가 남은 실패의 원인이었다. 휴대폰 원근 등 다른 조건이나 실서류의 원인이 같다는 뜻은 아니다.
+
+```bash
+.venv/bin/python -m pytest engine_v2/tests/test_format_parsing.py engine_v2/tests/test_own_format_integration.py -q
+```
+
+### 값 없는 발급일 안전 진단 (Mac)
+
+아래 명령은 Mac의 사용자가 명시한 파일 한 개에만 적용하는 예시다. 이 작업 환경에서는 해당 위치를 만들거나 읽지 않았다.
+
+```bash
+.venv/bin/python -m engine_v2.tools.extract_diag \
+  <4대보험 PDF 경로> \
+  --doc insurance_4 --engine own --safe-issue
+# 같은 파일에서 --engine applevision으로 바꿔 비교할 수 있다.
+```
+
+새 `--safe-issue`는 숫자·불리언·고정 분류명만 출력한다. 출력 키는 `SAFE_ISSUE_KEYS`, 구분 문자 분류는 `SEPARATOR_CLASSES`의 코드 허용 목록으로 고정한다. 값·인식 문구·파일명·입력 경로·좌표·정답은 출력하지 않는다. `--gt`, `--unmasked-synthetic`, `--synthetic-suite`와 함께 사용할 수 없다. 라이브러리의 Python/native 출력은 버리고 예외는 고정 실패 코드로 바꾼다. `--output`은 같은 안전 JSON만 저장하며 콘솔에는 `{"ok": true}`만 출력한다. 기존 일반 진단의 마스킹된 좌표 출력과 구별되는 엄격한 모드다.
+
+`issue_label_found`는 라벨 인식, `right_cell_present`는 오른쪽 내용 존재, `right_cell_date_format`은 유효한 날짜/시각 형식, `selected_via_label`은 라벨 경로로 선택할 수 있었는지를 뜻한다. `header_date_candidate_count`는 상단 y≤28%의 날짜 모양 개수이며 유효 날짜 수나 실서류 정확도가 아니다. `stamp_date_candidate_present`는 그중 왼쪽 x≤50% 영역 날짜 모양 존재 여부로, 도장 자체를 인식했다는 뜻은 아니다. `separator_counts`는 그 날짜 모양 안의 원래 구분 문자 분류별 개수다.
+
+예를 들어 라벨과 빈 오른쪽 칸, 왼쪽 슬래시 날짜 하나를 넣은 합성 출력에는 `issue_label_found=true`, `right_cell_present=false`, `right_cell_date_format=false`, `header_date_candidate_count=1`, `stamp_date_candidate_present=true`, `selected_via_label=false`, `SLASH=2`만 나타나며 실제 값은 없다. 테스트는 가짜 개인정보·날짜·파일명 및 native 출력이 결과 전체에 없는지 검사한다.
+
+이번 수정의 최종 검증: pytest 222 통과/실패 0/skip 0(기존 147 + 신규 75), 시나리오 13개 모두 기준과 같은 통과 수/실패 0, 프론트 설치·타입 검사·lint·빌드 성공. 기존 Fast Refresh 경고 1건과 큰 청크 안내는 동일하다. 기존 테스트·demo/backend·README 세 파일·Trellis spec/workflow는 수정하지 않았다.

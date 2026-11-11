@@ -13,6 +13,7 @@ from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage
 from ..schemas.models import DocType, ExtractedField
 from . import nhis_common as common
+from .format_text import normalize_format_text
 
 MONTH_RE = re.compile(r"(?<!\d)(20\d{2})\s*(?:(?:[-./]\s*)|(?:년\s*)|\s)(0?[1-9]|1[0-2])\s*월?\s*\.?(?!\d)")
 COMPACT_MONTH_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(?!\d)")
@@ -41,7 +42,7 @@ class PaymentResult:
 def _money_words(line):
     found = []
     row_text = " ".join(word.text for word in line)
-    has_month = bool(MONTH_RE.search(row_text) or COMPACT_MONTH_RE.search(row_text))
+    has_month = bool(MONTH_RE.search(normalize_format_text(row_text)) or COMPACT_MONTH_RE.search(normalize_format_text(row_text)))
     i = 0
     while i < len(line):
         accepted = None
@@ -49,7 +50,7 @@ def _money_words(line):
         for end in range(i + 1, min(len(line), i + 4) + 1):
             words = line[i:end]
             raw = "".join(word.text for word in words).replace("원", "")
-            if MONTH_RE.fullmatch(raw) or COMPACT_MONTH_RE.fullmatch(raw):
+            if MONTH_RE.fullmatch(normalize_format_text(raw)) or COMPACT_MONTH_RE.fullmatch(normalize_format_text(raw)):
                 date_prefix = True
                 break
             if has_month and re.fullmatch(r"20\d{2}", raw.strip()):
@@ -111,7 +112,7 @@ def _header_block(lines, index):
         full_label = any(label in flat for label in TABLE_LABELS) or flat in TABLE_LABEL_FRAGMENTS
         if not partial_label and not full_label:
             break
-        if MONTH_RE.search(line_text(line)) or COMPACT_MONTH_RE.search(re.sub(r"\s+", "", line_text(line))):
+        if MONTH_RE.search(normalize_format_text(line_text(line))) or COMPACT_MONTH_RE.search(re.sub(r"\s+", "", line_text(line))):
             break
         included.add(cursor)
         cursor -= 1
@@ -124,7 +125,7 @@ def _header_block(lines, index):
         full_label = any(label in flat for label in TABLE_LABELS) or flat in TABLE_LABEL_FRAGMENTS
         if not partial_label and not full_label:
             break
-        if MONTH_RE.search(line_text(line)) or COMPACT_MONTH_RE.search(re.sub(r"\s+", "", line_text(line))):
+        if MONTH_RE.search(normalize_format_text(line_text(line))) or COMPACT_MONTH_RE.search(re.sub(r"\s+", "", line_text(line))):
             break
         included.add(cursor)
         cursor += 1
@@ -177,7 +178,7 @@ def _extract_monthly(pages):
     nonpositive = False
     period_start = None
     for _, result in pages:
-        match = PERIOD_RE.search(result.text)
+        match = PERIOD_RE.search(normalize_format_text(result.text))
         if match:
             period_start = (int(match.group(1)), int(match.group(2)))
             break
@@ -225,8 +226,8 @@ def _extract_monthly(pages):
                     if chosen_paid:
                         paid_totals.append(chosen_paid[1])
                 break
-            compact = COMPACT_MONTH_RE.findall(text)
-            matches = MONTH_RE.findall(text) + compact
+            compact = COMPACT_MONTH_RE.findall(normalize_format_text(text))
+            matches = MONTH_RE.findall(normalize_format_text(text)) + compact
             months = [(int(y), int(m)) for y, m in matches]
             if not months:
                 labels = MONTH_ONLY_RE.findall(text)
@@ -425,7 +426,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
                                        "고지월 줄은 찾았으나 고지금액 셀을 못 읽음")
     elif not month_headers:
         diagnostics["건강보험료"] = "열 제목 '월별' 또는 '년월' 못 찾음"
-    elif not found_months and MONTH_ONLY_RE.search(" ".join(result.text for _, result in pages)) and not PERIOD_RE.search(" ".join(result.text for _, result in pages)):
+    elif not found_months and MONTH_ONLY_RE.search(" ".join(result.text for _, result in pages)) and not PERIOD_RE.search(normalize_format_text(" ".join(result.text for _, result in pages))):
         warnings.append("기간 줄을 찾지 못해 월별 행에 연도를 붙일 수 없습니다.")
         diagnostics["건강보험료"] = "월별 행 제목은 찾았으나 기간 줄의 시작 연·월을 못 찾음"
     if combined:

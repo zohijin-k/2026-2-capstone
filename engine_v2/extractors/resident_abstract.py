@@ -31,6 +31,8 @@ from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage
 from ..schemas.models import BBox, DocType, ExtractedField, FieldSource
 
+from .format_text import normalize_format_text
+
 # --- 패턴 ---------------------------------------------------------------
 ISO_DATE = re.compile(r"(\d{4})\s*[-.]\s*(\d{1,2})\s*[-.]\s*(\d{1,2})")
 KOR_DATE = re.compile(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})\s*일")
@@ -176,7 +178,7 @@ def _parse_header(lines: list[list[Word]]) -> dict:
         t = line_text(line)
         if y < HEADER_MAX_Y:
             title_parts.append(t)
-            if (m := DOC_NO.search(t)) and out["doc_no"] is None:
+            if (m := DOC_NO.search(normalize_format_text(t))) and out["doc_no"] is None:
                 out["doc_no"] = m.group(0)
             for w in line:
                 if w.x0 > 70 and (m := PAGE_NO.match(w.text)):
@@ -187,10 +189,10 @@ def _parse_header(lines: list[list[Word]]) -> dict:
                 out["issue_words"] = ws
             if out["issuer"] is None and any(w.x0 > 55 for w in line) and ISSUER.search(t) and "증명" not in t:
                 out["issuer"] = t.strip()
-        if y < 26 and "주민등록번호" in squash(t) and (m := RRN.search(t)):
+        if y < 26 and "주민등록번호" in squash(t) and (m := RRN.search(normalize_format_text(t))):
             out["birth"] = _birth_from_rrn(m.group(1), m.group(2))
             out["gender"] = m.group(2)
-            out["birth_words"] = [w for w in line if RRN.search(w.text)]
+            out["birth_words"] = [w for w in line if RRN.search(normalize_format_text(w.text))]
             nws = [w for w in line if 15 <= w.x0 < 36 and "성명" not in w.text and not w.text.strip().startswith("(")]
             name = re.sub(r"[\s()（）]", "", "".join(w.text for w in nws))
             if name:
@@ -203,7 +205,7 @@ def _parse_header(lines: list[list[Word]]) -> dict:
                 out["name"] = candidate.group()
                 out["name_words"] = [w for w in line if candidate.group() in w.text] or line
         if y < 26 and "생년월일" in squash(t) and out["birth"] is None:
-            found = APPLICANT_DATE.search(t)
+            found = APPLICANT_DATE.search(normalize_format_text(t))
             if found:
                 digits = re.sub(r"\D", "", found.group(1))
                 if len(digits) == 8:
@@ -224,7 +226,7 @@ def _parse_applicant(lines: list[list[Word]]) -> dict:
         if not marker:
             continue
         remainder = flat[marker.end():]
-        date_match = APPLICANT_DATE.search(remainder)
+        date_match = APPLICANT_DATE.search(normalize_format_text(remainder))
         if not date_match:
             continue
         name = re.sub(r"[^가-힣]", "", remainder[:date_match.start()])
@@ -275,10 +277,10 @@ def _parse_rows(lines: list[list[Word]], start: float, end: float, page: int,
                 continue
             if w.x0 < COL_ADDR_MAX_X:
                 addr.append(t)
-            elif COL_OCCUR_X[0] <= w.x0 < COL_OCCUR_X[1] and ISO_DATE.fullmatch(t):
-                occ = _to_date(ISO_DATE.fullmatch(t))
-            elif COL_REPORT_X[0] <= w.x0 < COL_REPORT_X[1] and ISO_DATE.fullmatch(t):
-                rep = _to_date(ISO_DATE.fullmatch(t))
+            elif COL_OCCUR_X[0] <= w.x0 < COL_OCCUR_X[1] and ISO_DATE.fullmatch(normalize_format_text(t)):
+                occ = _to_date(ISO_DATE.fullmatch(normalize_format_text(t)))
+            elif COL_REPORT_X[0] <= w.x0 < COL_REPORT_X[1] and ISO_DATE.fullmatch(normalize_format_text(t)):
+                rep = _to_date(ISO_DATE.fullmatch(normalize_format_text(t)))
             elif COL_REASON_X[0] <= w.x0 < COL_REASON_X[1]:
                 reason.append(t)
             elif w.x0 >= COL_HOLDER_MIN_X:
