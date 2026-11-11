@@ -27,6 +27,7 @@ OCR 엔진 선택: 환경변수 ENGINE_V2_OCR = own | applevision | easyocr | pa
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -116,6 +117,10 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     f = ex.fields
     fields: dict[str, str] = {}
     bboxes: dict[str, BBox] = {}
+
+    fields["쪽표기자료"] = json.dumps({
+        "markers": ex.page_markers, "confidence": ex.page_marker_confidence,
+    })
 
     for v2key, label in (
         ("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일"),

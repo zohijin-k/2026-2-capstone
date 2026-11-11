@@ -118,6 +118,9 @@ class ResidentAbstractResult:
     history: list[HistoryEntry]
     validations: list[Validation]
     warnings: list[str] = field(default_factory=list)
+    # 미판독(None)과 읽힌 누락을 분리한다. 중복 쪽·서로 다른 총수도 보존한다.
+    page_markers: list[tuple[int, int] | None] = field(default_factory=list)
+    page_marker_confidence: float = 0.0
 
 
 # --- 유틸 ---------------------------------------------------------------
@@ -170,7 +173,7 @@ def _birth_from_rrn(front6: str, g: str) -> date | None:
 # --- 페이지 단위 파싱 -----------------------------------------------------
 def _parse_header(lines: list[list[Word]]) -> dict:
     out: dict = {"title": "", "issue": None, "issue_words": [], "doc_no": None,
-                 "page_no": None, "issuer": None, "name": None, "name_words": [],
+                 "page_no": None, "page_confidence": 0.0, "issuer": None, "name": None, "name_words": [],
                  "birth": None, "gender": None, "birth_words": []}
     title_parts = []
     for line in lines:
@@ -183,6 +186,7 @@ def _parse_header(lines: list[list[Word]]) -> dict:
             for w in line:
                 if w.x0 > 70 and (m := PAGE_NO.match(w.text)):
                     out["page_no"] = (int(m.group(1)), int(m.group(2)))
+                    out["page_confidence"] = w.conf
             ws = [w for w in line if w.x0 > 50 and KOR_DATE.search(w.text)]
             if ws and out["issue"] is None:
                 out["issue"] = _to_date(KOR_DATE.search(ws[0].text))
@@ -451,7 +455,11 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             confidence=_confidence(hist_checks + [resolved_sido(entries, len(entries) - 1) is not None]),
             bbox=_bbox(last.words, page_map))
 
-    return ResidentAbstractResult(detected, tconf, fields, entries, validations, warnings)
+    return ResidentAbstractResult(
+        detected, tconf, fields, entries, validations, warnings,
+        page_markers=[h["page_no"] for h in headers],
+        page_marker_confidence=min((h["page_confidence"] for h in headers), default=0.0),
+    )
 
 
 def resolved_sido(entries: list[HistoryEntry], i: int) -> str | None:
