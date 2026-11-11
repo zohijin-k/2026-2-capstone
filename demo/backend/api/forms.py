@@ -10,6 +10,8 @@ PC로 내려가는 일이 여전히 0회다.
 """
 
 from hashlib import sha256
+import hmac
+import logging
 import io
 import json
 from pathlib import Path
@@ -34,6 +36,8 @@ from ..forms.render import (
     render_template_page_png,
 )
 from ..forms.values import BUILDERS, available_forms, form_date
+from ..models import Document, get_session
+from ..forms.email import is_valid_email, normalize_email
 from .common import STORAGE, list_consents, load_application, subsidy_rows
 
 router = APIRouter(prefix="/api/applications", tags=["forms"])
@@ -375,21 +379,194 @@ def export_form(application_id: int, form_no: str) -> Response:
     )
 
 
-@router.get("/{application_id}/forms/files/all.zip")
-def all_forms_archive(application_id: int) -> Response:
-    app = load_application(application_id)
+def _valid_phone(value: Any) -> bool:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return len(digits) == 11 and digits.startswith("010")
+
+
+def _nonempty(value: Any) -> bool:
+    if isinstance(value, dict) and {"y", "m", "d"}.issubset(value):
+        return all(str(value.get(key) or "").strip() for key in ("y", "m", "d"))
+    return bool(str(value or "").strip())
+
+
+def _form_is_complete(app: Any, form_no: str) -> bool:
+    form1 = app.form1_json or {}
+    identity = app.identity_json or {}
+    consents = {row.consent_type: row for row in list_consents(app.id or 0)}
+    if form_no == "서식2":
+        answers = app.self_check_json or {}
+        return all(_nonempty(answers.get(str(index), answers.get(index))) for index in range(1, 9))
+    if form_no == "서식1":
+        required = ("name", "birth", "address", "mobile", "email", "savingPurpose", "priorJoined", "gender", "householdType", "householdSize", "workType", "workplaceRegion", "bankName", "accountNo", "accountHolder")
+        if not all(_nonempty(form1.get(key)) for key in required):
+            return False
+        email = normalize_email(str(form1.get("email") or ""))
+        if not is_valid_email(email):
+            return False
+        if not _valid_phone(form1.get("mobile")):
+            return False
+        spec = form_coords.load(form_no)
+        for rule in (spec.requirements if spec else []) or []:
+            if rule.get("kind") == "all_or_none":
+                values = [form1.get(key) for key in rule.get("fields", [])]
+                if any(_nonempty(value) for value in values) and not all(_nonempty(value) for value in values):
+                    return False
+            elif rule.get("kind") == "when_choice" and form1.get(rule.get("field")) == rule.get("equals"):
+                if not all(_nonempty(form1.get(key)) for key in rule.get("required", [])):
+                    return False
+        return True
+    if form_no == "서식3":
+        return all(key in consents for key in ("privacy", "unique_id"))
+    if form_no == "서식4":
+        return "third_party" in consents
+    if form_no == "서식5":
+        if ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+            return _paper_consent_document(app) is not None
+        admin = consents.get("admin_info")
+        form5 = app.form5_json or {}
+        signature = form5.get("signature")
+        return bool(admin and (admin.signature_path or (isinstance(signature, str) and signature.startswith("data:image/png;base64,"))))
+    if form_no == "job_application":
+        required = ("address", "mobile", "email", "bankName", "accountNo")
+        if not all(_nonempty(form1.get(key)) for key in required):
+            return False
+        if not _nonempty(identity.get("name") or form1.get("name")) or not _nonempty(identity.get("birth") or form1.get("birth")):
+            return False
+        if not is_valid_email(normalize_email(str(form1.get("email") or ""))) or not _valid_phone(form1.get("mobile")):
+            return False
+        signature = form1.get("job.signature")
+        return isinstance(signature, str) and signature.startswith("data:image/png;base64,")
+    if form_no == "job_consent":
+        signature = form1.get("consent.job.signature")
+        return all(key in consents for key in ("privacy", "third_party")) and isinstance(signature, str) and signature.startswith("data:image/png;base64,")
+    return False
+
+
+def _paper_consent_document(app: Any) -> Document | None:
+    with get_session() as session:
+        rows = session.query(Document).filter(
+            Document.application_id == app.id,
+            Document.slot_key == "admin_info_consent",
+        ).all()
+    return max(rows, key=lambda row: row.uploaded_at) if rows else None
+
+
+def _scan_pdf(document: Document) -> bytes:
+    path = STORAGE.parent / document.file_path
+    raw = path.read_bytes()
+    if raw.startswith(b"%PDF-"):
+        return raw
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(raw)) as image:
+            image = image.convert("RGB")
+            output = io.BytesIO()
+            image.save(output, format="PDF", resolution=150)
+            return output.getvalue()
+    except Exception as exc:
+        raise HTTPException(422, "종이 제출 스캔본을 PDF로 만들 수 없습니다.") from exc
+
+
+def _completed_form_numbers(app: Any) -> list[str]:
+    numbers: list[str] = []
+    for form_no in available_forms(app):
+        spec = form_coords.load(form_no)
+        if spec is None or not spec.available:
+            continue
+        if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+            if _paper_consent_document(app) is not None:
+                numbers.append(form_no)
+        elif _form_is_complete(app, form_no):
+            numbers.append(form_no)
+    return numbers
+
+
+def _archive_form_filename(app: Any, form_no: str) -> str:
+    spec = form_coords.load(form_no)
+    title = "".join((spec.title if spec else form_no).split())
+    public_form = spec.public_form or form_no if spec else form_no
+    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
+    return f"2026_{business}_{public_form}_{_safe_filename(title)}.pdf"
+
+
+def _written_archive_bytes(app: Any) -> tuple[bytes, int]:
+    completed = _completed_form_numbers(app)
+    if not completed:
+        return b"", 0
     output = io.BytesIO()
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
-        for form_no in available_forms(app):
-            spec = form_coords.load(form_no)
-            if spec and spec.available:
-                archive.writestr(_form_filename(app, form_no, "pdf"), spec.template.read_bytes())
-        if app.program_code != "double_savings":
-            spec = form_coords.load("job_interview_confirmation")
-            if spec and spec.available:
-                archive.writestr(_form_filename(app, "job_interview_confirmation", "pdf"), spec.template.read_bytes())
-    name = "2026_두배적금_빈서식PDF모음.zip" if app.program_code == "double_savings" else "2026_취업패키지_빈서식PDF모음.zip"
-    return Response(output.getvalue(), media_type="application/zip", headers={"Content-Disposition": _filename_header(name), "Cache-Control": "private, no-store"})
+        for form_no in completed:
+            if form_no == "서식5" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+                document = _paper_consent_document(app)
+                if document is not None:
+                    archive.writestr(_archive_form_filename(app, form_no), _scan_pdf(document))
+                continue
+            pdf, _ = _filled_pdf(app, form_no)
+            archive.writestr(_archive_form_filename(app, form_no), pdf)
+    return output.getvalue(), len(completed)
+
+
+def snapshot_written_archive(app: Any) -> tuple[str | None, int]:
+    """Freeze the applicant's completed-form archive at submission time."""
+    payload, count = _written_archive_bytes(app)
+    if not count:
+        return None, 0
+    folder = STORAGE / "forms_archives"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{app.application_no}.zip"
+    temporary = target.with_suffix(".zip.tmp")
+    temporary.write_bytes(payload)
+    temporary.replace(target)
+    return str(target.relative_to(STORAGE.parent)), count
+
+
+def _require_applicant_archive_access(app: Any, request: Request) -> None:
+    token = request.cookies.get(f"applicant_access_{app.id}", "")
+    actual = sha256(token.encode("utf-8")).hexdigest() if token else ""
+    expected = app.applicant_access_hash or ""
+    if not token or not expected or not hmac.compare_digest(actual, expected):
+        raise HTTPException(403, "신청자 본인만 작성한 서식을 받을 수 있습니다.", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/{application_id}/forms/files/written/options")
+def written_forms_options(application_id: int) -> dict[str, Any]:
+    app = load_application(application_id)
+    if app.submitted_at is not None:
+        completed = int(app.written_forms_archive_count or 0)
+    else:
+        completed = len(_completed_form_numbers(app))
+    return {
+        "url": f"/api/applications/{application_id}/forms/files/written.zip" if completed else None,
+        "completed": completed,
+        "total": len(available_forms(app)),
+    }
+
+
+@router.get("/{application_id}/forms/files/written.zip")
+def written_forms_archive(application_id: int, request: Request) -> Response:
+    app = load_application(application_id)
+    logging.getLogger(__name__).info("written forms archive requested application_id=%s", application_id)
+    _require_applicant_archive_access(app, request)
+    if app.submitted_at is not None:
+        if not app.written_forms_archive_path:
+            raise HTTPException(404, "작성 완료된 서식이 없습니다.", headers={"Cache-Control": "no-store"})
+        path = STORAGE.parent / app.written_forms_archive_path
+        if not path.is_file():
+            raise HTTPException(404, "작성한 서식을 보관하지 못했습니다.", headers={"Cache-Control": "no-store"})
+        payload = path.read_bytes()
+        count = int(app.written_forms_archive_count or 0)
+    else:
+        payload, count = _written_archive_bytes(app)
+    if not count:
+        raise HTTPException(404, "작성 완료된 서식이 없습니다.", headers={"Cache-Control": "no-store"})
+    business = "두배적금" if app.program_code == "double_savings" else "취업패키지"
+    filename = f"2026_{business}_작성한서식.zip"
+    return Response(payload, media_type="application/zip", headers={
+        "Content-Disposition": _filename_header(filename),
+        "Cache-Control": "no-store",
+    })
 
 
 def _hwp_kind_label(kind: str) -> str:
@@ -434,6 +611,33 @@ def filled_form_file(application_id: int, form_no: str) -> Response:
         raise HTTPException(404, "작성한 서식이 없습니다.")
     pdf, _ = _filled_pdf(app, form_no)
     return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": _filename_header(_form_filename(app, form_no, "pdf")), "Cache-Control": "private, no-store"})
+
+
+@router.get("/{application_id}/forms/files/서식5/print.pdf")
+def printable_admin_consent(application_id: int) -> Response:
+    app = load_application(application_id)
+    if app.program_code != "double_savings" or not ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+        raise HTTPException(404, "인쇄용 서식이 없습니다.")
+    spec = form_coords.load("서식5")
+    if spec is None or not spec.available:
+        raise HTTPException(503, "서식 템플릿을 사용할 수 없습니다.")
+    from copy import copy
+    printable = copy(app)
+    identity = app.identity_json or {}
+    form1 = dict(app.form1_json or {})
+    form1["name"] = form1.get("name") or identity.get("name") or ""
+    form1["birth"] = form1.get("birth") or identity.get("birth") or ""
+    form1["mobile"] = form1.get("mobile") or ""
+    printable.form1_json = form1
+    printable.form5_json = {"name": form1["name"], "birth": form1["birth"], "phone": form1["mobile"], "agree": "", "signature": "", "signatureScanUploaded": False}
+    printable.submitted_at = None
+    consents = [row for row in list_consents(application_id) if row.consent_type != "admin_info"]
+    filled = BUILDERS["서식5"](printable, consents=consents, storage_root=STORAGE, subsidy_items=[])
+    pdf = render(spec, filled)
+    return Response(pdf, media_type="application/pdf", headers={
+        "Content-Disposition": _filename_header(_form_filename(app, "서식5", "pdf")),
+        "Cache-Control": "no-store",
+    })
 
 
 @router.get("/{application_id}/forms/files/{form_no}/blank.pdf")

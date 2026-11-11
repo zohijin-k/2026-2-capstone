@@ -6,11 +6,13 @@ P1 범위: 파일 업로드 없이 서식1~5를 끝까지 작성·저장할 수 
 
 import base64
 import re
+import hashlib
+import secrets
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlmodel import select
 
@@ -186,23 +188,34 @@ def _require_draft(app: Application) -> None:
 
 
 @router.post("")
-def create(body: CreateRequest) -> dict[str, Any]:
+def create(body: CreateRequest, response: Response, request: Request) -> dict[str, Any]:
     get_program(body.program_code)  # 잘못된 사업 코드면 여기서 걸린다
+    applicant_token = secrets.token_urlsafe(32)
     app = Application(
         application_no=_next_application_no(body.program_code),
         program_code=body.program_code,
         criteria_version=latest_criteria(body.program_code).version,
+        applicant_access_hash=hashlib.sha256(applicant_token.encode("utf-8")).hexdigest(),
     )
     with get_session() as s:
         s.add(app)
         s.commit()
         s.refresh(app)
-    return app.model_dump()
+    response.set_cookie(
+        key=f"applicant_access_{app.id}",
+        value=applicant_token,
+        path=f"/api/applications/{app.id}/forms/files",
+        max_age=5 * 365 * 24 * 60 * 60,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+    )
+    return app.model_dump(exclude={"applicant_access_hash", "written_forms_archive_path", "written_forms_archive_count"})
 
 
 @router.get("/{application_id}")
 def read(application_id: int) -> dict[str, Any]:
-    return _load(application_id).model_dump()
+    return _load(application_id).model_dump(exclude={"applicant_access_hash", "written_forms_archive_path", "written_forms_archive_count"})
 
 
 @router.patch("/{application_id}")
@@ -244,7 +257,7 @@ def patch(application_id: int, body: PatchRequest) -> dict[str, Any]:
         s.add(app)
         s.commit()
         s.refresh(app)
-        return app.model_dump()
+        return app.model_dump(exclude={"applicant_access_hash", "written_forms_archive_path", "written_forms_archive_count"})
 
 
 @router.post("/{application_id}/identity")

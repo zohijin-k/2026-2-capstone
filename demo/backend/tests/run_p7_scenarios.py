@@ -524,11 +524,56 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
         (fake_hwp / "manifest.json").write_text(json.dumps(announcement_manifest), encoding="utf-8")
         announcement_options = client.get(f"/api/applications/{app_id}/forms/files/original-hwp/options").json()
         check("공고문 종류 메뉴 이름", announcement_options["label"], "공고문 원본 HWP(서식 포함)")
-        archive = client.get(f"/api/applications/{app_id}/forms/files/all.zip")
+        archive_options = client.get(f"/api/applications/{app_id}/forms/files/written/options").json()
+        check("작성 완료 0개면 zip 메뉴 숨김", archive_options["url"], None)
+        check("작성 완료 0개면 zip 응답 없음", client.get(f"/api/applications/{app_id}/forms/files/written.zip").status_code, 404)
+        other_id = client.post("/api/applications", json={"program_code": DOUBLE_SAVINGS}).json()["id"]
+        other_token = client.cookies.get(f"applicant_access_{other_id}")
+        denied_archive = client.get(
+            f"/api/applications/{app_id}/forms/files/written.zip",
+            headers={"cookie": f"applicant_access_{app_id}={other_token}"},
+        )
+        check("다른 신청자 토큰으로 작성본 ZIP 접근 거부", denied_archive.status_code, 403)
+
+        archive_signature = signature_png(tmp / "archive-signature.png")
+        with models.get_session() as session:
+            row = session.get(Application, app_id)
+            row.self_check_json = {str(index): ("예" if index % 2 else "아니오") for index in range(1, 9)}
+            row.form1_json = P7_FORM1.copy()
+            row.form5_json = {**P7_FORM5, "signature": archive_signature}
+            session.add(row)
+            session.add(models.Consent(application_id=app_id, consent_type="admin_info", agreed=True))
+            session.commit()
+        archive_options = client.get(f"/api/applications/{app_id}/forms/files/written/options").json()
+        check("일부 완료 서식 수", (archive_options["completed"], archive_options["total"]), (3, 5))
+        archive = client.get(f"/api/applications/{app_id}/forms/files/written.zip")
+        check("작성본 ZIP 응답", archive.status_code, 200)
+        check("작성본 ZIP no-store", archive.headers.get("cache-control"), "no-store")
+        check_true("작성본 ZIP 한글 파일명", "filename*=UTF-8''2026_%EB%91%90%EB%B0%B0%EC%A0%81%EA%B8%88_%EC%9E%91%EC%84%B1%ED%95%9C%EC%84%9C%EC%8B%9D.zip" in archive.headers.get("content-disposition", ""))
         with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
             names = bundle.namelist()
-        check("빈 서식 PDF ZIP 개수", sum(name.endswith(".pdf") for name in names), 5)
-        check("빈 서식 PDF ZIP에 HWP 없음", sum(name.endswith(".hwp") for name in names), 0)
+            form2_pdf = bundle.read(forms_api._archive_form_filename(load_application(app_id), "서식2"))
+            form5_pdf = bundle.read(forms_api._archive_form_filename(load_application(app_id), "서식5"))
+        expected_archive_names = {
+            forms_api._archive_form_filename(load_application(app_id), form_no)
+            for form_no in ("서식1", "서식2", "서식5")
+        }
+        check("작성본 ZIP에는 완료 서식만", set(names), expected_archive_names)
+        check_true("작성본 PDF의 선택 보기 보존", not checkbox_mark_errors("서식2", form2_pdf, {f"self_check.{index}.{('예' if index % 2 else '아니오')}" for index in range(1, 9)}))
+        check_true("작성본 서식5에 이름·서명", "홍길동" in __import__("fitz").open(stream=form5_pdf, filetype="pdf")[0].get_text() and signature_overlaps_source(form5_pdf, "서식5", "signature", "인"))
+        with models.get_session() as session:
+            for consent_type in ("privacy", "unique_id", "third_party"):
+                session.add(models.Consent(application_id=app_id, consent_type=consent_type, agreed=True))
+            session.commit()
+        all_options = client.get(f"/api/applications/{app_id}/forms/files/written/options").json()
+        check("전부 완료한 작성본 수", (all_options["completed"], all_options["total"]), (5, 5))
+        all_archive = client.get(all_options["url"])
+        with zipfile.ZipFile(io.BytesIO(all_archive.content)) as bundle:
+            all_names = set(bundle.namelist())
+        check("전부 완료 ZIP에 다섯 서식", all_names, {
+            forms_api._archive_form_filename(load_application(app_id), form_no)
+            for form_no in ("서식1", "서식2", "서식3", "서식4", "서식5")
+        })
         multi_manifest = {
             "double_savings": {
                 "files": {
@@ -554,11 +599,9 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
         check_true("면접확인서 다운로드 메뉴에 PDF·HWP", interview_options["blank"].endswith("blank.pdf") and interview_options["hwp"].endswith("source.hwp"))
         interview_blank = client.get(interview_options["blank"])
         check("면접확인서 빈 PDF 다운로드", interview_blank.status_code, 200)
-        job_zip = client.get(f"/api/applications/{job_id}/forms/files/all.zip")
-        with zipfile.ZipFile(io.BytesIO(job_zip.content)) as bundle:
-            job_names = bundle.namelist()
-        check("취업패키지 빈 서식 PDF ZIP에 면접확인서 포함", sum(name.endswith(".pdf") for name in job_names), 3)
-        check("취업패키지 빈 서식 PDF ZIP에 HWP 없음", sum(name.endswith(".hwp") for name in job_names), 0)
+        job_options = client.get(f"/api/applications/{job_id}/forms/files/written/options").json()
+        check("취업패키지 미작성은 작성본 ZIP 숨김", job_options["url"], None)
+        check("기존 빈 서식 ZIP API 제거", client.get(f"/api/applications/{job_id}/forms/files/all.zip").status_code, 404)
         job_bundle_options = client.get(f"/api/applications/{job_id}/forms/files/original-hwp/options").json()
         check("취업패키지 단일 HWP 메뉴 이름", job_bundle_options["label"], "서식 원본 HWP")
         check("취업패키지 단일 HWP 직접 제공", client.get(job_bundle_options["url"]).content, b"synthetic-job-hwp-test")
@@ -574,6 +617,28 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
     check("종이 제출 기준 선택", changed.status_code, 200)
     denied = client.put(f"/api/applications/{app_id}/doc-context", json={"paper_forms": {"서식4": True}})
     check("기준이 불허한 서식은 종이 제출 불가", denied.status_code, 400)
+    with models.get_session() as session:
+        row = session.get(Application, app_id)
+        row.form1_json = P7_FORM1.copy()
+        session.add(row)
+        session.commit()
+    printable = client.get(f"/api/applications/{app_id}/forms/files/서식5/print.pdf")
+    check("종이 제출 인쇄용 PDF 응답", printable.status_code, 200)
+    import fitz
+    with fitz.open(stream=printable.content, filetype="pdf") as print_doc:
+        print_text = print_doc[0].get_text()
+        print_checks = _brand_square_rects(print_doc[0])
+        print_images = print_doc[0].get_images(full=True)
+    check_true("인쇄용 PDF에 입력 성명·전화번호", "홍길동" in print_text and "010-0000-0000" in print_text)
+    today_value = __import__("demo.backend.forms.values", fromlist=["today"]).today()
+    check_true("인쇄용 PDF에 오늘 날짜", str(today_value.month) in print_text and str(today_value.day) in print_text)
+    check("인쇄용 PDF 동의 체크·서명은 비움", (len(print_checks), len(print_images)), (0, 0))
+
+    no_scan_options = client.get(f"/api/applications/{app_id}/forms/files/written/options").json()
+    no_scan_zip = client.get(no_scan_options["url"])
+    with zipfile.ZipFile(io.BytesIO(no_scan_zip.content)) as bundle:
+        no_scan_names = bundle.namelist()
+    check_true("종이 제출 스캔 미업로드면 서식5를 ZIP에서 제외", not any("서식5" in name for name in no_scan_names))
     checklist = client.get(f"/api/applications/{app_id}/required-documents").json()
     paper = next((row for row in checklist["items"] if row["slot_key"] == "admin_info_consent"), None)
     check_true("서식5 스캔 칸 필수 추가", paper and paper["upload"] and paper["required"] and not paper["check_declared_date"])
@@ -624,6 +689,33 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
     check("종이 방식이 제출 플로우에 저장", context.status_code, 200)
     _submit(client, flow_id, DS_UPLOADS, {"admin_info_consent": _synthetic_admin_scan(tmp, signed=True)})
     check("제출 뒤 작성 방식 변경 잠금", client.put(f"/api/applications/{flow_id}/doc-context", json={"paper_forms": {"서식5": False}}).status_code, 409)
+    frozen = client.get(f"/api/applications/{flow_id}/forms/files/written.zip")
+    check("제출 후 작성본 ZIP 응답", frozen.status_code, 200)
+    check("제출 후 작성본 ZIP no-store", frozen.headers.get("cache-control"), "no-store")
+    with zipfile.ZipFile(io.BytesIO(frozen.content)) as bundle:
+        frozen_names = bundle.namelist()
+        paper_pdf = bundle.read("2026_두배적금_서식5_행정정보공동이용사전동의서.pdf")
+    check_true("종이 제출 스캔본을 PDF로 포함", paper_pdf.startswith(b"%PDF-"))
+    archive_path = load_application(flow_id).written_forms_archive_path
+    saved_archive = (forms_api.STORAGE.parent / archive_path).read_bytes()
+    with models.get_session() as session:
+        from sqlmodel import select
+        current = load_application(flow_id)
+        versions = session.exec(select(models.ProgramCriteriaVersion).where(models.ProgramCriteriaVersion.program_code == current.program_code)).all()
+        latest = max(versions, key=lambda item: item.version)
+        changed_criteria = dict(latest.criteria_json)
+        changed_criteria["notice_date"] = "2099-01-01"
+        session.add(models.ProgramCriteriaVersion(program_code=current.program_code, version=latest.version + 1, criteria_json=changed_criteria, changed_role="province"))
+        session.commit()
+    coord_path = COORDS / "서식5.json"
+    coord_original = coord_path.read_bytes()
+    try:
+        coord_data = json.loads(coord_original)
+        coord_data["title"] = "변경된 테스트 템플릿 좌표"
+        coord_path.write_text(json.dumps(coord_data, ensure_ascii=False), encoding="utf-8")
+        check_true("제출 후 좌표 맵 변경에도 ZIP 고정", client.get(f"/api/applications/{flow_id}/forms/files/written.zip").content == saved_archive)
+    finally:
+        coord_path.write_bytes(coord_original)
 
 
 # ---------------------------------------------------------------- 3. 왕복 검증

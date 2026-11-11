@@ -6,9 +6,9 @@ import {
   fetchChecklist,
   putDocContext,
   deleteDocument,
-  blankFormsArchiveUrl,
+  fetchWrittenFormsOptions,
+  printableForm5Url,
   fetchOriginalHwpOptions,
-  blankFormUrl,
   sourceFormHwpUrl,
   fetchSubsidyItems,
   saveSubsidyItems,
@@ -132,6 +132,37 @@ function fieldGroup(key: string): string {
   return key.split('.')[0]
 }
 
+export function ApplicantFormsBulkMenu({ applicationId, refreshKey }: { applicationId: number; refreshKey?: number }) {
+  const [hwp, setHwp] = useState<{ url: string | null; label: string | null }>({ url: null, label: null })
+  const [written, setWritten] = useState<{ url: string | null; completed: number; total: number }>({ url: null, completed: 0, total: 0 })
+
+  useEffect(() => {
+    let alive = true
+    const refresh = () => {
+      Promise.all([fetchOriginalHwpOptions(applicationId), fetchWrittenFormsOptions(applicationId)])
+        .then(([hwpOptions, writtenOptions]) => {
+          if (!alive) return
+          setHwp(hwpOptions)
+          setWritten(writtenOptions)
+        }).catch(() => undefined)
+    }
+    refresh()
+    window.addEventListener('focus', refresh)
+    return () => {
+      alive = false
+      window.removeEventListener('focus', refresh)
+    }
+  }, [applicationId, refreshKey])
+
+  if (!written.url && !hwp.url) return null
+  return (
+    <details className="pdf-forms__bulk-menu"><summary className="btn">서식 모두 내려받기</summary>
+      {written.url && <a href={written.url}>작성한 서식 PDF(zip){written.completed < written.total ? ` (작성 완료 ${written.completed} / ${written.total})` : ''}</a>}
+      {hwp.url && hwp.label && <a href={hwp.url}>{hwp.label}</a>}
+    </details>
+  )
+}
+
 export default function PdfFormsWorkspace({
   applicationId, program, identity, form1, answers, consent, form5, signMode,
   checkResult, onForm1, onAnswers, onConsent, onForm5, onSignMode,
@@ -142,7 +173,6 @@ export default function PdfFormsWorkspace({
   const [layouts, setLayouts] = useState<Record<string, FormLayout>>({})
   const [availableFormCount, setAvailableFormCount] = useState(0)
   const [formHwpAvailable, setFormHwpAvailable] = useState<Record<string, boolean>>({})
-  const [hwpBundle, setHwpBundle] = useState<{ url: string | null; label: string | null }>({ url: null, label: null })
   const [paperAllowed, setPaperAllowed] = useState<Record<string, boolean>>({})
   const [paperForms, setPaperForms] = useState<Record<string, boolean>>({})
   const [active, setActive] = useState<ActiveForm | null>(null)
@@ -166,14 +196,12 @@ export default function PdfFormsWorkspace({
       Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo))),
       fetchApplicantForms(applicationId),
       fetchChecklist(applicationId),
-      fetchOriginalHwpOptions(applicationId),
     ])
-      .then(([items, availableForms, checklist, hwpOptions]) => {
+      .then(([items, availableForms, checklist]) => {
         if (alive) {
           setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
           setAvailableFormCount(availableForms.length)
           setFormHwpAvailable(Object.fromEntries(availableForms.map((item) => [item.form_no, item.hwp_available])))
-          setHwpBundle(hwpOptions)
           setPaperAllowed(checklist.program.paper_forms || {})
           setPaperForms(checklist.context.paper_forms || {})
           onPaperFormsChange?.(checklist.context.paper_forms || {})
@@ -685,10 +713,7 @@ export default function PdfFormsWorkspace({
       <header className="pdf-forms__intro">
         <h2>신청 서식 작성</h2>
         <p>원본 서식 위에 직접 입력합니다. 작성 내용은 자동 저장됩니다.</p>
-        <details className="pdf-forms__bulk-menu"><summary className="btn">서식 모두 내려받기</summary>
-          <a href={blankFormsArchiveUrl(applicationId)}>빈 서식 PDF 모음(zip)</a>
-          {hwpBundle.url && hwpBundle.label && <a href={hwpBundle.url}>{hwpBundle.label}</a>}
-        </details>
+        <ApplicantFormsBulkMenu applicationId={applicationId} refreshKey={thumbnailVersion} />
       </header>
       <ul className="pdf-forms__list">
         {formNos.map((formNo) => {
@@ -708,8 +733,8 @@ export default function PdfFormsWorkspace({
                   </select>
                 </label>}
                 {paperForms[formNo] && <div className="pdf-form-row__paper-files">
-                  <p>빈 서식 PDF·원본 HWP를 내려받아 작성하고 서명한 뒤, 서류 업로드 단계에서 올려 주세요.</p>
-                  <a className="btn btn--small" href={blankFormUrl(applicationId, formNo)}>빈 서식 PDF</a>
+                  <p>인쇄용 PDF를 출력해 동의란에 체크하고 서명한 뒤, 서류 업로드 단계에서 올려 주세요. 한글 프로그램이 있으면 원본 HWP를 써도 됩니다.</p>
+                  <a className="btn btn--small" href={printableForm5Url(applicationId)}>인쇄용 PDF</a>
                   {formHwpAvailable[formNo] && <a className="btn btn--small" href={sourceFormHwpUrl(applicationId, formNo)}>원본 HWP</a>}
                 </div>}
               </div>

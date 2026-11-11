@@ -714,6 +714,11 @@ def submit(application_id: int) -> dict[str, Any]:
         row.status = STATUS_SUBMITTED
         row.submitted_at = form_values.submission_timestamp()
         row.updated_at = row.submitted_at
+        from .forms import snapshot_written_archive
+
+        archive_path, archive_count = snapshot_written_archive(row)
+        row.written_forms_archive_path = archive_path
+        row.written_forms_archive_count = archive_count
         s.add(row)
         # 데모는 재제출 시나리오를 다루지 않는다. 기존 심사 결과는 지우고 다시 쓴다.
         for old in s.exec(

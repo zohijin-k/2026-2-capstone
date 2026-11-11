@@ -40,6 +40,10 @@ class Application(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     submitted_at: Optional[datetime] = None
+    #: Applicant-only credentials and immutable submitted-form archive metadata.
+    applicant_access_hash: Optional[str] = None
+    written_forms_archive_path: Optional[str] = None
+    written_forms_archive_count: Optional[int] = None
 
 
 class ProgramCriteriaVersion(SQLModel, table=True):
