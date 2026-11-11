@@ -63,6 +63,10 @@ class OcrResult:
     page_count: int = 1
     #: 어느 계층이 읽었는지. 담당자 화면과 로그에 그대로 노출한다.
     tier: str = "none"
+    #: 실제로 글자를 읽은 엔진(jbai·applevision·easyocr·pdftext·fixture 등). 담당자 화면 전용.
+    engine: str = ""
+    #: 앞 계층이 실패해 다음 계층으로 넘어온 사유. 담당자 화면 전용 — 신청자 응답에는 싣지 않는다.
+    fallback_reason: str = ""
     #: OCR 본문에서 찾은 종류 단서. 신청자 응답에는 보내지 않는다.
     classification_evidence: str = ""
     #: 문서 종류 판별 신뢰도. 추출 필드 신뢰도와 분리한다.
@@ -72,6 +76,17 @@ class OcrResult:
 
     def bboxes_as_dict(self) -> dict[str, dict[str, float | int]]:
         return {k: v.as_dict() for k, v in self.bboxes.items()}
+
+
+class OcrFallback(Exception):
+    """계층이 맡은 파일을 읽다 실패했음을 알린다. 체인은 `reason`을 기록하고 다음 계층으로 넘어간다.
+
+    `reason`은 담당자 화면에 그대로 보이므로 키·응답 본문·서류 내용을 넣지 않는다.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 @runtime_checkable

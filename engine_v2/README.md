@@ -393,9 +393,16 @@ OCR이 주 경로가 되었으므로 7단계를 먼저 한다. 어댑터: `pipel
 전북AI OpenAI 호환 OCR은 `pipeline/jbai_ocr.py`의 쪽별 텍스트·표 결과로 받는다.
 기존 `OcrWord`와 달리 bbox가 없고, 표 응답은 HTML 또는 OTSL 토큰이다. `extractors/jbai_text.py`가
 기존 초본·납부확인서·자격득실 추출기의 결과 계약에 맞춰 연결되며, `run(..., ocr_engine="jbai")`로
-선택할 수 있다. 기본 엔진은 계속 기존 체인이다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
+선택할 수 있다. 데모는 기관 확인에 따라 `demo/backend/ocr/jbai.py`에서 전북AI를 기본 판독으로 쓰고,
+오류 시 로컬 OCR로 대체한다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 비교할 수 있고,
 인식 값은 콘솔이나 파일에 출력하지 않는다. 키는 `JBAI_API_KEY` 환경변수에서만 읽고,
 `JBAI_ALLOW_REAL_DOCS`가 true가 아니면 `data/private/` 파일과 데모 업로드는 차단한다.
+
+전북AI OCR은 JPG만 받으므로 전송 이미지는 JPEG다. PDF는 쪽마다 200dpi RGB(알파 없음)로 렌더링해
+품질 95 JPEG로 만들고(`render_pdf_pages_200dpi`), 사진은 EXIF 회전을 반영한 RGB JPEG로 바꾼다
+(`image_file_to_jpeg`, `run_jbai_file_pair`). 32MB 제한은 실제 전송하는 JPEG 바이트로 검사한다.
+응답 원문의 주민등록번호는 받은 즉시 `mask_rrn`으로 성별 자리 뒤 6자리를 지우고, 가린 텍스트만
+`text_lines`·`tables`·`raw_content`에 남긴다(추출기는 생년월일과 성별 자리만 쓴다).
 
 가상 값만 넣은 합성 표 이미지로 `OCR:`와 `Table Recognition:`을 각각 호출해 HTTP 200을 확인했다.
 `OCR:` 응답은 `choices[0].message.content`의 일반 문자열이며 줄 사이를 개행으로 나눴고,

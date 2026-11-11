@@ -121,7 +121,7 @@ function DocumentResult({
           )}
           {SHOW_TECH && (
             <span className="dresult__meta">
-              {doc.ocr_tier} / 신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} / {doc.elapsed_ms ?? 0}ms
+              신뢰도 {doc.ocr_confidence?.toFixed(2) ?? '-'} / {doc.elapsed_ms ?? 0}ms
             </span>
           )}
         </div>

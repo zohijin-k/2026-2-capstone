@@ -15,7 +15,7 @@ from pathlib import Path
 import pymupdf
 from dotenv import dotenv_values
 
-from ..pipeline.jbai_ocr import run_jbai_image_pair
+from ..pipeline.jbai_ocr import render_pdf_pages_200dpi, run_jbai_image_pair
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "engine_v2" / "tests" / "fixtures" / "jbai_synthetic"
@@ -196,15 +196,14 @@ def main() -> None:
         pdf_path = FIXTURES / f"{kind}.pdf"
         pdf_path.write_bytes(pdf)
         recorded = {"doc_type": kind, "expected": expected, "pages": []}
-        with pymupdf.open(stream=pdf, filetype="pdf") as document:
-            for page_index, page in enumerate(document):
-                pix = page.get_pixmap(matrix=pymupdf.Matrix(200 / 72, 200 / 72), alpha=False)
-                response = run_jbai_image_pair(pix.tobytes("png"), (pix.width, pix.height), page=page_index)
-                recorded["pages"].append({
-                    "page": page_index,
-                    "ocr_content": response.raw_content,
-                    "table_content": response.table_content,
-                })
+        # 전북AI OCR은 JPEG만 받는다. 200dpi RGB JPEG(품질 95)로 쪽마다 보낸다.
+        for page_index, image, size in render_pdf_pages_200dpi(pdf_path):
+            response = run_jbai_image_pair(image, size, page=page_index)
+            recorded["pages"].append({
+                "page": page_index,
+                "ocr_content": response.raw_content,
+                "table_content": response.table_content,
+            })
         (FIXTURES / f"{kind}.json").write_text(
             json.dumps(recorded, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )

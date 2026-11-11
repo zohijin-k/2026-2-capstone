@@ -65,6 +65,8 @@ function asViewerDoc(form: FormExport, index: number): OfficerDocument {
     bboxes: {},
     ocr_confidence: null,
     ocr_tier: null,
+    ocr_engine: null,
+    ocr_fallback_reason: null,
     declared_issue_date: null,
     uploaded_at: '',
   }
@@ -416,6 +418,17 @@ export default function ReviewDetail({
                   : `${Math.round(activeDoc.ocr_confidence * 100)}%`}{' '}
                 <em>({activeDoc.ocr_tier})</em>
               </dd>
+              {activeDoc.ocr_engine && (
+                <>
+                  <dt>판독 엔진</dt>
+                  <dd>
+                    {activeDoc.ocr_engine}
+                    {activeDoc.ocr_fallback_reason && (
+                      <em> (대체 사유: {activeDoc.ocr_fallback_reason})</em>
+                    )}
+                  </dd>
+                </>
+              )}
               <dt>입력한 발급일</dt>
               <dd>{activeDoc.declared_issue_date ?? '-'}</dd>
             </dl>

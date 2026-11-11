@@ -242,7 +242,6 @@ export interface UploadedDocument {
   findings: Finding[]
   extracted: Record<string, string>
   ocr_confidence: number | null
-  ocr_tier: string | null
   elapsed_ms: number | null
   page_index: number | null
   uploaded_at: string
@@ -851,6 +850,10 @@ export interface OfficerDocument {
   bboxes: Record<string, BBox>
   ocr_confidence: number | null
   ocr_tier: string | null
+  /** 실제로 글자를 읽은 엔진 (jbai·applevision·pdftext 등). 담당자 화면 전용 */
+  ocr_engine: string | null
+  /** 앞 엔진이 실패해 다른 엔진으로 대체한 사유 (예: 전북AI 응답 시간 초과) */
+  ocr_fallback_reason: string | null
   declared_issue_date: string | null
   uploaded_at: string
 }

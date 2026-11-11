@@ -673,6 +673,8 @@ def _document_view(d: Document, labels: dict[str, str]) -> dict[str, Any]:
         "bboxes": ocr.get("bboxes") or {},
         "ocr_confidence": ocr.get("confidence"),
         "ocr_tier": ocr.get("tier"),
+        "ocr_engine": ocr.get("engine") or ocr.get("tier"),
+        "ocr_fallback_reason": ocr.get("fallback_reason") or None,
         "declared_issue_date": (
             d.declared_issue_date.isoformat() if d.declared_issue_date else None
         ),

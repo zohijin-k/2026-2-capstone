@@ -240,6 +240,12 @@ class LocalOcr:
     def read(self, file_path: str, expected: DocType | None) -> OcrResult | None:
         del expected  # 종류는 슬롯 기대값이 아니라 본문 OCR 결과로 먼저 고른다.
         engine = _engine_name()
+        result = self._read(file_path, engine)
+        if result is not None and not result.engine:
+            result.engine = engine
+        return result
+
+    def _read(self, file_path: str, engine: str) -> OcrResult | None:
         path = Path(file_path)
         if not path.exists() or path.suffix.lower() not in {".pdf", ".jpg", ".jpeg", ".png"}:
             return None
@@ -271,10 +277,12 @@ class LocalOcr:
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
             extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
-            return _from_nhis(
+            result = _from_nhis(
                 extractor.extract(pages), pages, v2types,
                 classified.classification_evidence, detected,
             )
+            result.engine = "pdftext"  # 텍스트 레이어를 그대로 읽었다 (OCR 엔진 미사용)
+            return result
 
         try:
             page_images = preprocess(path)

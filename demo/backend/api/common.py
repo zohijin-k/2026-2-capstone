@@ -210,7 +210,7 @@ def document_dict(d: Document) -> dict[str, Any]:
             if k in APPLICANT_VISIBLE_FIELDS and not (nhis_subscriber_document and k == "성명")
         },
         "ocr_confidence": (d.ocr_json or {}).get("confidence"),
-        "ocr_tier": (d.ocr_json or {}).get("tier"),
+        # 판독 계층·엔진·대체 사유는 담당자 화면에만 싣는다 (계층 이름이 곧 외부 엔진 이름이다).
         "elapsed_ms": (d.ocr_json or {}).get("elapsed_ms"),
         "page_index": d.page_index,
         "uploaded_at": d.uploaded_at.isoformat(timespec="seconds"),

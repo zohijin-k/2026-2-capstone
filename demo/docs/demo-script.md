@@ -21,7 +21,7 @@
 |---|---|---|
 | 1 | 더미 서류가 있는지 | `demo/fixtures/samples/`에 PDF 25개 (없으면 `python -m demo.fixtures.make_samples`) |
 | 2 | 백엔드 중지 후 **리셋** | `python -m demo.backend.reset --yes` |
-| 3 | 백엔드 기동 | 저장소 루트에서 `uvicorn demo.backend.main:app --port 8000` |
+| 3 | 백엔드 기동 | 저장소 루트에서 `uvicorn demo.backend.main:app --port 8000 --env-file .env` |
 | 4 | 프론트 기동 | `demo/frontend`에서 `npm run dev` |
 | 5 | 열어 두기 | <http://localhost:5173> · 파일 탐색기에서 `demo/fixtures/samples/` |
 | 6 | 브라우저 | 개발자도구 **Network 탭**을 미리 열어 둔다 (S9에서 쓴다) |

@@ -52,7 +52,7 @@ def test_three_page_pdf_calls_backend_in_page_order(tmp_path: Path, monkeypatch)
     assert first_payload["model"] == jbai_ocr.MODEL
     message = first_payload["messages"][0]
     assert message["content"][0] == {"type": "text", "text": "OCR:"}
-    assert message["content"][1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert message["content"][1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
 
 
 def test_base_url_trailing_slash_keeps_endpoint_path(monkeypatch):
