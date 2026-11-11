@@ -101,8 +101,17 @@ def _looks_like_insurance4(pages: list[tuple[PageImage, OcrResult]]) -> bool:
 
 
 def _page_marker(lines: list[list[Word]]) -> bool:
-    return any(re.search(r"(?<!\d)1\s*[/|]\s*1(?!\d)", line_text(line))
-               for line in lines)
+    # OCR may return "1/1" as one token, spaced tokens, or three separate tokens.
+    # Join each line and short neighboring-line windows after removing whitespace.
+    for index, line in enumerate(lines):
+        text = "".join(word.text for word in line)
+        if re.search(r"(?<!\d)1\s*[/|／]\s*1(?!\d)", text):
+            return True
+        adjacent = "".join(word.text for row in lines[index:index + 3] for word in row)
+        adjacent = re.sub(r"\s+", "", adjacent)
+        if re.search(r"(?<!\d)1[/|／]1(?!\d)", adjacent):
+            return True
+    return False
 
 
 def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str]]:
@@ -139,7 +148,7 @@ def _header_x(lines: list[list[Word]], token: str, default: float, table_y: floa
 
 def _normalize_cell(value: str) -> str:
     value = value.strip(" \t:：()（）[]【】")
-    return "" if value in {"-", "－", "—", "–", "해당없음"} else value
+    return "" if value in {"", "-", "－", "—", "–", "해당없음"} else value
 
 
 def _parse_row(insurance: str, lines: list[list[Word]], anchors: dict[str, float]) -> InsuranceRow:

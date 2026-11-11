@@ -117,6 +117,102 @@ def test_rejects_other_types_and_checks_page_marker_and_future_issue_date():
     assert not checks["issue_not_future"]
 
 
+def test_page_marker_accepts_joined_spaced_and_split_tokens():
+    from ..extractors.insurance_4 import _page_marker
+    from ..pipeline.layout import normalize
+
+    for tokens in (("1/1",), ("1", "/", "1"), ("1", " / ", "1")):
+        words = [wd(85 + index * 2, 29, token) for index, token in enumerate(tokens)]
+        normalized = normalize(words, 0, (W, H))
+        from ..extractors.nhis_common import group_lines
+        assert _page_marker(group_lines(normalized)), tokens
+    split_lines = normalize([wd(85, 28, "1"), wd(85, 29.2, "/"), wd(85, 30.4, "1")],
+                            0, (W, H))
+    assert _page_marker(group_lines(split_lines))
+    words = [wd(85, 29, "1"), wd(87, 29, "/"), wd(89, 29, "2")]
+    assert not _page_marker(group_lines(normalize(words, 0, (W, H))))
+
+
+def test_blank_receipt_markers_are_not_dates_and_issue_timestamp_formats_work():
+    for marker in ("-", "( - )", "(-)", ""):
+        words = employed_words()
+        for word in words:
+            if word.text == "(2023.01.02)":
+                word.text = marker
+                break
+        result = insurance_4.extract([page(words)], today=date(2026, 11, 11))
+        checks = {item.name: item.passed for item in result.validations}
+        assert checks["date_formats"], marker
+
+    for issue in ("2026.11.10 10:20", "2026-11-10 10:20"):
+        words = synthetic_words()
+        next(word for word in words if word.text == "2026.11.10 10:20").text = issue
+        result = insurance_4.extract([page(words)], today=date(2026, 11, 11))
+        checks = {item.name: item.passed for item in result.validations}
+        assert checks["issue_not_future"], issue
+
+
+def test_received_dash_is_normalized_to_empty_in_gt_comparison():
+    from ..tools.extract_check import _expected, _row_mismatch_reason
+
+    gt = {"rows": [{"insurance": "건강보험", "status": "가입", "received": "-"}]}
+    expected = json.loads(_expected("insurance_4", gt)["가입내역"])
+    assert expected[0]["신고접수일"] == ""
+    actual = [dict(expected[0], 신고접수일="9999-99-99")]
+    reason = _row_mismatch_reason(actual, expected)
+    assert reason == "건강보험 행 신고접수일: 추출=날짜, 정답=비어 있음"
+
+
+def test_list_mismatch_explains_safe_cell_shape_without_values():
+    from ..tools.extract_check import _row_mismatch_reason
+
+    actual = [{"보험": "건강보험", "신고접수일": ""}]
+    expected = [{"보험": "건강보험", "신고접수일": "9999-99-99"}]
+    reason = _row_mismatch_reason(actual, expected)
+    assert reason == "건강보험 행 신고접수일: 추출=비어 있음, 정답=날짜"
+    assert "9999" not in reason
+
+
+def test_extract_check_output_keeps_fixed_explanation_and_masks_values(monkeypatch, capsys):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from ..tools import extract_check
+
+    pages = [page(synthetic_words())]
+    monkeypatch.setattr("engine_v2.engine._load_pages", lambda _doc, _engine: pages)
+    gt = {"rows": [{"insurance": "건강보험", "status": "가입",
+                    "name": "추출안되는개인값", "received": "9999-99-99"}]}
+    extract_check._run_nhis(SimpleNamespace(file=Path("synthetic.pdf"), engine="applevision",
+                                            doc="insurance_4", layout=False), gt)
+    output = capsys.readouterr().out
+    assert "행 1 보험 이름: 추출=국민연금, 정답=건강보험" in output
+    assert "정답과 일치" in output
+    for private in ("김전북", "가상회사", "추출안되는개인값", "9999-99-99"):
+        assert private not in output
+
+
+def test_nhis_extract_check_outputs_keep_fixed_reasons_and_hide_values(monkeypatch, capsys):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from ..extractors import nhis_acquisition_loss, nhis_payment
+    from ..tools import extract_check
+
+    monkeypatch.setattr("engine_v2.engine._load_pages", lambda _doc, _engine: [])
+    synthetic_secret = "합성개인값"
+    result = SimpleNamespace(fields={"성명": SimpleNamespace(value=synthetic_secret)},
+                             validations=[], diagnostics={})
+    monkeypatch.setattr(nhis_payment, "extract", lambda _pages: result)
+    monkeypatch.setattr(nhis_acquisition_loss, "extract", lambda _pages: result)
+    for doc in ("nhis_payment", "nhis_acquisition_loss"):
+        extract_check._run_nhis(SimpleNamespace(file=Path("synthetic.pdf"), engine="applevision",
+                                                doc=doc, layout=False), {})
+    output = capsys.readouterr().out
+    assert output.count("추출됨 (정답 비교 안 함)") == 2
+    assert synthetic_secret not in output
+
+
 def test_requires_parseable_parenthesized_receipt_date():
     words = employed_words()
     next(word for word in words if word.text == "(2023.01.02)").text = "(2023.99.99)"

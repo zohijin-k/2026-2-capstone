@@ -64,7 +64,7 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
                  "사업장관리번호": row.get("management_number", ""),
                  "사업장명칭": row.get("workplace_name", ""),
                  "자격취득일": row.get("acquired") or "",
-                 "신고접수일": row.get("received") or "",
+                 "신고접수일": _normalize_expected_cell(row.get("received")),
                  "상태": row.get("status", "가입")}
                 for row in rows
             ]
@@ -111,6 +111,49 @@ def _expected(doc: str, gt: dict) -> dict[str, str]:
         if history:
             expected["가입구분"] = max(history, key=lambda row: row["acquired"])["category"]
     return expected
+
+
+def _normalize_expected_cell(value) -> str:
+    """Normalize make_gt's '-' receipt-date sentinel to the extractor's empty value."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text in {"", "-", "－", "—", "–", "( - )", "(-)"} else text
+
+
+def _masked_cell(value) -> str:
+    """Describe a mismatching cell without revealing its document value."""
+    text = str(value or "").strip()
+    if not text or text in {"-", "－", "—", "–", "( - )", "(-)"}:
+        return "비어 있음"
+    if text == "미가입":
+        return "미가입"
+    if len(text) >= 8 and any(char.isdigit() for char in text) and any(sep in text for sep in (".", "-", "/")):
+        return "날짜"
+    from .privacy import _mask_character
+    return "".join(_mask_character(char) for char in text)
+
+
+def _row_mismatch_reason(actual_rows: list[dict], expected_rows: list[dict]) -> str:
+    keys = ("성명", "가입자종별", "사업장관리번호", "사업장명칭", "자격취득일", "신고접수일", "상태")
+    for index in range(max(len(actual_rows), len(expected_rows))):
+        actual = actual_rows[index] if index < len(actual_rows) else {}
+        expected = expected_rows[index] if index < len(expected_rows) else {}
+        if index >= len(actual_rows):
+            return f"{expected.get('보험') or f'행 {index + 1}'} 행: 추출=비어 있음, 정답=행"
+        if index >= len(expected_rows):
+            return f"{actual.get('보험') or f'행 {index + 1}'} 행: 추출=행, 정답=비어 있음"
+        if actual.get("보험") != expected.get("보험"):
+            return (f"행 {index + 1} 보험 이름: 추출={actual.get('보험') or '비어 있음'}, "
+                    f"정답={expected.get('보험') or '비어 있음'}")
+        insurance = actual.get("보험") or expected.get("보험") or f"행 {index + 1}"
+        for key in keys:
+            got = actual.get(key, "")
+            wanted = expected.get(key, "")
+            if got != wanted:
+                return (f"{insurance} 행 {key}: 추출={_masked_cell(got)}, "
+                        f"정답={_masked_cell(wanted)}")
+    return "행 개수가 다름"
 
 
 def _layout(doc: str, pages) -> None:
@@ -204,7 +247,7 @@ def _run_nhis(args, gt: dict) -> None:
                 matches = False
             if not matches:
                 status = "FAIL"
-                reason = "정답과 불일치 (실제·정답 값 숨김)"
+                reason = _row_mismatch_reason(actual_value, expected_value)
             else:
                 status = "OK"
                 reason = "정답과 일치"
@@ -220,7 +263,9 @@ def _run_nhis(args, gt: dict) -> None:
                 status, reason = "FAIL", failure_reason
         if label == "성명" and not validation_names.get("page_names_match", True):
             status, reason = "FAIL", "쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못함"
-        print(f"  {label}: {status} — {mask_text(reason)}")
+        # reason is tool-generated text that may contain an already-safe cell shape;
+        # masking it again would corrupt fixed words such as "누락" and "비어 있음".
+        print(f"  {label}: {status} — {reason}")
     if args.doc == "insurance_4":
         print("[검증]")
         for validation in result.validations:
@@ -341,7 +386,7 @@ def main() -> None:
 
     print(f"서류 판별: {res.detected_type.value} ({res.type_confidence})")
     for w in res.warnings:
-        print(f"  경고: {mask_text(w)}")
+        print(f"  경고: {w}")
 
     print("\n[필드]  추출됨 / 신뢰도 / 정답 일치")
     def cmp(key, f):
@@ -361,7 +406,7 @@ def main() -> None:
 
     print("\n[검증]")
     for v in res.validations:
-        print(f"  {'통과' if v.passed else '실패'}  {mask_text(v.name)}  {mask_text(v.detail)}")
+        print(f"  {'통과' if v.passed else '실패'}  {v.name}  {v.detail}")
 
     print(f"\n[주소 이력] {len(res.history)}건 (시도 / 사유 / 발생일 유무 / 메모 수)")
     for i, e in enumerate(res.history):
