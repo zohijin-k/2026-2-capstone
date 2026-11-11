@@ -249,7 +249,7 @@ export default function ReviewDetail({
                 onClick={() => setActiveForm(f.form_no)}
               >
                 <span className="review__tab-pen">✎</span>
-                {f.form_no} 작성본
+                {f.public_form ?? f.title} 작성본
               </button>
             ))}
           </nav>

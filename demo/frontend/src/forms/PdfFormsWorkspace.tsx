@@ -29,8 +29,6 @@ import { JOB_PACKAGE_SELF_CHECK_ITEMS, SELF_CHECK_ITEMS, type SelfCheckAnswers }
 import { EMPTY_FORM5, type Form5Value, type SignMode } from './form5-model.ts'
 import './pdf-forms-workspace.css'
 
-const JOB_FORMS = ['job_application', 'job_consent']
-const SAVINGS_FORMS = ['서식2', '서식1', '서식3', '서식4', '서식5']
 type ActiveForm = { formNo: string; mode: 'edit' | 'preview' }
 
 interface Props {
@@ -169,7 +167,7 @@ export default function PdfFormsWorkspace({
   onFlush, onChangedSubsidy, onPaperFormsChange, onContinue, continuing, error, readOnly = false, onProgress,
 }: Props) {
   const isJob = program.has_subsidy_items
-  const formNos = isJob ? JOB_FORMS : SAVINGS_FORMS
+  const [formNos, setFormNos] = useState<string[]>([])
   const [layouts, setLayouts] = useState<Record<string, FormLayout>>({})
   const [availableFormCount, setAvailableFormCount] = useState(0)
   const [paperAllowed, setPaperAllowed] = useState<Record<string, boolean>>({})
@@ -191,13 +189,11 @@ export default function PdfFormsWorkspace({
 
   useEffect(() => {
     let alive = true
-    Promise.all([
-      Promise.all(formNos.map((formNo) => fetchFormLayout(applicationId, formNo))),
-      fetchApplicantForms(applicationId),
-      fetchChecklist(applicationId),
-    ])
-      .then(([items, availableForms, checklist]) => {
+    Promise.all([fetchApplicantForms(applicationId), fetchChecklist(applicationId)])
+      .then(async ([availableForms, checklist]) => {
+        const items = await Promise.all(availableForms.map(({ form_no }) => fetchFormLayout(applicationId, form_no)))
         if (alive) {
+          setFormNos(availableForms.map((item) => item.form_no))
           setLayouts(Object.fromEntries(items.map((item) => [item.form_no, item])))
           setAvailableFormCount(availableForms.length)
           setPaperAllowed(checklist.program.paper_forms || {})
@@ -215,7 +211,7 @@ export default function PdfFormsWorkspace({
       }).catch(() => undefined)
     }
     return () => { alive = false }
-  }, [applicationId, formNos, isJob, onPaperFormsChange, program.code])
+  }, [applicationId, isJob, onPaperFormsChange, program.code])
 
   const changePaperMode = async (formNo: string, next: boolean) => {
     if (readOnly) return
@@ -263,6 +259,7 @@ export default function PdfFormsWorkspace({
     if (group === 'consent.uniqueId') return consent.uniqueId === option
     if (group === 'consent.thirdParty') return consent.thirdParty === option
     if (group === 'agree') return form5.agree === option
+    if (group === 'monthlyDeposit') return option === '월 10만원'
     if (group.startsWith('subsidy.')) return selectedItems.includes(group.split('.')[1])
     if (group === 'referralPaths') return form1.referralPaths.some((item) => item.startsWith(option))
     if (group === 'residencePeriod') return durationBand(form1.transferIn, program.announcement_date, false) === option
@@ -550,7 +547,8 @@ export default function PdfFormsWorkspace({
     const fieldRef = `${field.page}-${fieldIndex}`
     if (field.type === 'check') {
       const checked = readChoice(key)
-      const derived = fieldGroup(key) === 'residencePeriod' || fieldGroup(key) === 'workPeriod'
+      const group = fieldGroup(key)
+      const derived = group === 'residencePeriod' || group === 'workPeriod' || group === 'monthlyDeposit'
       if (field.control === 'radio_text') {
         const optionGroup = fieldGroup(key)
         const [gx0, gy0, gx1, gy1] = field.group_box || field.box
