@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 from typing import Any
 
 from ..models import Application, Consent
+from ...form_numbers import order_form_numbers
 from ..rules.facts import parse_ymd
 from ..rules.programs import DOUBLE_SAVINGS, get_program
 from ..rules.scoring import RESIDENCE_BANDS, WORK_BANDS, elapsed_years_months
@@ -304,13 +305,13 @@ def available_forms(app: Application) -> list[str]:
     없어(P5에서 남긴 것) 내보낼 것이 없다.
     """
     if app.program_code != DOUBLE_SAVINGS:
-        return ["job_application", "job_consent"]
+        return order_form_numbers(["job_application", "job_consent"])
     forms = ["서식1", "서식2", "서식3", "서식4"]
     if get_program(app.program_code).consent_types and "admin_info" in get_program(
         app.program_code
     ).consent_types:
         forms.append("서식5")
-    return forms
+    return order_form_numbers(forms)
 
 
 BUILDERS = {

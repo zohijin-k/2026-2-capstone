@@ -6,22 +6,14 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..form_numbers import order_form_numbers, public_form_no
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent
 TEMPLATES = FIXTURES / "templates"
 
 DOUBLE_SOURCE = "2026_두배적금_공고문.pdf"
 JOB_SOURCE = "2026_취업패키지_신청서.pdf"
-
-# 공고문 서식 번호와 기존 시행지침 내부 식별자의 유일한 대응표.
-NOTICE_FORM_TO_INTERNAL = {
-    "서식1": "서식2",  # 자가진단
-    "서식2": "서식1",  # 참여 신청서 (기존 저장 키를 유지)
-    "서식3": "서식3",
-    "서식4": "서식4",
-    "서식5": "서식5",
-}
-
 
 @dataclass(frozen=True)
 class PageSpec:
@@ -35,22 +27,25 @@ class TemplateSpec:
     source: str
     title: str
     pages: tuple[PageSpec, ...]
-    public_form: str | None = None
     mask_markers: tuple[str, ...] = ()
 
+    @property
+    def public_form(self) -> str | None:
+        return public_form_no(self.key)
 
-TEMPLATES_SPEC = (
+
+_TEMPLATE_SPECS = (
     TemplateSpec("서식2", DOUBLE_SOURCE, "신청자격 자가진단 및 필수사항 확인·동의서",
-                 (PageSpec(10, "서식1 신청자격 자가진단"),), "서식1"),
+                 (PageSpec(10, "서식1 신청자격 자가진단"),)),
     TemplateSpec("서식1", DOUBLE_SOURCE, "「전북청년 함께 두배적금」참여 신청서",
                  (PageSpec(11, "서식2 「전북청년 함께 두배적금」참여 신청서"),
-                  PageSpec(12, "Ⅱ. 납입금액")), "서식2"),
+                  PageSpec(12, "Ⅱ. 납입금액"))),
     TemplateSpec("서식3", DOUBLE_SOURCE, "개인정보 수집 및 이용 동의서",
-                 (PageSpec(13, "서식3 개인정보 수집 및 이용 동의서"),), "서식3"),
+                 (PageSpec(13, "서식3 개인정보 수집 및 이용 동의서"),)),
     TemplateSpec("서식4", DOUBLE_SOURCE, "개인(신용)정보 제3자 제공 동의서",
-                 (PageSpec(14, "서식4 개인(신용)정보 제3자 제공 동의서"),), "서식4"),
+                 (PageSpec(14, "서식4 개인(신용)정보 제3자 제공 동의서"),)),
     TemplateSpec("서식5", DOUBLE_SOURCE, "행정정보 공동이용 사전동의서",
-                 (PageSpec(15, "서식5 행정정보 공동이용 사전동의서"),), "서식5"),
+                 (PageSpec(15, "서식5 행정정보 공동이용 사전동의서"),)),
     TemplateSpec("job_application", JOB_SOURCE, "2026 전북 청년 취업지원패키지 신청서",
                  (PageSpec(1, "『2026 전북 청년 취업지원패키지』신청서"),),
                  mask_markers=("전북특별자치도 OO시/군", "한국교통안전공단", "한국산업인력공단")),
@@ -59,6 +54,9 @@ TEMPLATES_SPEC = (
     TemplateSpec("job_interview_confirmation", JOB_SOURCE, "면접확인서",
                  (PageSpec(3, "면접확인서"),)),
 )
+
+_spec_by_key = {spec.key: spec for spec in _TEMPLATE_SPECS}
+TEMPLATES_SPEC = tuple(_spec_by_key[key] for key in order_form_numbers(_spec_by_key))
 
 
 def _flat(text: str) -> str:
@@ -85,7 +83,9 @@ def cut_all(source_dir: Path = REPO_ROOT, out_dir: Path = TEMPLATES) -> list[Pat
 
     out_dir.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
-    for spec in TEMPLATES_SPEC:
+    by_key = {spec.key: spec for spec in TEMPLATES_SPEC}
+    for form_no in order_form_numbers(by_key):
+        spec = by_key[form_no]
         src_path = source_dir / spec.source
         if not src_path.exists():
             raise FileNotFoundError(f"원본 PDF가 없습니다: {src_path}")

@@ -508,6 +508,7 @@ export interface FormLayout {
 
 export interface ApplicantFormSummary {
   form_no: string
+  public_form: string | null
   title: string
   label: string
   file_url: string
@@ -873,6 +874,7 @@ export interface OfficerDocument {
 /** 작성 서식 한 장 (P7 / R9). 업로드 서류와 같은 뷰어에서 인라인으로 연다. */
 export interface FormExport {
   form_no: string
+  public_form: string | null
   title: string
   label: string
   /** 인라인 스트리밍 주소. 저장 링크가 아니다. */

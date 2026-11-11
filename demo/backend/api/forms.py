@@ -36,6 +36,7 @@ from ..forms.render import (
     render_template_page_png,
 )
 from ..forms.values import BUILDERS, FilledForm, available_forms, form_date
+from ...form_numbers import public_form_no
 from ..models import Document, get_session
 from ..forms.email import is_valid_email, normalize_email
 from .common import STORAGE, list_consents, load_application, subsidy_rows
@@ -207,13 +208,15 @@ def form_links(application_id: int, *, include_paper_form: bool = False) -> list
         spec = form_coords.load(form_no)
         if spec is None or not spec.available:
             continue
+        screen_no = public_form_no(form_no)
         links.append(
             {
                 "form_no": form_no,
+                "public_form": screen_no,
                 "title": spec.title,
-                "label": f"{form_no} {spec.title}",
+                "label": f"{screen_no} {spec.title}" if screen_no else spec.title,
                 "file_url": f"/api/applications/{application_id}/forms/{form_no}.pdf",
-                "file_name": f"{app.application_no}_{form_no}.pdf",
+                "file_name": f"{app.application_no}_{screen_no or form_no}.pdf",
                 "hwp_available": _hwp_path(app.program_code, form_no) is not None,
             }
         )
@@ -368,7 +371,7 @@ def export_form(application_id: int, form_no: str) -> Response:
         subsidy_items=subsidy_rows(application_id),
     )
     pdf = render(spec, filled)
-    name = quote(f"{app.application_no}_{form_no}.pdf")
+    name = quote(f"{app.application_no}_{public_form_no(form_no) or form_no}.pdf")
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -470,6 +473,7 @@ def _scan_pdf(document: Document) -> bytes:
 
 
 def _form_has_saved_values(app: Any, form_no: str) -> bool:
+    """Compatibility predicate for callers that distinguish untouched forms."""
     form1 = app.form1_json or {}
     if form_no == "서식2":
         return bool(app.self_check_json)
@@ -540,9 +544,10 @@ def _written_pdf_bytes(app: Any) -> tuple[bytes, int]:
                     filled = BUILDERS[form_no](printable, consents=consents, storage_root=STORAGE, subsidy_items=[])
                     spec = form_coords.load(form_no)
                     payload = render(spec, filled) if spec is not None else b""
-            elif not _form_has_saved_values(app, form_no):
-                payload = _blank_form_pdf(app, form_no)
             else:
+                # The applicant preview always uses BUILDERS, even on an untouched
+                # form (for automatic dates and the single savings option). Keep
+                # the combined and submission-frozen PDFs on that same path.
                 payload, _ = _filled_pdf(app, form_no)
             with fitz.open(stream=payload, filetype="pdf") as source:
                 output.insert_pdf(source)

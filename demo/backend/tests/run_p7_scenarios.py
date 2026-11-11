@@ -409,7 +409,10 @@ def test_export_headers(client, ds_id: int, jp_id: int) -> None:
     print("\n[2] 내보내기 응답 — 인라인만, 내려받는 경로 없음")
 
     listed = client.get(f"/api/applications/{ds_id}/forms").json()
-    check("두배적금 내보낼 서식", [f["form_no"] for f in listed], ["서식1", "서식2", "서식3", "서식4", "서식5"])
+    public_order_internal_ids = ["서식2", "서식1", "서식3", "서식4", "서식5"]
+    check("두배적금 내보낼 서식은 공고문 번호 순서", [f["form_no"] for f in listed], public_order_internal_ids)
+    check("목록의 화면 번호", [f["public_form"] for f in listed], ["서식1", "서식2", "서식3", "서식4", "서식5"])
+    check("목록 파일 이름의 화면 번호", [f["file_name"].rsplit("_", 1)[-1] for f in listed], ["서식1.pdf", "서식2.pdf", "서식3.pdf", "서식4.pdf", "서식5.pdf"])
     check_true("파일 주소가 서식 경로", all("/forms/" in f["file_url"] for f in listed))
 
     dispositions: list[str] = []
@@ -419,6 +422,9 @@ def test_export_headers(client, ds_id: int, jp_id: int) -> None:
         check(f"{form_no} 형식", res.headers["content-type"], "application/pdf")
         check(f"{form_no} PDF 헤더", body[:5], b"%PDF-")
         dispositions.append(res.headers["content-disposition"])
+        public_no = {"서식1": "서식2", "서식2": "서식1", "서식3": "서식3", "서식4": "서식4", "서식5": "서식5"}[form_no]
+        decoded_name = __import__("urllib.parse", fromlist=["unquote"]).unquote(res.headers["content-disposition"])
+        check(f"{form_no} 개별 PDF 파일 이름은 화면 번호", f"_{public_no}.pdf" in decoded_name, True)
 
     check("모두 inline", [d.split(";")[0] for d in dispositions], ["inline"] * 5)
     # "내려받게 만드는 값"이 하나도 없어야 한다. 낱말을 그대로 쓰지 않으려고 쪼갠다
@@ -475,6 +481,7 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
     from ..ocr import read_document
 
     print("\n[10] 서식 다운로드·스캔본 제출")
+    public_order_internal_ids = ("서식2", "서식1", "서식3", "서식4", "서식5")
     criteria = client.get("/api/programs/double_savings/criteria").json()
     check("기본 스캔본 제출 허용 기준", criteria["paper_forms"].get("서식5"), True)
     check("다른 서식 기본 불허", criteria["paper_forms"].get("서식4"), False)
@@ -538,10 +545,59 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
         from ..forms.values import today
         today_value = today()
         check_true("미작성 서식에도 자동 작성일 표시", str(today_value.month) in blank_first_page and str(today_value.day) in blank_first_page)
+        # Combined PDF and the applicant preview API must paint every automatic
+        # default identically, even before the applicant enters form data.
+        from PIL import Image
+        preview_pages_match = True
+        page_offset = 0
+        with fitz.open(stream=blank_archive.content, filetype="pdf") as blank_doc:
+            for form_no in public_order_internal_ids:
+                with fitz.open(TEMPLATES / f"{form_no}.pdf") as template_doc:
+                    for page_no in range(1, template_doc.page_count + 1):
+                        preview = client.get(
+                            f"/api/applications/{app_id}/forms/{form_no}/pages/{page_no}.png",
+                            params={"preview": "true", "dpi": 72},
+                        )
+                        pdf_png = blank_doc[page_offset].get_pixmap(matrix=fitz.Matrix(1, 1), alpha=False).tobytes("png")
+                        preview_image = Image.open(io.BytesIO(preview.content)).convert("RGB")
+                        pdf_image = Image.open(io.BytesIO(pdf_png)).convert("RGB")
+                        preview_pages_match = preview_pages_match and preview.status_code == 200 and preview_image.size == pdf_image.size and preview_image.tobytes() == pdf_image.tobytes()
+                        page_offset += 1
+        check("미작성 합본 PDF의 기본값은 화면용 미리보기 API와 같음", preview_pages_match, True)
+
+        # Identity values are prefilled by verification, with no other form
+        # entry. The on-screen preview and combined PDF still use the same values.
+        with models.get_session() as session:
+            row = session.get(Application, app_id)
+            row.identity_json = {"name": "가나다", "birth": "1992-03-04", "phone": "010-****-1234"}
+            row.form1_json = {"name": "가나다", "birth": {"y": "1992", "m": "03", "d": "04"}, "mobile": "010-1234-1234"}
+            session.add(row)
+            session.commit()
+        identity_archive = client.get(written_url)
+        identity_pages_match = True
+        page_offset = 0
+        with fitz.open(stream=identity_archive.content, filetype="pdf") as identity_doc:
+            for form_no in public_order_internal_ids:
+                with fitz.open(TEMPLATES / f"{form_no}.pdf") as template_doc:
+                    for page_no in range(1, template_doc.page_count + 1):
+                        preview = client.get(
+                            f"/api/applications/{app_id}/forms/{form_no}/pages/{page_no}.png",
+                            params={"preview": "true", "dpi": 72},
+                        )
+                        pdf_png = identity_doc[page_offset].get_pixmap(matrix=fitz.Matrix(1, 1), alpha=False).tobytes("png")
+                        preview_image = Image.open(io.BytesIO(preview.content)).convert("RGB")
+                        pdf_image = Image.open(io.BytesIO(pdf_png)).convert("RGB")
+                        identity_pages_match = identity_pages_match and preview.status_code == 200 and preview_image.size == pdf_image.size and preview_image.tobytes() == pdf_image.tobytes()
+                        page_offset += 1
+        check("본인인증 미리 채운 값도 합본 PDF와 화면용 API가 같음", identity_pages_match, True)
+        identity_builder = forms_api.BUILDERS["서식1"](load_application(app_id))
+        check_true("미작성 신청서의 월 10만원 자동 선택", "monthlyDeposit.월 10만원" in identity_builder.checks)
         client.patch(f"/api/applications/{app_id}", json={"form1": {"address": "부분 입력 주소"}})
         partial_pdf = client.get(written_url)
         with fitz.open(stream=partial_pdf.content, filetype="pdf") as partial_doc:
-            partial_form1_text = partial_doc[0].get_text()
+            # Public form 1 (internal form2/self-check) is first; the application
+            # form (internal form1/public form2) follows it.
+            partial_form1_text = partial_doc[1].get_text()
         check_true("부분 작성 서식에는 저장한 값 포함", "부분 입력 주소" in partial_form1_text)
         check_true("부분 작성 서식에 입력하지 않은 연락처는 없음", "010-0000-0000" not in partial_form1_text)
         other_id = client.post("/api/applications", json={"program_code": DOUBLE_SAVINGS}).json()["id"]
@@ -573,7 +629,7 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
         with fitz.open(stream=archive.content, filetype="pdf") as combined:
             combined_texts = [page.get_text() for page in combined]
             combined_page_count = combined.page_count
-        completed_form_nos = ("서식1", "서식2", "서식3", "서식4", "서식5")
+        completed_form_nos = tuple(public_order_internal_ids)
         source_page_counts = {}
         expected_texts = []
         for form_no in completed_form_nos:
@@ -582,8 +638,8 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
                 source_page_counts[form_no] = source_doc.page_count
                 expected_texts.extend(page.get_text() for page in source_doc)
         check("작성 완료 서식 쪽 수 합산", combined_page_count, sum(source_page_counts.values()))
-        check("작성본 PDF는 서식 번호 순서", combined_texts, expected_texts)
-        form2_start = source_page_counts["서식1"]
+        check("작성본 PDF는 공고문 서식 번호 순서", combined_texts, expected_texts)
+        form2_start = 0
         with fitz.open(stream=archive.content, filetype="pdf") as combined:
             form2_doc = fitz.open()
             form2_doc.insert_pdf(combined, from_page=form2_start, to_page=form2_start + source_page_counts["서식2"] - 1)
@@ -737,6 +793,25 @@ def test_form_files_and_paper_flow(client, tmp: Path) -> None:
     with fitz.open(stream=forms_api._scan_pdf(scan_document), filetype="pdf") as source_scan:
         uploaded_scan_pixels = source_scan[0].get_pixmap(matrix=fitz.Matrix(1, 1)).samples
     check_true("제출 후 PDF 마지막 쪽은 올린 스캔본", frozen_scan_pixels == uploaded_scan_pixels)
+    frozen_order_matches = True
+    frozen_page_index = 0
+    with fitz.open(stream=frozen.content, filetype="pdf") as frozen_pdf:
+        frozen_page_count = frozen_pdf.page_count
+        for form_no in public_order_internal_ids:
+            if form_no == "서식5":
+                expected_pdf = forms_api._scan_pdf(scan_document)
+            else:
+                expected_pdf, _ = forms_api._filled_pdf(load_application(flow_id), form_no)
+            with fitz.open(stream=expected_pdf, filetype="pdf") as expected_doc:
+                for expected_page in expected_doc:
+                    if frozen_page_index >= frozen_pdf.page_count:
+                        frozen_order_matches = False
+                        break
+                    actual_pixels = frozen_pdf[frozen_page_index].get_pixmap(matrix=fitz.Matrix(1, 1)).samples
+                    expected_pixels = expected_page.get_pixmap(matrix=fitz.Matrix(1, 1)).samples
+                    frozen_order_matches = frozen_order_matches and actual_pixels == expected_pixels
+                    frozen_page_index += 1
+    check("제출 고정 PDF도 공고문 번호 순서", frozen_order_matches and frozen_page_index == frozen_page_count, True)
     archive_path = load_application(flow_id).written_forms_archive_path
     saved_archive = (forms_api.STORAGE.parent / archive_path).read_bytes()
     with models.get_session() as session:
@@ -1027,7 +1102,9 @@ def test_officer_tab(client, ds_id: int, jp_id: int) -> None:
         f"/api/officer/applications/{ds_id}", params={"role": ROLE_PROVINCE}
     ).json()
     check("서식 탭 수", len(detail["forms"]), 5)
-    check("서식 탭 표기", [f["form_no"] for f in detail["forms"]], ["서식1", "서식2", "서식3", "서식4", "서식5"])
+    check("서식 탭 순서는 공고문 번호", [f["form_no"] for f in detail["forms"]], ["서식2", "서식1", "서식3", "서식4", "서식5"])
+    check("서식 탭 표기는 공고문 번호", [f["public_form"] for f in detail["forms"]], ["서식1", "서식2", "서식3", "서식4", "서식5"])
+    check_true("서식 탭 설명도 공고문 번호로 시작", all(f["label"].startswith(f["public_form"]) for f in detail["forms"]))
     check_true("업로드 서류 탭도 그대로", detail["documents"])
 
     for form in detail["forms"]:
