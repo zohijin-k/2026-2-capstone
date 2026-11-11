@@ -23,6 +23,7 @@
       "y": 135.24,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         122.31,
@@ -39,6 +40,7 @@
       "y": 135.24,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         122.31,
@@ -55,6 +57,7 @@
       "y": 160.34,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         143.16,
@@ -71,6 +74,7 @@
       "y": 185.46,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         171.15,
         172.53,
@@ -87,6 +91,7 @@
       "y": 185.46,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         172.53,
@@ -103,6 +108,7 @@
       "y": 207.73,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         178.19,
         197.73,
@@ -119,6 +125,7 @@
       "y": 207.73,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         247.87,
         197.73,
@@ -135,6 +142,7 @@
       "y": 278.66,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         266.63,
@@ -151,6 +159,7 @@
       "y": 278.66,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         266.63,
@@ -167,6 +176,7 @@
       "y": 307.67,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         295.76,
@@ -179,12 +189,13 @@
     "job.interview.1.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 307.67,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        480.9,
         295.76,
         535.27,
         312.58
@@ -199,6 +210,7 @@
       "y": 326.43,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         314.58,
@@ -215,6 +227,7 @@
       "y": 326.43,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         314.58,
@@ -231,6 +244,7 @@
       "y": 355.2,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         343.35,
@@ -243,12 +257,13 @@
     "job.interview.2.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 355.2,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        480.9,
         343.35,
         535.27,
         360.05
@@ -263,6 +278,7 @@
       "y": 373.89,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         362.05,
@@ -279,6 +295,7 @@
       "y": 373.89,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         362.05,
@@ -295,6 +312,7 @@
       "y": 402.66,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         390.81,
@@ -307,12 +325,13 @@
     "job.suit.1.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 402.66,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        480.9,
         390.81,
         535.27,
         407.51
@@ -327,6 +346,7 @@
       "y": 421.42,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         409.51,
@@ -343,6 +363,7 @@
       "y": 421.42,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         409.51,
@@ -359,6 +380,7 @@
       "y": 450.25,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         438.4,
@@ -371,12 +393,13 @@
     "job.suit.2.location": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 480.9,
       "y": 450.25,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        480.9,
         438.4,
         535.27,
         455.1
@@ -391,6 +414,7 @@
       "y": 468.95,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         457.1,
@@ -407,6 +431,7 @@
       "y": 468.95,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         457.1,
@@ -423,6 +448,7 @@
       "y": 497.72,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         485.87,
@@ -435,12 +461,13 @@
     "job.certificate.1.organizer": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 417.45,
       "y": 497.72,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        417.45,
         485.87,
         535.27,
         502.57
@@ -455,6 +482,7 @@
       "y": 516.42,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         504.57,
@@ -471,6 +499,7 @@
       "y": 516.42,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         504.57,
@@ -487,6 +516,7 @@
       "y": 545.25,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         533.34,
@@ -499,12 +529,13 @@
     "job.certificate.2.organizer": {
       "type": "text",
       "page": 0,
-      "x": 388.35,
+      "x": 417.45,
       "y": 545.25,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
-        388.35,
+        417.45,
         533.34,
         535.27,
         550.16
@@ -519,6 +550,7 @@
       "y": 564.01,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         173.91,
         552.16,
@@ -535,6 +567,7 @@
       "y": 564.01,
       "size": 10.0,
       "align": "left",
+      "font_family": "sans",
       "box": [
         388.35,
         552.16,
@@ -544,62 +577,82 @@
       "anchor": "시험비용",
       "mode": "cell_right"
     },
-    "job.applicationYear": {
+    "job.applicationMonth": {
       "type": "text",
       "page": 0,
       "x": 266.86,
       "y": 644.42,
       "size": 10.0,
-      "align": "left",
+      "align": "center",
+      "font_family": "sans",
       "box": [
         266.86,
-        634.06,
+        632.06,
         301.72,
-        647.01
+        649.01
       ],
       "anchor": "2026년",
-      "mode": "after"
+      "mode": "after",
+      "format": "none",
+      "auto_date": true,
+      "date_part": "month",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 644.42,
+        "character": "월",
+        "render_size_scale": 1.1,
+        "render_baseline": 645.14,
+        "font_family": "sans",
+        "glyph_box": [
+          302.72,
+          634.06,
+          315.67,
+          647.01
+        ]
+      }
     },
-    "job.applicationMonth": {
+    "job.applicationDay": {
       "type": "text",
       "page": 0,
       "x": 318.67,
       "y": 644.42,
       "size": 10.0,
       "align": "center",
+      "font_family": "sans",
       "box": [
         318.67,
-        634.06,
+        632.06,
         360.0,
-        647.01
+        649.01
       ],
       "anchor": "2026년 월",
-      "mode": "after"
-    },
-    "job.applicationDay": {
-      "type": "text",
-      "page": 0,
-      "x": 376.96,
-      "y": 644.42,
-      "size": 10.0,
-      "align": "center",
-      "box": [
-        376.96,
-        634.06,
-        535.27,
-        647.01
-      ],
-      "anchor": "2026년 월 일",
-      "mode": "after"
+      "mode": "after",
+      "format": "none",
+      "auto_date": true,
+      "date_part": "day",
+      "date_reference": {
+        "size": 12.95,
+        "baseline": 644.42,
+        "character": "일",
+        "render_size_scale": 1.1,
+        "render_baseline": 645.14,
+        "font_family": "sans",
+        "glyph_box": [
+          361.0,
+          634.06,
+          373.96,
+          647.01
+        ]
+      }
     },
     "job.signature": {
       "type": "image",
       "page": 0,
       "box": [
-        419.93,
-        667.65,
-        485.78,
-        698.6
+        488.43,
+        674.15,
+        512.28,
+        690.1
       ],
       "anchor": "(인)"
     },
@@ -615,7 +668,37 @@
         136.73,
         246.69
       ],
-      "label": "면접비"
+      "label_box": [
+        142.72,
+        234.7,
+        178.7,
+        246.69
+      ],
+      "label": "면접비",
+      "cell_box": [
+        113.1,
+        223.32,
+        538.27,
+        255.56
+      ],
+      "click_box": [
+        124.73,
+        234.7,
+        178.7,
+        246.69
+      ],
+      "choice_box": [
+        122.23,
+        232.2,
+        181.2,
+        249.19
+      ],
+      "choice_group_box": [
+        122.23,
+        232.2,
+        181.2,
+        249.19
+      ]
     },
     "subsidy.suit.면접정장비": {
       "type": "check",
@@ -629,7 +712,37 @@
         214.68,
         246.69
       ],
-      "label": "면접정장비"
+      "label_box": [
+        220.68,
+        234.7,
+        280.65,
+        246.69
+      ],
+      "label": "면접정장비",
+      "cell_box": [
+        113.1,
+        223.32,
+        538.27,
+        255.56
+      ],
+      "click_box": [
+        202.69,
+        234.7,
+        280.65,
+        246.69
+      ],
+      "choice_box": [
+        200.19,
+        232.2,
+        283.15,
+        249.19
+      ],
+      "choice_group_box": [
+        200.19,
+        232.2,
+        283.15,
+        249.19
+      ]
     },
     "subsidy.photo.면접사진촬영비": {
       "type": "check",
@@ -643,7 +756,37 @@
         316.63,
         246.69
       ],
-      "label": "면접사진촬영비"
+      "label_box": [
+        322.63,
+        234.7,
+        406.58,
+        246.69
+      ],
+      "label": "면접사진촬영비",
+      "cell_box": [
+        113.1,
+        223.32,
+        538.27,
+        255.56
+      ],
+      "click_box": [
+        304.63,
+        234.7,
+        406.58,
+        246.69
+      ],
+      "choice_box": [
+        302.13,
+        232.2,
+        409.08,
+        249.19
+      ],
+      "choice_group_box": [
+        302.13,
+        232.2,
+        409.08,
+        249.19
+      ]
     },
     "subsidy.certificate.자격증 응시료": {
       "type": "check",
@@ -657,7 +800,37 @@
         442.56,
         246.69
       ],
-      "label": "자격증 응시료"
+      "label_box": [
+        448.56,
+        234.7,
+        526.51,
+        246.69
+      ],
+      "label": "자격증 응시료",
+      "cell_box": [
+        113.1,
+        223.32,
+        538.27,
+        255.56
+      ],
+      "click_box": [
+        430.57,
+        234.7,
+        526.51,
+        246.69
+      ],
+      "choice_box": [
+        428.07,
+        232.2,
+        529.01,
+        249.19
+      ],
+      "choice_group_box": [
+        428.07,
+        232.2,
+        529.01,
+        249.19
+      ]
     }
   },
   "masks": [
@@ -721,5 +894,6 @@
         548.75
       ]
     }
-  ]
+  ],
+  "requirements": []
 }

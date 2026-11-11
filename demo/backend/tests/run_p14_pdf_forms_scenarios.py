@@ -2,18 +2,109 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pymupdf
 
 from ..forms.coords import COORDS_DIR, FIXTURES, load
-from ..forms.render import render
+from ..forms.render import format_field_text, render, render_page_png
 from ..forms.values import FilledForm
 from ...fixtures.build_form_coords import read_sheet
 from ...fixtures.cut_templates import TEMPLATES_SPEC
 
 
+def _form_font_corpus() -> set[str]:
+    """All Hangul/ASCII, static form text, field labels, and fake entered values."""
+    chars = {chr(code) for code in range(0x20, 0x7F)}
+    for lead in range(0xB0, 0xC9):
+        for trail in range(0xA1, 0xFF):
+            try:
+                value = bytes((lead, trail)).decode("euc_kr")
+            except UnicodeDecodeError:
+                continue
+            if len(value) == 1 and 0xAC00 <= ord(value) <= 0xD7A3:
+                chars.add(value)
+    for spec in COORDS_DIR.glob("*.json"):
+        chars.update(spec.read_text(encoding="utf-8"))
+    from .run_p7_scenarios import P7_FORM1, P7_FORM5
+
+    def collect(value):
+        if isinstance(value, str):
+            chars.update(value)
+        elif isinstance(value, dict):
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(P7_FORM1)
+    collect(P7_FORM5)
+    return {char for char in chars if ord(char) >= 0x20}
+
+
+def _check_bundled_form_fonts() -> list[str]:
+    from ..forms.render import _font
+
+    repo_demo = Path(__file__).resolve().parents[2]
+    fonts_dir = repo_demo / "frontend" / "src" / "assets" / "fonts"
+    failures = []
+    corpus = _form_font_corpus()
+    for family, directory in (("sans", "NotoSansKR"), ("serif", "NotoSerifKR")):
+        folder = fonts_dir / directory
+        ttf = folder / f"{directory}-subset.ttf"
+        woff2 = folder / f"{directory}-subset.woff2"
+        license_file = folder / "OFL.txt"
+        if not ttf.is_file() or not woff2.is_file() or not license_file.is_file():
+            failures.append(f"{directory}: TTF/WOFF2/OFL 파일 누락")
+            continue
+        font = _font(family)
+        missing = sorted(ord(char) for char in corpus if not font.has_glyph(ord(char)))
+        if missing:
+            failures.append(f"{directory}: 글리프 누락 " + " ".join(f"U+{code:04X}" for code in missing))
+    return failures
+
+
+def _chars(page):
+    return [
+        (char["c"], pymupdf.Rect(char["bbox"]))
+        for block in page.get_text("rawdict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line["spans"]
+        for char in span["chars"]
+    ]
+
+
+def _text_glyph_boxes(page):
+    grouped = []
+    for block in page.get_text("rawdict")["blocks"]:
+        for line in block.get("lines", []):
+            chars = [char for span in line["spans"] for char in span["chars"]]
+            text = "".join(char["c"] for char in chars)
+            if text:
+                grouped.append((text, pymupdf.Rect(
+                    min(char["bbox"][0] for char in chars), min(char["bbox"][1] for char in chars),
+                    max(char["bbox"][2] for char in chars), max(char["bbox"][3] for char in chars),
+                ), chars))
+    return grouped
+
+
+def _has_source_square(page, rect: pymupdf.Rect) -> bool:
+    if any(char in {"□", "☐"} and rect.intersects(box) for char, box in _chars(page)):
+        return True
+    return any(
+        item[0] == "re"
+        and 3 <= item[1].width <= 16
+        and 3 <= item[1].height <= 16
+        and rect.intersects(item[1])
+        for drawing in page.get_drawings()
+        for item in drawing["items"]
+    )
+
+
 def run() -> None:
     failures: list[str] = []
+    failures.extend(_check_bundled_form_fonts())
     form_keys = [spec.key for spec in TEMPLATES_SPEC]
     for key in form_keys:
         template_path = FIXTURES / "templates" / f"{key}.pdf"
@@ -48,10 +139,58 @@ def run() -> None:
                 if field["type"] == "text":
                     if rect.height > 40:
                         failures.append(f"{key}.{name}: 글자 칸 높이가 40pt 초과")
+                    if field.get("format") in {"yyyy", "yy", "none"} and rect.width > 60:
+                        failures.append(f"{key}.{name}: 날짜 칸 너비가 60pt 초과")
                     sheet = read_sheet(template[field["page"]], field["page"])
                     cell = sheet.cell_at((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2)
                     if rect.x0 < cell[0] - 0.7 or rect.x1 > cell[2] + 0.7:
                         failures.append(f"{key}.{name}: 글자 칸 너비가 표 셀 밖")
+                    masks = [
+                        pymupdf.Rect(*mask["box"])
+                        for mask in (spec.get("masks") or [])
+                        if mask["page"] == field["page"]
+                    ]
+                    overlaps = [
+                        char for char, char_box in _chars(template[field["page"]])
+                        if char.strip() and rect.intersects(char_box)
+                        and not any(mask.contains(char_box) for mask in masks)
+                    ]
+                    if overlaps:
+                        failures.append(f"{key}.{name}: 글자 칸에 가림 처리되지 않은 원본 글자가 겹침 ({''.join(overlaps[:8])})")
+                if field["type"] == "check":
+                    if field.get("control") == "radio_text":
+                        glyph_lines = _text_glyph_boxes(template[field["page"]])
+                        def glyph_box(label: str, y: float):
+                            for text, line_box, chars in glyph_lines:
+                                offset = text.find(label)
+                                if offset < 0 or abs(line_box.y0 - y) > 2:
+                                    continue
+                                selected = [pymupdf.Rect(char["bbox"]) for char in chars[offset:offset + len(label)]]
+                                return pymupdf.Rect(
+                                    min(box.x0 for box in selected), min(box.y0 for box in selected),
+                                    max(box.x1 for box in selected), max(box.y1 for box in selected),
+                                )
+                            return None
+                        target_box = glyph_box(field.get("label", ""), rect.y0)
+                        if target_box is None or not (
+                            rect.x0 <= target_box.x0 + 0.02 and rect.y0 <= target_box.y0 + 0.02
+                            and rect.x1 >= target_box.x1 - 0.02 and rect.y1 >= target_box.y1 - 0.02
+                        ):
+                            failures.append(f"{key}.{name}: 라디오 영역이 원본 글자 bbox를 감싸지 않음")
+                        opposite = "아니오" if field.get("label") == "예" else "예"
+                        opposite_box = glyph_box(opposite, rect.y0)
+                        if opposite_box is not None and rect.intersects(opposite_box):
+                            failures.append(f"{key}.{name}: 라디오 영역이 옆 글자와 겹침")
+                    elif not _has_source_square(template[field["page"]], rect):
+                        failures.append(f"{key}.{name}: 좌표 안에서 원본 체크 상자(□)를 찾지 못함")
+            if key == "서식2":
+                for row in range(1, 9):
+                    yes = spec["fields"].get(f"self_check.{row}.예")
+                    no = spec["fields"].get(f"self_check.{row}.아니오")
+                    if not yes or not no:
+                        failures.append(f"서식2: {row}번 행에 예/아니오 라디오 쌍이 없음")
+                    elif pymupdf.Rect(*yes["box"]).intersects(pymupdf.Rect(*no["box"])):
+                        failures.append(f"서식2: {row}번 행의 예/아니오 글자 영역이 겹침")
             positioned_fields = list(spec["fields"].items())
             for index, (name, field) in enumerate(positioned_fields):
                 a = pymupdf.Rect(*field["box"])
@@ -59,10 +198,57 @@ def run() -> None:
                     if field["page"] == other["page"] and a.intersects(pymupdf.Rect(*other["box"])):
                         failures.append(f"{key}.{name}/{other_name}: 입력 상자 겹침")
 
+            check_fields = [(name, field) for name, field in spec["fields"].items()
+                            if field.get("type") == "check" and field.get("control") != "radio_text"]
+            choice_groups: dict[tuple[int, str], list[tuple[str, dict]]] = {}
+            for name, field in check_fields:
+                group = ".".join(name.split(".")[:2]) if name.split(".")[0] in {"self_check", "consent", "subsidy"} else name.split(".")[0]
+                choice_groups.setdefault((field["page"], group), []).append((name, field))
+                for box_key in ("label_box", "choice_box", "click_box", "cell_box", "choice_group_box"):
+                    if not field.get(box_key):
+                        failures.append(f"{key}.{name}: {box_key} 보기 좌표가 없음")
+                if not all(field.get(box_key) for box_key in ("label_box", "choice_box", "click_box", "cell_box")):
+                    continue
+                label_box = pymupdf.Rect(*field["label_box"])
+                choice_box = pymupdf.Rect(*field["choice_box"])
+                click_box = pymupdf.Rect(*field["click_box"])
+                cell_box = pymupdf.Rect(*field["cell_box"])
+                source_check_box = pymupdf.Rect(*field["box"])
+                if not choice_box.contains(label_box) or not choice_box.contains(source_check_box):
+                    failures.append(f"{key}.{name}: 빨간 테두리 보기 영역이 □·글자 bbox를 포함하지 않음")
+                if not click_box.contains(label_box) or not click_box.contains(source_check_box):
+                    failures.append(f"{key}.{name}: 보기 글자 클릭 영역이 글자·□를 포함하지 않음")
+                if not cell_box.contains(choice_box):
+                    failures.append(f"{key}.{name}: 보기 테두리가 해당 표 셀 경계를 넘음")
+            for index, (name, field) in enumerate(check_fields):
+                click_box = pymupdf.Rect(*field["click_box"])
+                for other_name, other in check_fields[index + 1:]:
+                    if field["page"] != other["page"]:
+                        continue
+                    other_box = pymupdf.Rect(*other["click_box"])
+                    if (click_box.x0 < other_box.x1 - .01 and other_box.x0 < click_box.x1 - .01
+                            and click_box.y0 < other_box.y1 - .01 and other_box.y0 < click_box.y1 - .01):
+                        failures.append(f"{key}.{name}/{other_name}: 보기 클릭 영역이 겹침")
+            for (page_no, group), entries in choice_groups.items():
+                group_box = pymupdf.Rect(*entries[0][1]["choice_group_box"])
+                for other_name, other in check_fields:
+                    if other["page"] != page_no:
+                        continue
+                    other_group = ".".join(other_name.split(".")[:2]) if other_name.split(".")[0] in {"self_check", "consent", "subsidy"} else other_name.split(".")[0]
+                    if other_group != group and group_box.intersects(pymupdf.Rect(*other["choice_box"])):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 다른 보기 {other_name}와 겹침")
+                sheet = read_sheet(template[page_no], page_no)
+                for y, x0, x1 in sheet.hlines:
+                    if (abs(y - group_box.y0) < .01 or abs(y - group_box.y1) < .01) and max(x0, group_box.x0) < min(x1, group_box.x1):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 표 가로 경계와 겹침")
+                for x, y0, y1 in sheet.vlines:
+                    if (abs(x - group_box.x0) < .01 or abs(x - group_box.x1) < .01) and max(y0, group_box.y0) < min(y1, group_box.y1):
+                        failures.append(f"{key}.{group}: 미선택 테두리가 표 세로 경계와 겹침")
+
         fake = FilledForm(form_no=key)
         for name, field in spec["fields"].items():
             if field["type"] == "text":
-                fake.texts[name] = "가상값"
+                fake.texts[name] = "2026" if field.get("format") == "yy" else "가상값"
         pdf = render(coords, fake)
         with pymupdf.open(stream=pdf, filetype="pdf") as result:
             for name, field in spec["fields"].items():
@@ -70,9 +256,16 @@ def run() -> None:
                     continue
                 rect = pymupdf.Rect(*field["box"])
                 words = result[field["page"]].get_text("words")
-                if not any(word[4] == "가상값" and rect.intersects(pymupdf.Rect(word[:4])) for word in words):
+                expected_text = format_field_text(field, fake.texts[name])
+                if not any(word[4] == expected_text and rect.intersects(pymupdf.Rect(word[:4])) for word in words):
                     failures.append(f"{key}.{name}: 값이 좌표에서 확인되지 않음")
+                if field.get("format") == "yy" and expected_text != "26":
+                    failures.append(f"{key}.{name}: 두 자리 연도 출력 형식이 아님")
             if key == "job_application":
+                if "job.applicationYear" in spec["fields"]:
+                    failures.append("job_application: 인쇄된 연도를 다시 입력하는 필드가 있음")
+                if "job.applicationMonth" not in spec["fields"] or "job.applicationDay" not in spec["fields"]:
+                    failures.append("job_application: 월·일 입력 좌표가 없음")
                 text = "\n".join(page.get_text() for page in result)
                 for example in ("OO시/군", "한국교통안전공단", "한국산업인력공단"):
                     if example in text:
@@ -117,6 +310,11 @@ def run() -> None:
 
     if failures:
         raise AssertionError("\n".join(failures))
+    sample = FIXTURES / "templates" / "서식2.pdf"
+    png = render_page_png(sample.read_bytes(), 1, dpi=200)
+    pixmap = pymupdf.Pixmap(png)
+    if not (1650 <= pixmap.width <= 1660 and 2335 <= pixmap.height <= 2345):
+        raise AssertionError(f"200dpi 페이지 PNG 크기가 예상과 다름: {pixmap.width}x{pixmap.height}")
     print(f"[OK] {len(form_keys)}개 원본 서식, 좌표·렌더링·예시 제거 검증")
 
 

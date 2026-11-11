@@ -56,6 +56,12 @@
   margin: 0;
 }
 
+.flow__head-meta { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.flow__mypage { min-height: 40px; padding: 0 14px; border: 1px solid #c3cad5; border-radius: var(--radius-sm); background: var(--surface); color: var(--brand); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.flow__mypage:hover:not(:disabled) { border-color: var(--brand); background: var(--brand-tint); }
+.flow__mypage:focus-visible { outline: 3px solid var(--brand-tint); outline-offset: 2px; }
+.flow__mypage:disabled { cursor: default; opacity: 0.72; }
+
 .flow__meta > div {
   display: grid;
   padding: 6px 12px;
@@ -77,77 +83,90 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- 신청 단계 표시: 번호 원을 선으로 잇는다 ---- */
+/* ---- 4단계 진행 표시 ---- */
 
 .flow__stages {
   display: flex;
   list-style: none;
   margin: 0 0 28px;
   padding: 14px 0 16px;
-  border-top: 1px solid var(--border);
-  border-bottom: 2px solid var(--brand);
+  border-bottom: 1px solid var(--border);
 }
 
 .flow__stages li {
   position: relative;
   flex: 1;
   min-width: 0;
+  display: grid;
+  justify-items: center;
 }
 
-/* 앞 단계와 잇는 선 */
-.flow__stages li + li::before {
-  content: '';
+.flow__stage-connector {
   position: absolute;
-  top: 13px;
-  right: calc(50% + 18px);
-  left: calc(-50% + 18px);
-  height: 2px;
+  z-index: 0;
+  top: 17px;
+  right: calc(-50% + 21px);
+  left: calc(50% + 21px);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 99px;
   background: var(--border);
 }
 
-.flow__stages li.is-past::before,
-.flow__stages li.is-current::before {
+.flow__stage-connector > span {
+  display: block;
+  height: 100%;
   background: var(--brand);
+  border-radius: inherit;
+  transition: width 200ms ease;
 }
 
 .flow__stages button {
   display: grid;
   justify-items: center;
-  gap: 6px;
+  align-content: start;
+  gap: 5px;
+  position: relative;
+  z-index: 1;
   width: 100%;
+  min-height: 69px;
   padding: 0 2px;
   border: none;
   background: none;
   font: inherit;
-  color: #8a9099;
-  cursor: pointer;
+  color: #858b96;
+  cursor: default;
 }
 
 .flow__stage-no {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border: 2px solid #c9ced6;
   border-radius: 50%;
   background: var(--surface);
-  font-size: 12.5px;
+  color: #858b96;
+  font-size: 14px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  transition: border-color var(--ease), background var(--ease), color var(--ease);
+  transition: border-color 200ms ease, background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
 }
 
 .flow__stage-label {
-  font-size: 12.5px;
+  font-size: 13px;
   white-space: nowrap;
 }
 
-.flow__stages button:hover .flow__stage-no {
+.flow__stage-status { min-height: 16px; font-size: 11px; line-height: 16px; white-space: nowrap; }
+
+.flow__stages button[aria-disabled="false"] { cursor: pointer; }
+.flow__stages button[aria-disabled="false"]:hover .flow__stage-no {
   border-color: var(--brand);
-  color: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint);
 }
 
-.flow__stages button:hover .flow__stage-label {
+.flow__stages button[aria-disabled="false"]:hover .flow__stage-label {
   color: var(--brand);
 }
 
@@ -156,18 +175,19 @@
 }
 
 .flow__stages button:focus-visible .flow__stage-no {
-  box-shadow: 0 0 0 3px var(--brand-tint);
+  box-shadow: 0 0 0 4px var(--brand-tint);
   border-color: var(--brand);
 }
 
-.flow__stages li.is-past .flow__stage-no {
+.flow__stages li.is-complete .flow__stage-no {
   border-color: var(--brand);
-  color: var(--brand);
+  background: var(--brand);
+  color: #fff;
 }
 
-.flow__stages li.is-past .flow__stage-label {
-  color: #4a5160;
-}
+.flow__stage-check { font-size: 17px; line-height: 1; }
+.flow__stages li.is-complete .flow__stage-label,
+.flow__stages li.is-complete .flow__stage-status { color: #545b68; }
 
 .flow__stages li.is-current .flow__stage-no {
   border-color: var(--brand);
@@ -179,6 +199,29 @@
 .flow__stages li.is-current .flow__stage-label {
   color: var(--brand);
   font-weight: 700;
+}
+
+.flow__stages li.is-current .flow__stage-status { color: var(--brand); }
+
+.flow__stages li.is-waiting .flow__stage-label,
+.flow__stages li.is-waiting .flow__stage-status { color: #858b96; }
+
+.flow__stages li.is-waiting .flow__stage-no {
+  border-color: #c9ced6;
+  background: var(--surface);
+  color: #858b96;
+}
+
+.flow__mypage-return { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flow__stage-connector > span,
+  .flow__stage-no { transition: none; }
+}
+
+@media (max-width: 960px) {
+  .flow { width: auto; max-width: 940px; margin: 0 16px; }
+  .flow__stage-label { font-size: 12px; }
 }
 
 .flow__gap {

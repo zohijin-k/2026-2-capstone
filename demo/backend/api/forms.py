@@ -9,21 +9,79 @@ PDF를 **브라우저 안에서 열리도록** 돌려준다. `files.py`와 같�
 PC로 내려가는 일이 여전히 0회다.
 """
 
+from hashlib import sha256
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from ..forms import coords as form_coords
-from ..forms.render import render
-from ..forms.values import BUILDERS, available_forms
+from ..forms.signature_scan import (
+    delete_signature_scan,
+    process_signature_scan,
+    signature_scan_paths,
+)
+from ..forms.render import (
+    filled_payload,
+    render,
+    render_filled_page_png_cached,
+    render_template_page_png,
+)
+from ..forms.values import BUILDERS, available_forms, form_date
 from .common import STORAGE, list_consents, load_application, subsidy_rows
 
 router = APIRouter(prefix="/api/applications", tags=["forms"])
+SIGNATURE_SCAN_MAX_BYTES = 10 * 1024 * 1024
 
 #: `files.py`와 같은 값이어야 한다. 검증 스크립트가 응답 헤더로 직접 확인한다.
 DISPOSITION = "inline"
+
+
+@router.post("/{application_id}/forms/signature-scan")
+async def upload_signature_scan(application_id: int, file: UploadFile = File(...)) -> dict[str, bool]:
+    """Save a processed signature image in the application's private storage."""
+    app = load_application(application_id)
+    from ..models import STATUS_DRAFT
+
+    if app.status != STATUS_DRAFT:
+        raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+    if file.content_type not in {"image/jpeg", "image/png"}:
+        raise HTTPException(400, "JPG 또는 PNG 이미지 파일을 올려 주세요.")
+    raw = await file.read(SIGNATURE_SCAN_MAX_BYTES + 1)
+    if len(raw) > SIGNATURE_SCAN_MAX_BYTES:
+        raise HTTPException(413, "서명 이미지는 10MB 이하로 올려 주세요.")
+    try:
+        processed = process_signature_scan(raw)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    original_base, processed_path = signature_scan_paths(STORAGE, app.application_no)
+    original_base.parent.mkdir(parents=True, exist_ok=True)
+    delete_signature_scan(STORAGE, app.application_no)
+    suffix = ".jpg" if file.content_type == "image/jpeg" else ".png"
+    original_base.with_suffix(suffix).write_bytes(raw)
+    processed_path.write_bytes(processed)
+    return {"uploaded": True}
+
+
+@router.delete("/{application_id}/forms/signature-scan")
+def delete_signature_scan_route(application_id: int) -> dict[str, bool]:
+    app = load_application(application_id)
+    from ..models import STATUS_DRAFT
+
+    if app.status != STATUS_DRAFT:
+        raise HTTPException(409, "제출한 신청서는 수정할 수 없습니다.")
+    delete_signature_scan(STORAGE, app.application_no)
+    return {"uploaded": False}
+
+
+@router.get("/{application_id}/forms/signature-scan.png")
+def read_signature_scan(application_id: int) -> Response:
+    app = load_application(application_id)
+    _, processed = signature_scan_paths(STORAGE, app.application_no)
+    if not processed.is_file():
+        raise HTTPException(404, "서명 이미지가 없습니다.")
+    return Response(processed.read_bytes(), media_type="image/png", headers={"Cache-Control": "private, no-store"})
 
 
 def form_links(application_id: int) -> list[dict[str, Any]]:
@@ -69,12 +127,32 @@ def form_layout(application_id: int, form_no: str) -> dict[str, Any]:
 
     with fitz.open(spec.template) as doc:
         sizes = [{"width": page.rect.width, "height": page.rect.height} for page in doc]
+    # Applicant layout uses stable opaque field ids. Internal model keys stay in the
+    # local client binding table and never enter the applicant-facing API payload.
+    field_ids = {key: f"f{index:04d}" for index, key in enumerate(spec.fields)}
+    public_fields = {field_ids[key]: value for key, value in spec.fields.items()}
+    public_requirements = []
+    for rule in spec.requirements or []:
+        public_rule = dict(rule)
+        for key in ("field",):
+            if key in public_rule:
+                internal = public_rule[key]
+                public_rule[key] = field_ids.get(internal) or next(
+                    (opaque for name, opaque in field_ids.items() if name.startswith(f"{internal}.")), ""
+                )
+        for key in ("fields", "required"):
+            if key in public_rule:
+                public_rule[key] = [field_ids[name] for name in public_rule[key] if name in field_ids]
+        public_requirements.append(public_rule)
     return {
         "form_no": spec.form_no,
         "title": spec.title,
         "public_form": spec.public_form,
         "page_sizes": sizes,
-        "fields": spec.fields,
+        "fields": public_fields,
+        "requirements": public_requirements,
+        "masks": spec.masks or [],
+        "auto_date": form_date(app).isoformat(),
     }
 
 
@@ -92,6 +170,62 @@ def form_template(application_id: int, form_no: str) -> Response:
         content=spec.template.read_bytes(),
         media_type="application/pdf",
         headers={"Content-Disposition": DISPOSITION, "Cache-Control": "no-store"},
+    )
+
+
+@router.get("/{application_id}/forms/{form_no}/pages/{page_no}.png")
+def form_page_png(
+    request: Request,
+    application_id: int,
+    form_no: str,
+    page_no: int,
+    preview: bool = Query(default=False),
+    dpi: int = Query(default=200, ge=40, le=300),
+) -> Response:
+    """원본 또는 완성 서식의 한 쪽을 PyMuPDF로 렌더링한다."""
+    app = load_application(application_id)
+    if form_no not in available_forms(app) and not (
+        app.program_code != "double_savings" and form_no == "job_interview_confirmation"
+    ):
+        raise HTTPException(404, "이 신청 건의 서식이 아닙니다.")
+    spec = form_coords.load(form_no)
+    if spec is None or not spec.available:
+        raise HTTPException(503, f"{form_no} 템플릿을 사용할 수 없습니다.")
+    import fitz
+
+    with fitz.open(spec.template) as doc:
+        if page_no < 1 or page_no > doc.page_count:
+            raise HTTPException(404, "서식 쪽 번호가 범위를 벗어났습니다.")
+
+    if preview:
+        if form_no == "job_interview_confirmation":
+            filled = BUILDERS[form_no](app)
+        else:
+            filled = BUILDERS[form_no](
+                app,
+                consents=list_consents(application_id),
+                storage_root=STORAGE,
+                subsidy_items=subsidy_rows(application_id),
+            )
+        stat = spec.template.stat()
+        payload = filled_payload(filled)
+        etag = '"' + sha256(
+            f"{form_no}|{stat.st_mtime_ns}|{page_no}|{dpi}|{payload}".encode("utf-8")
+        ).hexdigest() + '"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag, "Cache-Control": "private, no-cache"})
+        png = render_filled_page_png_cached(
+            form_no, str(spec.template), stat.st_mtime_ns, page_no, dpi, payload
+        )
+        cache_control = "private, max-age=60" if dpi <= 80 else "no-store"
+    else:
+        stat = spec.template.stat()
+        png = render_template_page_png(str(spec.template), stat.st_mtime_ns, page_no, dpi)
+        cache_control = "private, max-age=3600"
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": cache_control, **({"ETag": etag} if preview else {})},
     )
 
 

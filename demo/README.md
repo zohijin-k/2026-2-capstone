@@ -200,6 +200,17 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.build_form_coords
 > ⚠️ 원본 PDF는 **2-up**이다. A4 가로 1장에 논리 2쪽이 들어 있어(물리 12쪽 = 논리
 > 23·24쪽) 반드시 반쪽씩 잘라야 한다. `cut_templates.py`가 쪽번호로 검증한다.
 
+### 서식 글꼴
+
+서식 위 입력 글자와 PDF 내보내기는 같은 Noto KR 글꼴을 사용한다. 입력 화면에는
+WOFF2, PDF 합성에는 TTF 서브셋을 사용하며, 각 글꼴 폴더에 SIL OFL `OFL.txt`를
+함께 둔다.
+
+- 고딕: `frontend/src/assets/fonts/NotoSansKR/` — [Noto Sans KR 원본·라이선스](https://github.com/google/fonts/tree/main/ofl/notosanskr)
+- 명조: `frontend/src/assets/fonts/NotoSerifKR/` — [Noto Serif KR 원본·라이선스](https://github.com/google/fonts/tree/main/ofl/notoserifkr)
+- 서브셋: KS X 1001 한글 2,350자, ASCII 영문·숫자·문장부호, 서식 좌표의 라벨·보기와 가상 입력값에 쓰인 글자를 포함한다. 배경 PDF 문구는 원본 서식의 글꼴로 보존된다.
+- 자동 글꼴 범위 검증: `run_p14_pdf_forms_scenarios`가 두 글꼴의 TTF/WOFF2/OFL 존재와 서식·가상 입력 글리프를 확인한다.
+
 ---
 
 ## 7. 알아 둘 것

@@ -26,6 +26,8 @@ from ..engine_adapter import (
     to_engine_applicant,
     to_engine_documents,
 )
+from ..forms import values as form_values
+from ..forms.email import is_valid_email, normalize_email
 from ..models import (
     STATUS_DECIDED,
     STATUS_DRAFT,
@@ -114,9 +116,21 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     program = get_program(app.program_code)
     form1 = app.form1_json or {}
+    email = form1.get("email")
+    normalized_email = normalize_email(email) if isinstance(email, str) else ""
+    invalid_email = bool(normalized_email) and not is_valid_email(normalized_email)
 
     for key, label in program.required_form_fields:
-        if not _has_value(form1.get(key)):
+        value = form1.get(key)
+        if key == "email" and invalid_email:
+            items.append({
+                "kind": "form",
+                "target": key,
+                "label": label,
+                "message": "이메일 형식을 확인해 주세요.",
+                "goto": "form1",
+            })
+        elif not _has_value(value):
             # 서식 안에서 첨부하는 서류(통장 사본 등)는 '입력'이 아니라 '첨부'다.
             verb = "첨부" if key.endswith("FileName") else "입력"
             items.append(
@@ -128,6 +142,15 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
                     "goto": "form1",
                 }
             )
+
+    if invalid_email and not any(key == "email" for key, _ in program.required_form_fields):
+        items.append({
+            "kind": "form",
+            "target": "email",
+            "label": "이메일",
+            "message": "이메일 형식을 확인해 주세요.",
+            "goto": "form1",
+        })
 
     # 지원 항목을 고르는 사업은 항목 선택이 곧 신청 내용이다. 하나도 고르지
     # 않았으면 제출할 것이 없다.
@@ -685,7 +708,7 @@ def submit(application_id: int) -> dict[str, Any]:
         if row is None:
             raise HTTPException(404, "신청 건을 찾을 수 없습니다.")
         row.status = STATUS_SUBMITTED
-        row.submitted_at = datetime.now()
+        row.submitted_at = form_values.submission_timestamp()
         row.updated_at = row.submitted_at
         s.add(row)
         # 데모는 재제출 시나리오를 다루지 않는다. 기존 심사 결과는 지우고 다시 쓴다.

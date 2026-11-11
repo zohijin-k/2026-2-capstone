@@ -7,6 +7,7 @@ import {
   mockOfficerList,
   mockReviewDetail,
 } from './pages/officer/mock-data.ts'
+import { FORM_FIELD_KEYS } from './forms/form-field-bindings.ts'
 
 /**
  * 사업 설정. 화면 분기는 전부 이 값으로 한다.
@@ -404,6 +405,20 @@ async function form<T>(path: string, body: FormData): Promise<T> {
   return res.json() as Promise<T>
 }
 
+export async function uploadSignatureScan(id: number, file: File): Promise<void> {
+  const body = new FormData()
+  body.append('file', file)
+  await form<{ uploaded: boolean }>(`/api/applications/${id}/forms/signature-scan`, body)
+}
+
+export async function deleteSignatureScan(id: number): Promise<void> {
+  const res = await fetch(`/api/applications/${id}/forms/signature-scan`, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null
+    throw new Error(data?.detail ?? `서명 이미지 삭제 실패 (${res.status})`)
+  }
+}
+
 export const fetchPrograms = () => json<Program[]>('/api/programs')
 
 export type IssueRule = { mode: 'after_date' | 'after_notice' | 'within_days' | 'none'; date?: string; days?: number }
@@ -456,12 +471,24 @@ export const patchApplication = (
 
 export interface FormFieldLayout {
   type: 'text' | 'check' | 'image'
+  control?: 'radio_text'
   page: number
   box: [number, number, number, number]
+  label_box?: [number, number, number, number]
+  click_box?: [number, number, number, number]
+  choice_box?: [number, number, number, number]
+  choice_group_box?: [number, number, number, number]
+  cell_box?: [number, number, number, number]
   x?: number
   y?: number
   size?: number
   align?: 'left' | 'center'
+  format?: 'yyyy' | 'yy' | 'none'
+  auto_date?: boolean
+  date_part?: 'year' | 'month' | 'day'
+  date_reference?: { size: number; baseline: number; render_baseline: number; render_size_scale: number; character: string; font_family: 'serif' | 'sans'; glyph_box: [number, number, number, number] }
+  group_box?: [number, number, number, number]
+  font_family?: 'serif' | 'sans'
   anchor?: string
   label?: string
 }
@@ -472,10 +499,32 @@ export interface FormLayout {
   public_form: string | null
   page_sizes: { width: number; height: number }[]
   fields: Record<string, FormFieldLayout>
+  requirements?: ({ kind: 'all_or_none'; fields: string[] } | { kind: 'when_choice'; field: string; equals: string; required: string[] })[]
+  masks?: { page: number; box: [number, number, number, number] }[]
+  auto_date: string
 }
 
-export const fetchFormLayout = (id: number, formNo: string) =>
-  json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
+export interface ApplicantFormSummary {
+  form_no: string
+  title: string
+  label: string
+  file_url: string
+  file_name: string
+}
+
+export const fetchFormLayout = async (id: number, formNo: string): Promise<FormLayout> => {
+  const layout = await json<FormLayout>(`/api/applications/${id}/forms/layouts/${encodeURIComponent(formNo)}`)
+  const bindings = FORM_FIELD_KEYS[formNo] || []
+  const fields = Object.fromEntries(Object.entries(layout.fields).map(([opaqueId, field], index) => [bindings[index] || opaqueId, field]))
+  const keyById = Object.fromEntries(bindings.map((key, index) => [`f${String(index).padStart(4, '0')}`, key]))
+  const requirements = (layout.requirements || []).map((rule) => rule.kind === 'all_or_none'
+    ? { ...rule, fields: rule.fields.map((key) => keyById[key] || key) }
+    : { ...rule, field: (keyById[rule.field] || rule.field).split('.')[0], required: rule.required.map((key) => keyById[key] || key) })
+  return { ...layout, fields, requirements }
+}
+
+export const fetchApplicantForms = (id: number) =>
+  json<ApplicantFormSummary[]>(`/api/applications/${id}/forms`)
 
 /** 본인인증 결과. 서류 본인 대조의 기준이 된다 (연락처는 가려서 돌아온다). */
 export interface Identity {

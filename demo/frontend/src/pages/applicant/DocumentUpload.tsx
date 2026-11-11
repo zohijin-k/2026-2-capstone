@@ -338,10 +338,11 @@ function SlotCard({
         >
           <div className="dupload__form-preview">
             <p>신청자 정보가 미리 들어 있습니다. 회사에서 면접 내용과 확인 서명을 작성합니다.</p>
-            <PdfPages
-              url={`/api/applications/${applicationId}/forms/interview-confirmation/filled.pdf`}
-              width={820}
-              onReady={() => setInterviewPdfReady(true)}
+            <img
+              className="dupload__form-page"
+              src={`/api/applications/${applicationId}/forms/job_interview_confirmation/pages/1.png?preview=true`}
+              alt="면접확인서 양식"
+              onLoad={() => setInterviewPdfReady(true)}
               onError={() => setInterviewPdfReady(false)}
             />
           </div>
@@ -351,7 +352,13 @@ function SlotCard({
   )
 }
 
-export default function DocumentUpload({ applicationId }: { applicationId: number }) {
+export default function DocumentUpload({
+  applicationId,
+  onProgress,
+}: {
+  applicationId: number
+  onProgress: (uploaded: number, total: number) => void
+}) {
   const [checklist, setChecklist] = useState<Checklist | null>(null)
   const [declared, setDeclared] = useState<Record<string, YMD>>({})
   const [busySlot, setBusySlot] = useState('')
@@ -359,9 +366,12 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
 
   useEffect(() => {
     fetchChecklist(applicationId)
-      .then(setChecklist)
+      .then((next) => {
+        setChecklist(next)
+        onProgress(next.upload_done, next.upload_total)
+      })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [applicationId])
+  }, [applicationId, onProgress])
 
   const context = checklist?.context ?? {}
 
@@ -386,7 +396,9 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
       if (proofDocs.length > 0) {
         for (const doc of proofDocs) await deleteDocument(applicationId, doc.document_id)
       }
-      setChecklist(await putDocContext(applicationId, { ...context, ...patch }))
+      const next = await putDocContext(applicationId, { ...context, ...patch })
+      setChecklist(next)
+      onProgress(next.upload_done, next.upload_total)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
       await refresh()
@@ -395,7 +407,10 @@ export default function DocumentUpload({ applicationId }: { applicationId: numbe
     }
   }
 
-  const refresh = () => fetchChecklist(applicationId).then(setChecklist)
+  const refresh = () => fetchChecklist(applicationId).then((next) => {
+    setChecklist(next)
+    onProgress(next.upload_done, next.upload_total)
+  })
 
   const upload = async (item: DocRequirementRow, file: File) => {
     setBusySlot(item.slot_key)

@@ -9,8 +9,8 @@ export interface Form5Value {
   agree: string
   name: string
   signature: string
-  /** 자필 스캔본 업로드로 대신한 경우의 파일명. 전자서명 대신 쓸 수 있다. */
-  handwrittenFileName: string
+  /** 신청 건 비공개 저장소에 서명 스캔 이미지가 있는지 서버가 관리한다. */
+  signatureScanUploaded: boolean
   /** 원문 "2026 년 월 일" 작성일 */
   writtenOn: YMD
   birth: YMD
@@ -21,7 +21,7 @@ export const EMPTY_FORM5: Form5Value = {
   agree: '',
   name: '',
   signature: '',
-  handwrittenFileName: '',
+  signatureScanUploaded: false,
   writtenOn: EMPTY_YMD,
   birth: EMPTY_YMD,
   phone: '',

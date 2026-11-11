@@ -8,6 +8,7 @@
 
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any
 
 from ..models import Application, Consent
@@ -17,6 +18,7 @@ from ..rules.scoring import RESIDENCE_BANDS, WORK_BANDS, elapsed_years_months
 
 #: 두배적금 납입금액은 보기가 하나뿐이다(월 10만원). 신청 자체가 곧 선택이다.
 MONTHLY_DEPOSIT = "월 10만원"
+SEOUL = ZoneInfo("Asia/Seoul")
 
 
 @dataclass
@@ -36,6 +38,30 @@ def format_date(value: Any) -> str:
     """서식의 날짜 표기 — 원문 예시(‘26. 3. 3.)와 같은 점 표기를 쓴다."""
     parsed = parse_ymd(value)
     return f"{parsed.year}. {parsed.month}. {parsed.day}." if parsed else ""
+
+
+def _now_seoul() -> datetime:
+    return datetime.now(SEOUL)
+
+
+def today() -> date:
+    """Application form date source, in the service's Korean calendar day."""
+    return _now_seoul().date()
+
+
+def submission_timestamp() -> datetime:
+    """Record the real submission time using the same injectable calendar day."""
+    current = _now_seoul()
+    return datetime.combine(today(), current.time().replace(tzinfo=None))
+
+
+def form_date(app: Application) -> date:
+    """Draft forms use today's date; once submitted, they retain the submission date."""
+    if app.submitted_at is None:
+        return today()
+    if app.submitted_at.tzinfo is None:
+        return app.submitted_at.date()
+    return app.submitted_at.astimezone(SEOUL).date()
 
 
 def _band(start: Any, basis: date, bands: list[tuple[int, str]]) -> str | None:
@@ -85,8 +111,8 @@ def build_form1(app: Application, **_: Any) -> FilledForm:
 
     _put(filled.texts, "birth", format_date(form1.get("birth")))
 
-    # 작성일 — 원문은 "2026. . ." 이라 월·일만 채운다. 제출 전이면 마지막 저장 시각.
-    written = app.submitted_at or app.updated_at or datetime.now()
+    # 작성일 — 자동 입력이며 제출 전에는 오늘, 제출 뒤에는 접수일로 고정한다.
+    written = form_date(app)
     filled.texts["writtenMonth"] = str(written.month)
     filled.texts["writtenDay"] = str(written.day)
 
@@ -136,7 +162,7 @@ def build_self_check(app: Application, **_: Any) -> FilledForm:
 def build_consent_form(form_no: str, app: Application, consents: list[Consent], **_: Any) -> FilledForm:
     form1 = app.form1_json or {}
     filled = FilledForm(form_no=form_no)
-    stamp = app.submitted_at or app.updated_at or datetime.now()
+    stamp = form_date(app)
     mapping = {
         "서식3": {"privacy": "privacy", "uniqueId": "unique_id"},
         "서식4": {"thirdParty": "third_party"},
@@ -182,8 +208,8 @@ def build_job_application(
     ):
         _put(filled.texts, key, form1.get(key))
     _put(filled.texts, "birth", format_date(form1.get("birth")))
-    year, month, day = _written_values(app.submitted_at or app.updated_at or datetime.now())
-    for key, value in (("job.applicationYear", year), ("job.applicationMonth", month), ("job.applicationDay", day)):
+    _, month, day = _written_values(form_date(app))
+    for key, value in (("job.applicationMonth", month), ("job.applicationDay", day)):
         _put(filled.texts, key, value)
     signature = form1.get("job.signature")
     if isinstance(signature, str) and signature.startswith("data:image/png;base64,"):
@@ -241,10 +267,7 @@ def build_form5(app: Application, consents: list[Consent], storage_root: Any, **
 
     admin = next((c for c in consents if c.consent_type == "admin_info"), None)
 
-    written = parse_ymd(form5.get("writtenOn"))
-    if written is None:
-        stamp = admin.agreed_at if admin else (app.submitted_at or app.updated_at)
-        written = (stamp or datetime.now()).date()
+    written = form_date(app)
     filled.texts["writtenMonth"] = str(written.month)
     filled.texts["writtenDay"] = str(written.day)
 
@@ -254,6 +277,22 @@ def build_form5(app: Application, consents: list[Consent], storage_root: Any, **
             target = storage_root.parent / admin.signature_path
             if target.exists():
                 filled.images["signature"] = str(target)
+    if form5.get("signatureScanUploaded"):
+        from .signature_scan import signature_scan_paths
+
+        _, processed_scan = signature_scan_paths(storage_root, app.application_no)
+        if processed_scan.is_file():
+            filled.images["signature"] = str(processed_scan)
+    signature = form5.get("signature")
+    if isinstance(signature, str) and signature.startswith("data:image/png;base64,") and (
+        app.status == "draft" or "signature" not in filled.images
+    ):
+        import base64
+
+        try:
+            filled.images["signature"] = base64.b64decode(signature.split(",", 1)[1])
+        except ValueError:
+            pass
 
     return filled
 
