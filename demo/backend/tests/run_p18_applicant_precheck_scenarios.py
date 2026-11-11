@@ -236,6 +236,21 @@ def test_blur_rotation(tmp):
         check(name + " 안내", bool(result.findings) and all(f.how_to_fix for f in result.findings), True)
 
 
+def test_issue_date_labels():
+    from ..ocr.pdftext import extract_issue_date, read_page_text
+
+    for text in ("생년월일 1999-01-01", "거래일 2026-11-10", "1999-01-01 2026-11-10", "날짜 없음"):
+        check("B6 라벨 없는 날짜", extract_issue_date(text), None)
+    check("B6 발급일 라벨", extract_issue_date("생년월일 1999-01-01 발급일 2026-11-10"), date(2026, 11, 10))
+    check("B6 유효하지 않은 라벨 날짜", extract_issue_date("발급일 2026-02-30 거래일 2026-11-10"), None)
+    for padding in ("", "합성 설명 " * 100):
+        ocr = read_page_text("사업자등록증명\n개업일 2020-01-01\n거래일 2026-11-10\n" + padding, None, 0)
+        req = DocRequirement("work_proof", DocType.BIZ_REG_PROOF, "사업자등록증명", min_issue_date=date(2026, 3, 3))
+        check("B6 발급일 속성 비움", ocr.issue_date, None)
+        check("B6 발급일 필드 비움", "발급일" in ocr.fields, False)
+        review("B6 발급일 미판독", check_document(req, ocr, declared_issue_date=date(2026, 11, 10)), "REQUIRED_FIELD_UNREADABLE")
+    req.date_basis = "none"
+    check("B6 날짜 검사 제외 서류", check_document(req, ocr).status, "PASS")
 
 
 def main():
@@ -249,6 +264,7 @@ def main():
         test_insurance(tmp)
         test_api(tmp)
         test_blur_rotation(tmp)
+        test_issue_date_labels()
     print(f"\n통과 {_passed} / 실패 {len(_failed)}")
     return int(bool(_failed))
 

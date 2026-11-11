@@ -122,13 +122,11 @@ def _to_date(groups: tuple[str, str, str]) -> date | None:
 
 
 def extract_issue_date(text: str) -> date | None:
-    """발급일. 라벨이 붙은 날짜를 우선하고, 없으면 문서에서 가장 늦은 날짜를 쓴다."""
+    """발급일 라벨로 확인한 날짜만 읽는다. 다른 날짜로 추측하지 않는다."""
     labeled = _ISSUE_LABEL_RE.search(_squeeze(text))
     if labeled:
         return _to_date(labeled.groups())  # type: ignore[arg-type]
-    candidates = [d for g in _DATE_RE.findall(text) if (d := _to_date(g))]
-    # 발급일은 보통 문서에 찍힌 날짜 중 가장 나중이다.
-    return max(candidates) if candidates else None
+    return None
 
 
 def extract_transfer_in(text: str) -> date | None:

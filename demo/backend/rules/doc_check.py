@@ -342,6 +342,14 @@ def check_document(
 
     # 2) 엔진 단건 검사 — 암호/화질/서명/발급일/입력일 대조/신뢰도.
     engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format, req.date_basis)
+    if (not ocr.is_encrypted and ocr.tier == "pdftext" and req.date_basis == "issue_date"
+            and engine_doc.issue_date is None
+            and (req.check_declared_date or req.min_issue_date is not None or req.max_issue_date is not None)):
+        findings.append(_finding(
+            CODE_REQUIRED_FIELD_UNREADABLE,
+            "서류의 발급일 라벨과 날짜를 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+            req, field="발급일",
+        ))
     for f in engine_check_single_document(engine_doc, to_engine_spec(req)):
         finding = _finding(f.code.value, f.message, req)
         if f.code.value == "DECLARED_DATE_MISMATCH" and req.date_basis == "issue_date":
