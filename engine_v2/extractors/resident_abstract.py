@@ -121,6 +121,7 @@ class ResidentAbstractResult:
     # 미판독(None)과 읽힌 누락을 분리한다. 중복 쪽·서로 다른 총수도 보존한다.
     page_markers: list[tuple[int, int] | None] = field(default_factory=list)
     page_marker_confidence: float = 0.0
+    classification_evidence: str = ""
 
 
 # --- 유틸 ---------------------------------------------------------------
@@ -348,6 +349,16 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     else:
         detected, tconf = DocType.UNKNOWN, 0.1
 
+    classification_evidence = ""
+    if detected == DocType.UNKNOWN and not (is_abs or is_reg):
+        from ..pipeline.resident_title import classify_resident_title
+        kind, evidence = classify_resident_title(pages)
+        if kind is not None:
+            detected = DocType.RESIDENT_ABSTRACT if kind == "abstract" else DocType.RESIDENT_REGISTER
+            tconf = .95
+            classification_evidence = evidence
+            warnings = [w for w in warnings if w != "주민등록표이나 등본/초본 구분 실패"]
+
     validations: list[Validation] = []
     fields: dict[str, ExtractedField] = {}
     n = len(headers)
@@ -458,6 +469,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     return ResidentAbstractResult(
         detected, tconf, fields, entries, validations, warnings,
         page_markers=[h["page_no"] for h in headers],
+        classification_evidence=classification_evidence,
         page_marker_confidence=min((h["page_confidence"] for h in headers), default=0.0),
     )
 

@@ -17,7 +17,7 @@ from typing import Any, Callable
 import yaml
 
 from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract, insurance_4
-from .extractors import exam_docs, interview_confirmation, receipt
+from .extractors import exam_docs, interview_confirmation, receipt, nhis_qualification
 from .extractors import jbai_text
 from .extractors.resident_abstract import kst_today
 from .pipeline.ocr import OcrResult, OcrWord, run_ocr
@@ -38,6 +38,7 @@ EXTRACTORS: dict[DocType, Callable] = {
     DocType.RESIDENT_ABSTRACT: resident_abstract.extract,
     DocType.RESIDENT_REGISTER: resident_abstract.extract,  # 등본을 올려도 같은 부품이 판별
     DocType.NHIS_PAYMENT: nhis_payment.extract,
+    DocType.NHIS_QUALIFICATION: nhis_qualification.extract,
     DocType.NHIS_ACQUISITION_LOSS: nhis_acquisition_loss.extract,
     DocType.INSURANCE_4: insurance_4.extract,
     # 취업지원패키지 추가서류

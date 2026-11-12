@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..pipeline.layout import Word, group_lines, line_text, normalize, squash
+from ..pipeline.field_safety import is_header_only_value
 from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage, PageSource
 from ..schemas.models import BBox, ExtractedField, FieldSource
@@ -37,6 +38,20 @@ class PageHeader:
     birth_words: list[Word] | None = None
     issue: date | None = None
     issue_words: list[Word] | None = None
+
+
+def birth_from_rrn(text: str) -> date | None:
+    """Reuse the established NHIS masked/full RRN century mapping."""
+    value = re.sub(r"\s+", "", normalize_format_text(text))
+    match = MASKED_RRN_RE.search(value) or RRN_RE.search(value)
+    if match is None:
+        return None
+    yy, mm, dd = int(match[1][:2]), int(match[1][2:4]), int(match[1][4:6])
+    century = 2000 if match[2] in "3478" else 1900
+    try:
+        return date(century + yy, mm, dd)
+    except ValueError:
+        return None
 
 
 def parse_date(text: str) -> date | None:
@@ -138,28 +153,29 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
         if header.name is None and "성명" in flat:
             hits = label_hits([line], ("성명",))
             label_words = hits[0][1] if hits else []
+
+            def candidate_name(word, *, label=False):
+                raw = squash(re.sub(r"[()（）]", "", word.text))
+                if label:
+                    raw = raw.partition("성명")[2].lstrip(":：")
+                if is_header_only_value(raw) or raw in {"주민등록", "확인청구자"}:
+                    return None
+                return raw if NAME_RE.fullmatch(raw) else None
+
             if label_words:
                 x0, x1 = min(w.x0 for w in label_words), max(w.x1 for w in label_words)
-                candidates = [w for w in line if w.x0 >= x1]
-                if not candidates:
-                    candidates = [w for below in lines[index + 1 :] for w in below
-                                  if w.x1 >= x0 and w.x0 <= x1]
-            else:
-                candidates = line
-            remainder = flat[flat.find("성명") + len("성명"):]
-            inline = NAME_RE.search(re.sub(r"[()（）]", "", remainder))
-            if inline and not candidates:
-                candidates = line
-            for word in candidates:
-                raw = re.sub(r"[()（）]", "", word.text.strip())
-                name = NAME_RE.fullmatch(raw)
-                if not name and inline:
-                    name = inline
-                    word = next((w for w in line if w.x0 >= max((x.x1 for x in label_words), default=-1)), word)
-                if name and name.group() not in {"성명", "주민등록"}:
-                    header.name = name.group()
-                    header.name_words = [word]
-                    break
+                candidates = [(word, candidate_name(word, label=True)) for word in label_words]
+                candidates += [(word, candidate_name(word)) for word in line if word.x0 >= x1]
+                # An adjacent column header is not a value. If the header row
+                # contains no name, inspect only nearby rows in the name column.
+                if not any(value for _, value in candidates):
+                    candidates = [(word, candidate_name(word))
+                                  for below in lines[index + 1:index + 4]
+                                  if below[0].cy - line[0].cy <= 6.0
+                                  for word in below if word.x1 >= x0 and word.x0 <= x1]
+                value = next(((word, value) for word, value in candidates if value), None)
+                if value:
+                    header.name_words, header.name = [value[0]], value[1]
         if header.birth is None and "주민등록번호" in flat:
             hits = label_hits([line], ("주민등록번호",))
             label_words = hits[0][1] if hits else []
@@ -193,14 +209,9 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                 if rrn:
                     break
             if rrn:
-                yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
-                gender = rrn.group(2)
-                century = 2000 if gender in "3478" else 1900
-                try:
-                    header.birth = date(century + yy, mm, dd)
+                header.birth = birth_from_rrn(rrn.group())
+                if header.birth is not None:
                     header.birth_words = rrn_words or line
-                except ValueError:
-                    pass
         elif header.birth is None and "생년월일" in flat:
             birth_match = DATE_RE.search(normalize_format_text(text))
             birth_words = [word for word in line if parse_date(word.text)]

@@ -114,6 +114,18 @@ def classify_with_evidence(text: str) -> tuple[DocType | None, str]:
     return None, "본문에서 지원 서류의 제목·서식 단서를 찾지 못했습니다."
 
 
+def classify_pages_with_evidence(pages) -> tuple[DocType | None, str]:
+    """Preserve legacy keywords, then use coordinates only when unclassified."""
+    detected, evidence = classify_with_evidence("\n".join(r.text for _, r in pages))
+    if detected is not None:
+        return detected, evidence
+    from engine_v2.pipeline.resident_title import classify_resident_title
+    kind, fallback_evidence = classify_resident_title(pages)
+    if kind is None:
+        return None, evidence
+    return (DocType.RESIDENT_ABSTRACT if kind == "abstract" else DocType.RESIDENT_CERTIFICATE), fallback_evidence
+
+
 def _to_date(groups: tuple[str, str, str]) -> date | None:
     try:
         return date(int(groups[0]), int(groups[1]), int(groups[2]))
