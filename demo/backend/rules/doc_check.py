@@ -56,11 +56,11 @@ CODE_PAGES_INCOMPLETE = "PAGES_INCOMPLETE"
 CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
 CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
 
-RETAKE_GUIDANCE = (
+PHOTO_RETAKE_GUIDANCE = (
     "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
     "서류 전체가 똑바로 보이게 밝은 곳에서 선명하게 다시 촬영해 주세요. "
-    "이대로 제출해도 담당자가 확인합니다."
 )
+RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 확인합니다."
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -244,6 +244,24 @@ def _finding(code: str, message: str, req: DocRequirement, **fmt: str) -> CheckF
     )
 
 
+def _insurance_identity_unreadable(req: DocRequirement, ocr: OcrResult) -> CheckFinding | None:
+    name = str(ocr.fields.get("성명") or "").strip()
+    try:
+        birth = date.fromisoformat(str(ocr.fields.get("생년월일") or "")[:10])
+    except ValueError:
+        birth = None
+    missing = (["성명"] if not name else []) + (["생년월일"] if birth is None else [])
+    if not missing:
+        return None
+    field = "·".join(missing)
+    action = "을 모두 읽지 못했습니다" if len(missing) == 2 else "을 읽지 못했습니다"
+    return _finding(
+        CODE_REQUIRED_FIELD_UNREADABLE,
+        f"4대보험 서류의 {field}{action}. 담당자가 원본을 확인합니다.",
+        req, field=field,
+    )
+
+
 def _uncertain(finding: CheckFinding) -> CheckFinding:
     """읽기 불확실성은 확정 위반 문구와 제출 차단을 함께 없앤다."""
     finding.message = "서류의 내용을 확실하게 읽지 못했습니다. 담당자가 원본에서 직접 확인합니다."
@@ -288,7 +306,7 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
     return []
 
 
-def check_document(
+def _check_document(
     req: DocRequirement,
     ocr: OcrResult,
     declared_issue_date: date | None = None,
@@ -302,6 +320,7 @@ def check_document(
     `identity`(본인인증 결과)가 있으면 서류의 성명·생년월일이 본인 것인지 대조한다.
     """
     findings: list[CheckFinding] = []
+    nhis_review_needed = False
 
     # 종류 판별이 끝나지 않았거나 다른 지원 서류로 판명되면 여기서 끝낸다.
     # 그 파일과 무관한 발급일·필수 항목 경고를 뒤에 붙이지 않는다.
@@ -339,6 +358,44 @@ def check_document(
             if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
+
+    if (not ocr.is_encrypted and ocr.tier != "fixture"
+            and ocr.detected_doc_type is DocType.INSURANCE_4
+            and ocr.fields.get("양식판독상태") == "불완전"):
+        finding = _insurance_identity_unreadable(req, ocr) or _finding(
+            CODE_REQUIRED_FIELD_UNREADABLE,
+            "4대보험 서류의 양식 또는 가입 표를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+            req, field="양식·가입 표",
+        )
+        return CheckResult(status="NEEDS_REVIEW", findings=[finding])
+
+    if (not ocr.is_encrypted and ocr.tier != "fixture"
+            and (ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS or
+                 (ocr.detected_doc_type is DocType.NHIS_QUALIFICATION and "양식판독상태" in ocr.fields))):
+        missing = []
+        for label in ("성명", "생년월일", "발급일"):
+            value = str(ocr.fields.get(label) or "").strip()
+            valid = bool(value)
+            if label != "성명":
+                try:
+                    date.fromisoformat(value[:10])
+                except ValueError:
+                    valid = False
+            if not valid:
+                missing.append(label)
+        if ocr.fields.get("양식판독상태") == "불완전":
+            return CheckResult(status="NEEDS_REVIEW", findings=[_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                f"{_display_doc_type(ocr.detected_doc_type)}의 양식 또는 표 구조를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="양식·표 구조",
+            )])
+        if missing:
+            nhis_review_needed = True
+            findings.append(_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                f"{_display_doc_type(ocr.detected_doc_type)}의 필수 정보를 읽지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="·".join(missing),
+            ))
 
     # 2) 엔진 단건 검사 — 암호/화질/서명/발급일/입력일 대조/신뢰도.
     engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format, req.date_basis)
@@ -516,17 +573,9 @@ def check_document(
 
     if (not ocr.is_encrypted and ocr.tier != "fixture"
             and ocr.detected_doc_type is DocType.INSURANCE_4):
-        name = str(ocr.fields.get("성명") or "").strip()
-        try:
-            birth = date.fromisoformat(str(ocr.fields.get("생년월일") or "")[:10])
-        except ValueError:
-            birth = None
-        if not name or birth is None:
-            findings.append(_finding(
-                CODE_REQUIRED_FIELD_UNREADABLE,
-                "4대보험 서류의 성명·생년월일을 모두 읽지 못했습니다. 담당자가 원본을 확인합니다.",
-                req, field="성명·생년월일",
-            ))
+        finding = _insurance_identity_unreadable(req, ocr)
+        if finding:
+            findings.append(finding)
 
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.
@@ -550,6 +599,15 @@ def check_document(
                     HOW_TO_FIX.get(code, "가입자 명의 확인이 필요해 담당자가 확인합니다."),
                     severity=severity,
                     detail=officer_detail,
+                ))
+        elif ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS and ocr.tier != "fixture":
+            checked, mismatched = compare(identity, ocr.fields)
+            if len(checked) != 2 or mismatched:
+                nhis_review_needed = True
+                findings.append(_finding(
+                    CODE_IDENTITY_UNCERTAIN,
+                    "자격득실확인서의 성명·생년월일을 본인인증 정보와 확인해야 합니다. 담당자가 원본을 확인합니다.",
+                    req,
                 ))
         elif req.doc_type is DocType.RESIDENT_ABSTRACT and ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT and ocr.tier != "fixture":
             if abstract_applicant_missing:
@@ -654,6 +712,12 @@ def check_document(
             detail="판독한 주소 이력이 1건뿐이어서 과거 주소 변동사항이 생략됐을 가능성이 있습니다. 부적합으로 단정하지 않습니다.",
         ))
 
+    if nhis_review_needed:
+        # Incomplete or mismatching identity cannot establish this applicant's
+        # eligibility. Retain legacy finding codes while sending them for review.
+        for finding in findings:
+            if finding.severity == "FAIL":
+                _uncertain(finding)
     if any(f.severity == "FAIL" for f in findings):
         status = "FAIL"
     elif any(f.severity == "NEEDS_REVIEW" for f in findings):
@@ -662,3 +726,22 @@ def check_document(
         status = "PASS"
 
     return CheckResult(status=status, findings=findings)
+
+
+def check_document(
+    req: DocRequirement,
+    ocr: OcrResult,
+    declared_issue_date: date | None = None,
+    file_format: str = "pdf",
+    identity: Identity | None = None,
+    related_nhis_docs: list[tuple[str, dict[str, str]]] | None = None,
+    suggested_slot_label: str | None = None,
+) -> CheckResult:
+    """Check one upload and adapt only photo-specific guidance to its format."""
+    result = _check_document(req, ocr, declared_issue_date, file_format, identity,
+                             related_nhis_docs, suggested_slot_label)
+    if file_format.lower() == "pdf":
+        for finding in result.findings:
+            finding.message = finding.message.replace(PHOTO_RETAKE_GUIDANCE, "")
+            finding.how_to_fix = finding.how_to_fix.replace(PHOTO_RETAKE_GUIDANCE, "")
+    return result

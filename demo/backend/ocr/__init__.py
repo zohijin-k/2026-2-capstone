@@ -14,7 +14,7 @@ from ..rules.doc_types import DocType
 from .base import BBox, OcrAdapter, OcrFallback, OcrResult
 from .fixture import FixtureOcr, fixture_keys
 from .jbai import JbaiOcr
-from .localocr import LocalOcr
+from .localocr import LocalOcr, ensure_nhis_required_fields
 from .pdftext import PdfTextOcr, split_pdf_pages
 from .upstage import UpstageOcr
 
@@ -77,6 +77,8 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
 
     for key in remove_header_only_fields(result.fields):
         result.bboxes.pop(key, None)
+
+    ensure_nhis_required_fields(result)
 
     result.elapsed_ms = int((time.perf_counter() - started) * 1000)
     return result

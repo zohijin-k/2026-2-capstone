@@ -14,7 +14,7 @@ Tier2(pdftext)는 텍스트 레이어가 있는 PDF만 읽는다. 그런데 실�
   - 그 밖의 서류는 OCR 텍스트에 Tier2의 정규식 추출을 그대로 적용한다.
 
 처리하지 않는 파일(→ None, 다음 계층으로):
-  - 건강보험 서류 외 텍스트 레이어 PDF: Tier2가 더 빠르고 정확하다
+  - 지원 전용 추출기 밖의 텍스트 PDF: Tier2가 판독한다. 키워드 미판별 주민등록표는 좌표 제목을 확인한다.
   - 암호 PDF·없는 파일: Tier2가 공고문 문구로 '미비'를 낸다
   - OCR 엔진이 설치돼 있지 않은 서버: 조용히 건너뛴다 (데모가 멈추지 않는 원칙)
 
@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -176,6 +177,41 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     )
 
 
+def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
+    """Keep supported NHIS forms complete after final header-value safety."""
+    if (result.tier == "fixture" or not (
+            result.detected_doc_type == DocType.NHIS_ACQUISITION_LOSS or
+            (result.detected_doc_type == DocType.NHIS_QUALIFICATION and "양식판독상태" in result.fields))):
+        return result
+    from engine_v2.pipeline.field_safety import remove_header_only_fields
+
+    for key in remove_header_only_fields(result.fields):
+        result.bboxes.pop(key, None)
+    missing = []
+    for label in ("성명", "생년월일", "발급일"):
+        value = str(result.fields.get(label) or "").strip()
+        valid = bool(value)
+        if label != "성명":
+            try:
+                date.fromisoformat(value[:10])
+            except ValueError:
+                valid = False
+        if not valid:
+            missing.append(label)
+    if not missing:
+        return result
+    failed = [value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()]
+    added = [f"{label}_required" for label in missing if f"{label}_required" not in failed]
+    counts = re.fullmatch(r"(\d+)/(\d+) 통과", result.fields.get("판독검증", ""))
+    passed, total = (int(counts[1]), int(counts[2])) if counts else (0, 0)
+    result.fields["판독검증"] = f"{passed}/{total + len(added)} 통과"
+    result.fields["판독검증실패"] = ", ".join([*failed, *added])
+    result.confidence = min(result.confidence, 0.4)
+    if "발급일" in missing:
+        result.issue_date = None
+    return result
+
+
 def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
                detected_override: DocType | None = None) -> OcrResult:
     """engine_v2 건강보험 판독 결과를 신청자·담당자 화면 계약으로 옮긴다."""
@@ -194,8 +230,14 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
     if ex.warnings:
         fields["판독경고"] = " ".join(ex.warnings)
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    structure_complete = getattr(ex, "structure_complete", None)
+    if structure_complete is not None:
+        fields["양식판독상태"] = "완전" if structure_complete else "불완전"
+        if not structure_complete:
+            confidence = min(confidence, 0.4)
     detected_map = {
         v2types.NHIS_PAYMENT: DocType.NHIS_PAYMENT,
+        v2types.NHIS_QUALIFICATION: DocType.NHIS_QUALIFICATION,
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
@@ -223,7 +265,7 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
             issue_date = date.fromisoformat(str(issue.value)[:10])
         except ValueError:
             pass
-    return OcrResult(
+    return ensure_nhis_required_fields(OcrResult(
         detected_doc_type=detected,
         confidence=round(min(confidence, ex.type_confidence), 2),
         image_quality=_quality([page for page, _ in pages]),
@@ -234,7 +276,7 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         tier=NAME,
         classification_evidence=classification_evidence,
         classification_confidence=0.95 if detected else 0.0,
-    )
+    ))
 
 
 def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
@@ -266,8 +308,22 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
             fields[key] = value
             if row_box is not None:
                 bboxes[key] = row_box
-    fields["판독검증"] = f"{sum(item.passed for item in ex.validations)}/{len(ex.validations)} 통과"
-    failed = [item.name for item in ex.validations if not item.passed]
+    validations = list(ex.validations)
+    structure_complete = getattr(ex, "structure_complete", None)
+    if getattr(ex, "form_kind", None) == "portal":
+        from engine_v2.pipeline.field_safety import remove_header_only_fields
+        from engine_v2.extractors.nhis_common import Validation
+
+        for key in remove_header_only_fields(fields):
+            bboxes.pop(key, None)
+        missing = [label for label in ("성명", "생년월일", "발급일") if not fields.get(label)]
+        validations.extend(Validation(f"{label}_required", False) for label in missing)
+        if missing:
+            structure_complete = False
+    if structure_complete is not None:
+        fields["양식판독상태"] = "완전" if structure_complete else "불완전"
+    fields["판독검증"] = f"{sum(item.passed for item in validations)}/{len(validations)} 통과"
+    failed = [item.name for item in validations if not item.passed]
     if failed:
         fields["판독검증실패"] = ", ".join(failed)
     if ex.warnings:
@@ -275,6 +331,8 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     issue = ex.fields.get("발급일")
     issue_date = date.fromisoformat(str(issue.value)) if issue else None
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    if structure_complete is False:
+        confidence = min(confidence, 0.4)
     detected = DocType.INSURANCE_4 if ex.detected_type.value == "insurance_4" else None
     return OcrResult(
         detected_doc_type=detected,
@@ -442,8 +500,15 @@ class LocalOcr:
                 return None
             detected = classified.detected_doc_type
             if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4)
-                    and detected not in _JOB_DOCS):
+                    and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION and detected is not None):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
+            if detected == DocType.NHIS_QUALIFICATION:
+                from engine_v2.extractors.nhis_qualification import is_notification
+                import pymupdf
+
+                with pymupdf.open(path) as document:
+                    if not is_notification(" ".join(page.get_text() for page in document)):
+                        return None  # Other qualification forms retain their PdfText reader.
         elif engine == "off":
             return None
 
@@ -455,13 +520,26 @@ class LocalOcr:
         if text_pdf:
             v2type = v2types(_JOB_DOCS[detected][1]) if detected in _JOB_DOCS else {
                 DocType.NHIS_PAYMENT: v2types.NHIS_PAYMENT,
+                DocType.NHIS_QUALIFICATION: v2types.NHIS_QUALIFICATION,
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
-            }[detected]
+            }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
+            if detected is None:
+                detected, evidence = pdftext.classify_pages_with_evidence(pages)
+                if detected not in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
+                    return None
+                # Coordinate fallback changes classification only. Fields still
+                # use the established resident reader and review rules.
+                result = _from_resident(ra.extract(pages), pages, ra, v2types)
+                result.detected_doc_type = detected
+                result.classification_evidence = evidence
+                result.classification_confidence = .95
+                result.engine = _pages_engine(pages)
+                return result
             if detected in _JOB_DOCS:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
@@ -471,6 +549,9 @@ class LocalOcr:
                 )
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+                if detected == DocType.NHIS_QUALIFICATION:
+                    from engine_v2.extractors import nhis_qualification
+                    extractor = nhis_qualification
                 result = _from_nhis(
                     extractor.extract(pages), pages, v2types,
                     classified.classification_evidence, detected,
@@ -493,7 +574,7 @@ class LocalOcr:
             pages.append((p, r))
 
         text = "\n".join(result.text for _, result in pages)
-        detected, evidence = pdftext.classify_with_evidence(text)
+        detected, evidence = pdftext.classify_pages_with_evidence(pages)
         if detected is None:
             return None
 
@@ -502,6 +583,14 @@ class LocalOcr:
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result
+
+        if detected == DocType.NHIS_QUALIFICATION:
+            from engine_v2.extractors import nhis_qualification
+            if nhis_qualification.is_notification(text):
+                result = _from_nhis(nhis_qualification.extract(pages), pages, v2types, evidence, detected)
+                if path.suffix.lower() != ".pdf":
+                    _merge_image_heuristics(result, path)
+                return result
 
         if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
             if detected == DocType.INSURANCE_4:
