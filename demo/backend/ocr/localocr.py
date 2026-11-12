@@ -228,6 +228,11 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
     if ex.warnings:
         fields["판독경고"] = " ".join(ex.warnings)
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    structure_complete = getattr(ex, "structure_complete", None)
+    if structure_complete is not None:
+        fields["양식판독상태"] = "완전" if structure_complete else "불완전"
+        if not structure_complete:
+            confidence = min(confidence, 0.4)
     detected_map = {
         v2types.NHIS_PAYMENT: DocType.NHIS_PAYMENT,
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,

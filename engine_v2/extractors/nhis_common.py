@@ -40,6 +40,20 @@ class PageHeader:
     issue_words: list[Word] | None = None
 
 
+def birth_from_rrn(text: str) -> date | None:
+    """Reuse the established NHIS masked/full RRN century mapping."""
+    value = re.sub(r"\s+", "", normalize_format_text(text))
+    match = MASKED_RRN_RE.search(value) or RRN_RE.search(value)
+    if match is None:
+        return None
+    yy, mm, dd = int(match[1][:2]), int(match[1][2:4]), int(match[1][4:6])
+    century = 2000 if match[2] in "3478" else 1900
+    try:
+        return date(century + yy, mm, dd)
+    except ValueError:
+        return None
+
+
 def parse_date(text: str) -> date | None:
     text = normalize_format_text(text)
     match = DATE_RE.search(text)
@@ -195,14 +209,9 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                 if rrn:
                     break
             if rrn:
-                yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
-                gender = rrn.group(2)
-                century = 2000 if gender in "3478" else 1900
-                try:
-                    header.birth = date(century + yy, mm, dd)
+                header.birth = birth_from_rrn(rrn.group())
+                if header.birth is not None:
                     header.birth_words = rrn_words or line
-                except ValueError:
-                    pass
         elif header.birth is None and "생년월일" in flat:
             birth_match = DATE_RE.search(normalize_format_text(text))
             birth_words = [word for word in line if parse_date(word.text)]

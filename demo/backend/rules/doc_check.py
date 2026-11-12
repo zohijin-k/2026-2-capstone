@@ -354,6 +354,12 @@ def check_document(
                     valid = False
             if not valid:
                 missing.append(label)
+        if ocr.fields.get("양식판독상태") == "불완전":
+            return CheckResult(status="NEEDS_REVIEW", findings=[_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                "자격득실확인서의 양식 또는 표 구조를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="양식·표 구조",
+            )])
         if missing:
             nhis_review_needed = True
             findings.append(_finding(

@@ -13,6 +13,7 @@ from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage
 from ..schemas.models import DocType, ExtractedField
 from . import nhis_common as common
+from . import nhis_forms
 
 
 @dataclass
@@ -23,6 +24,7 @@ class HistoryRow:
     employer: str
     words: list[common.Word]
     page: int
+    number: int | None = None
 
 
 @dataclass
@@ -34,6 +36,9 @@ class AcquisitionLossResult:
     validations: list[common.Validation]
     warnings: list[str] = field(default_factory=list)
     diagnostics: dict[str, str] = field(default_factory=dict)
+    form_kind: str = "government24"
+    structure_complete: bool | None = None
+    document_number: str | None = None
 
 
 def _header_positions(pages):
@@ -189,6 +194,147 @@ def _parse_history(pages):
     return rows
 
 
+def _form_kind(pages) -> str:
+    text = squash(" ".join(result.text for _, result in pages))
+    nhis = "확인청구자" in text or ("발급번호" in text and "자격득실확인내역" in text)
+    government = "문서확인번호" in text
+    if nhis:
+        return "unknown" if government else "nhis"
+    # Legacy labeled headers and table columns are an existing government24
+    # structural signature, including synthetic/continuation fixtures.
+    labels = {"성명", "가입자구분", "자격취득일", "자격상실일"}
+    lines = [row for page, result in pages for row in common.page_lines(page, result)]
+    positions = _header_positions(pages)
+    ordered_dates = (all(key in positions for key in ("category", "acquired", "lost")) and
+                     positions["category"] < positions["acquired"] < positions["lost"])
+    table_order = ordered_dates and (positions.get("employer", -1) > positions["lost"])
+    # Existing compact/wrapped synthetic headers can omit the employer column;
+    # their inline labeled identity/date headers still identify that layout.
+    inline_identity = any("성명" in squash(line_text(row)) and any(
+        common.NAME_RE.fullmatch(squash(word.text)) and
+        not common.is_header_only_value(word.text) for word in row) for row in lines)
+    labeled_issue = any(any(label in squash(line_text(row)) for label in ("발급일", "발행일"))
+                        for row in lines)
+    if "employer" not in positions:
+        table_order = ordered_dates and inline_identity and labeled_issue
+    legacy = table_order and all(common.label_hits(lines, (label,)) for label in labels)
+    identity_label = common.label_hits(lines, ("생년월일", "주민등록번호"))
+    if government or (legacy and identity_label):
+        return "government24"
+    return "unknown"
+
+
+def _nhis_document_number(pages):
+    if not pages:
+        return None
+    page, result = pages[0]
+    for line in common.page_lines(page, result):
+        hits = common.label_hits([line], ("발급번호",))
+        if not hits:
+            continue
+        label = hits[0][1]
+        right = max(word.x1 for word in label)
+        suffixes = [squash(word.text).partition("발급번호")[2] for word in label]
+        suffixes += [word.text for word in line if word.x0 >= right]
+        value = re.sub(r"[\s:：]", "", "".join(suffixes))
+        return value if re.fullmatch(r"G\d{18}", value) else None
+    return None
+
+
+def _nhis_history(pages):
+    """Split table columns by their anchors; reserve date tokens before employer."""
+    rows = []
+    checks = []
+    markers = []
+    row_cells_read = True
+    for page, result in pages:
+        lines = common.page_lines(page, result)
+        headings = [(index, row) for index, row in enumerate(lines)
+                    if all(common.label_hits([row], (label,)) for label in
+                           ("가입자구분", "사업장명칭", "자격취득일", "자격상실일"))]
+        if len(headings) != 1:
+            row_cells_read = False
+            continue
+        header_index, heading = headings[0]
+        anchors = {}
+        for key, label in (("category", "가입자구분"), ("employer", "사업장명칭"),
+                           ("acquired", "자격취득일"), ("lost", "자격상실일")):
+            hit = common.label_hits([heading], (label,))[0][1]
+            anchors[key] = (min(word.x0 for word in hit), max(word.x1 for word in hit))
+        category_left = anchors["category"][0]
+        row_cells_read &= any(word.text.strip() == "No" for word in heading)
+        row_cells_read &= (category_left < anchors["employer"][0] <
+                           anchors["acquired"][0] < anchors["lost"][0])
+        employer_left = (anchors["category"][1] + anchors["employer"][0]) / 2
+        date_left = (anchors["employer"][1] + anchors["acquired"][0]) / 2
+        lost_left = (anchors["acquired"][1] + anchors["lost"][0]) / 2
+        categories = {"직장가입자", "지역세대주", "지역세대원", "직장피부양자"}
+        marker_seen = False
+        for line in lines[header_index + 1:]:
+            flat = squash(line_text(line))
+            if "확인합니다" in flat or "국민건강보험공단" in flat:
+                break
+            marker_words = [word for word in line if squash(word.text) == "이하여백"]
+            if marker_words:
+                marker_valid = (len(marker_words) == 1 and
+                                employer_left <= marker_words[0].x0 < date_left and
+                                len(line) > 1 and all(
+                                    re.fullmatch(r"[-‐‑‒–—―−﹘﹣－]+", squash(word.text))
+                                    for word in line if word not in marker_words))
+                markers.append(marker_valid)
+                marker_seen = True
+                continue
+            if not line:
+                continue
+            if marker_seen:
+                row_cells_read = False
+                continue
+            number_words = [word for word in line if word.x0 < category_left]
+            number_text = squash(line_text(number_words))
+            number = int(number_text) if re.fullmatch(r"\d+", number_text) else None
+            category_words = [word for word in line if category_left <= word.x0 < employer_left]
+            category = squash(line_text(category_words))
+            # Date-only tokens are reserved first, even if the preceding long
+            # workplace name crosses the printed date columns.
+            date_words = [word for word in line if word.x0 >= date_left and
+                          re.fullmatch(r"[\d\s년월일./\-]+", common.normalize_format_text(word.text))]
+            acquired_words = [word for word in date_words if word.x0 < lost_left]
+            lost_words = [word for word in date_words if word.x0 >= lost_left]
+
+            def cell_date(words):
+                text = common.normalize_format_text(line_text(words)).strip(" .")
+                return (common.parse_date(text) if common.DATE_RE.fullmatch(text) or
+                        common.COMPACT_DATE_RE.fullmatch(squash(text)) else None)
+
+            acquired, lost = cell_date(acquired_words), cell_date(lost_words)
+            date_ids = {id(word) for word in date_words}
+            employer_words = []
+            employer_complete = True
+            for word in line:
+                if word.x0 < employer_left or id(word) in date_ids:
+                    continue
+                # A tail outside the workplace column must join an observed
+                # workplace token; isolated unreadable date cells stay uncertain.
+                if word.x0 >= date_left and (not employer_words or
+                        word.x0 - max(old.x1 for old in employer_words) > 2):
+                    employer_complete = False
+                employer_words.append(word)
+            employer = line_text(employer_words)
+            row_cells_read &= (number is not None and category in categories and acquired is not None
+                               and (not lost_words or lost is not None) and employer_complete)
+            rows.append(HistoryRow(category, acquired, lost, employer, line, page.page, number))
+    checks.extend([
+        common.Validation("nhis_history_cells_read", bool(rows) and row_cells_read),
+        common.Validation("nhis_row_numbers_continuous", bool(rows) and
+                          [row.number for row in rows] == list(range(1, len(rows) + 1))),
+        common.Validation("nhis_current_loss_blank", bool(rows) and rows[0].lost is None),
+        common.Validation("nhis_neighbor_dates_continuous", bool(rows) and all(
+            lower.lost == upper.acquired for upper, lower in zip(rows, rows[1:]))),
+        common.Validation("nhis_blank_marker", markers == [True]),
+    ])
+    return rows, checks
+
+
 def _five_years_before(day: date, years: int = 5) -> date:
     try:
         return day.replace(year=day.year - years)
@@ -215,7 +361,20 @@ def history_covers_recent_years(
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> AcquisitionLossResult:
     del today
+    form_kind = _form_kind(pages)
     headers = common.page_headers(pages)
+    nhis_checks = []
+    document_number = None
+    if form_kind == "nhis":
+        headers = [nhis_forms.person_table_header(page, result, "확인청구자")
+                   for page, result in pages]
+        issue, words, valid_issue = nhis_forms.confirmation_issue_date(*pages[0]) if pages else (None, [], False)
+        if headers:
+            headers[0].issue, headers[0].issue_words = issue, words
+        document_number = _nhis_document_number(pages)
+        nhis_checks = [common.Validation("nhis_single_page", nhis_forms.single_page(pages)),
+                       common.Validation("nhis_issue_location_unique", valid_issue),
+                       common.Validation("nhis_document_number", document_number is not None)]
     page_map = {page.page: page for page, _ in pages}
     sources = common.sources_by_page(pages)
     validations: list[common.Validation] = []
@@ -253,7 +412,14 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         validations.append(common.Validation("document_confirmation_number_consistent",
                                              len(set(document_numbers)) == 1))
 
-    rows = _parse_history(pages)
+    if form_kind == "nhis":
+        rows, row_checks = _nhis_history(pages)
+        nhis_checks.extend(row_checks)
+        validations.extend(nhis_checks)
+    else:
+        rows = _parse_history(pages)
+    if form_kind == "unknown":
+        validations.append(common.Validation("form_recognized", False))
     period, period_words = _query_period(pages)
     history_data = {
         "period": [value.isoformat() for value in period] if period else None,
@@ -276,9 +442,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
 
     categorized = [row for row in rows if row.category and row.acquired]
     if categorized:
-        current_category = max(categorized, key=lambda row: row.acquired).category
-        source_words = [word for word in max(categorized, key=lambda row: row.acquired).words
-                        if current_category in squash(word.text)]
+        newest = max(categorized, key=lambda row: row.acquired)
+        current_category = {"직장가입자": "직장", "지역세대주": "지역", "지역세대원": "지역"}.get(
+            newest.category, newest.category)
+        source_words = [word for word in newest.words if newest.category in squash(word.text)]
         fields["가입구분"] = common.make_field(current_category, current_category, source_words,
                                                 page_map, common.confidence([dates_read]), sources)
     else:
@@ -299,7 +466,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         diagnostics["변동내역"] = "발급일을 찾지 못해 최근 5년 범위를 계산하지 못함"
     validations.append(common.Validation("recent_five_years_covered", spans_five_years))
 
-    active_jobs = [row for row in rows if row.category == "직장" and row.acquired and row.lost is None]
+    active_jobs = [row for row in rows if row.category in {"직장", "직장가입자"} and row.acquired and row.lost is None]
     if active_jobs:
         newest = max(active_jobs, key=lambda row: row.acquired)
         value = newest.acquired.isoformat()
@@ -309,5 +476,14 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     else:
         diagnostics["취득일"] = "상실일이 없는 직장가입자 행을 못 찾음"
 
+    structure_complete = None
+    if form_kind != "government24":
+        structure_complete = form_kind == "nhis" and all(
+            check.passed for check in validations if check.name != "recent_five_years_covered")
+        if not structure_complete:
+            warnings.append("양식 또는 표 구조를 완전히 읽지 못해 담당자 확인이 필요합니다.")
+            for extracted in fields.values():
+                extracted.confidence = min(extracted.confidence, 0.4)
     return AcquisitionLossResult(detected, type_confidence, fields, rows, validations,
-                                 list(dict.fromkeys(warnings)), diagnostics)
+                                 list(dict.fromkeys(warnings)), diagnostics,
+                                 form_kind, structure_complete, document_number)
