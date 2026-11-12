@@ -315,6 +315,15 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
     else:
         transfer_in = parse_ymd(form1.get("transferIn"))
         residence_source = FactSource(origin="신청서 입력값(최종 전입일)")
+        try:
+            evidence = json.loads(_field(abstract, "주소날짜검증자료") or "null")
+            if isinstance(evidence, dict) and evidence.get("status") == "MISSING":
+                residence_source = FactSource(origin=(
+                    "신청서 입력값(최종 전입일) · 초본 주소 이력의 발생일·신고일 누락으로 서류상 거주기간을 확인할 수 없음; "
+                    "입력값으로 대체한 참고 계산이며 거주기간 증명 아님, 담당자 확인 필요"
+                ))
+        except (TypeError, ValueError):
+            pass
 
     # --- 3. 근로기간: 신청서의 현직장 취업일. 근로확인서류를 대조 근거로 붙인다 ---
     work_proof = _find_any(documents, WORK_PROOF_TYPES) or insurance4

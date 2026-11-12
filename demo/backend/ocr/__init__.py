@@ -82,6 +82,9 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
     ensure_nhis_required_fields(result)
     ensure_business_required_fields(result)
 
+    from .file_evidence import attach_file_evidence
+    attach_file_evidence(result, file_path)
+
     result.fields = mask_data(result.fields)
     result.fallback_reason = mask_rrn(result.fallback_reason)
     result.quality_note = mask_rrn(result.quality_note)

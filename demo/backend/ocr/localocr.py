@@ -123,6 +123,9 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     fields["쪽표기자료"] = json.dumps({
         "markers": ex.page_markers, "confidence": ex.page_marker_confidence,
     })
+    from engine_v2.extractors.address_dates import assess
+    if ex.detected_type == v2types.RESIDENT_ABSTRACT:
+        fields["주소날짜검증자료"] = json.dumps(assess(pages, type_confidence=ex.type_confidence), ensure_ascii=False)
 
     for v2key, label in (
         ("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일"),
@@ -179,6 +182,8 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
         bboxes=bboxes,
         page_count=len(pages),
         tier=NAME,
+        classification_confidence=ex.type_confidence,
+        classification_evidence=ex.classification_evidence,
     )
 
 
@@ -694,7 +699,17 @@ class LocalOcr:
         text = "\n".join(result.text for _, result in pages)
         detected, evidence = pdftext.classify_pages_with_evidence(pages)
         if detected is None:
-            return None
+            # Do not discard successfully read words and independent folios just
+            # because damaged title glyphs cannot establish a document type.
+            from .file_evidence import independent_page_markers
+            markers = independent_page_markers(pages)
+            fields = {"독립쪽표기자료": json.dumps(markers)} if markers else {}
+            result = OcrResult(fields=fields, page_count=len(pages), tier=NAME,
+                               engine=engine, image_quality=_quality(page_images),
+                               classification_evidence=evidence)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
 
         if detected == DocType.BIZ_REG_PROOF:
             from engine_v2.extractors import business_registration

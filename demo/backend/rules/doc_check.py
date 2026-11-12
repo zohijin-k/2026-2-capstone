@@ -55,6 +55,8 @@ CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW = "NHIS_SUBSCRIBER_IDENTITY_REVIEW"
 CODE_PAGES_INCOMPLETE = "PAGES_INCOMPLETE"
 CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
 CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
+CODE_IMAGE_RESOLUTION_TOO_LOW = "IMAGE_RESOLUTION_TOO_LOW"
+CODE_MISSING_ADDRESS_DATES = "MISSING_ADDRESS_DATES"
 
 PHOTO_RETAKE_GUIDANCE = (
     "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
@@ -65,6 +67,8 @@ RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 �
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
 HOW_TO_FIX: dict[str, str] = {
+    CODE_IMAGE_RESOLUTION_TOO_LOW: "선명한 원본(원본 PDF 또는 고해상도 스캔)으로 다시 올려 주세요",
+    CODE_MISSING_ADDRESS_DATES: "정부24에서 초본을 발급할 때 주소 변동 사항의 발생일·신고일이 표시되도록 선택해 다시 발급받아 주세요",
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
@@ -441,6 +445,28 @@ def _check_document(
     findings: list[CheckFinding] = []
     nhis_review_needed = False
 
+    # File facts are independent of OCR confidence and survive type failure.
+    if ocr.is_encrypted:
+        return CheckResult("FAIL", [_finding("UNREADABLE_FILE", "파일을 열 수 없습니다.", req)])
+    from ..ocr.file_evidence import resolution_defect
+    if (size := resolution_defect(ocr)) is not None:
+        finding = _finding(CODE_IMAGE_RESOLUTION_TOO_LOW,
+                           "원본 이미지가 너무 작아 서류 종류 또는 주요 내용을 판독할 수 없습니다.", req)
+        finding.detail = f"원본 {size['width']}×{size['height']}px; 짧은 변 600px 및 긴 변 800px 미만과 미판독 조건 모두 충족."
+        findings.append(finding)
+        try:
+            data = json.loads(ocr.fields.get("독립쪽표기자료", "null"))
+            markers = data["markers"]
+            if (data["confidence"] >= .85 and len(markers) == ocr.page_count and
+                    all(isinstance(m, list) and len(m) == 2 and
+                        all(type(v) is int for v in m) and 1 <= m[0] <= m[1] for m in markers) and
+                    len({m[1] for m in markers}) == 1 and len({m[0] for m in markers}) < markers[0][1]):
+                findings.append(_finding(CODE_PAGES_INCOMPLETE,
+                    f"서류 {markers[0][1]}쪽 중 {len({m[0] for m in markers})}쪽만 올라왔습니다. 빠진 쪽까지 모두 올려 주세요.", req))
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass
+        return CheckResult("FAIL", findings)
+
     # 종류 판별이 끝나지 않았거나 다른 지원 서류로 판명되면 여기서 끝낸다.
     # 그 파일과 무관한 발급일·필수 항목 경고를 뒤에 붙이지 않는다.
     if not ocr.is_encrypted:
@@ -477,6 +503,18 @@ def _check_document(
             if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
+
+    if ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT:
+        try:
+            data = json.loads(ocr.fields.get("주소날짜검증자료", "null"))
+            if (data["status"] == "MISSING" and data["confidence"] >= .85 and
+                    ocr.classification_confidence >= .85):
+                finding = _finding(CODE_MISSING_ADDRESS_DATES,
+                    "초본 주소 이력에 발생일·신고일 날짜 값이 없어 도 거주기간을 확인할 수 없습니다.", req)
+                finding.detail = "주소 표·행은 확인됐지만 날짜가 없습니다. 신청서 전입일은 참고 입력값이며 서류상 거주기간 근거를 대신하지 않습니다."
+                findings.append(finding)
+        except (ValueError, TypeError, KeyError):
+            pass
 
     if (not ocr.is_encrypted and ocr.tier != "fixture" and ocr.detected_doc_type is DocType.BIZ_REG_PROOF):
         from ..ocr.localocr import ensure_business_required_fields
