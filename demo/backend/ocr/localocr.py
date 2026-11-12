@@ -199,6 +199,12 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
+    if (detected == DocType.NHIS_ACQUISITION_LOSS and
+            any(v.name == "document_confirmation_number_consistent" and not v.passed
+                for v in validations)):
+        # Keep the confirmation value internal; only the acquisition-loss
+        # extractor's boolean cross-page comparison affects review confidence.
+        confidence = min(confidence, 0.4)
     if detected == DocType.NHIS_ACQUISITION_LOSS and "변동내역" in fields:
         covered = next((validation.passed for validation in validations
                         if validation.name == "recent_five_years_covered"), None)

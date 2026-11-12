@@ -79,6 +79,48 @@ def _query_period(pages):
     return (min(pair[0] for pair in periods), max(pair[1] for pair in periods)), words
 
 
+def _observed_identity_consensus(headers, key: str):
+    """Require identity on page one; compare only values actually read on pages."""
+    first = getattr(headers[0], key, None) if headers else None
+    available = [getattr(header, key) for header in headers
+                 if getattr(header, key, None) is not None]
+    if first is None:
+        return None, [], False
+    words = getattr(headers[0], f"{key}_words") or []
+    return first, words, all(value == first for value in available)
+
+
+def _document_confirmation_numbers(pages):
+    """Read document numbers only in the tightly scoped neighborhood of their label."""
+    values: list[str] = []
+    for page, result in pages:
+        for line in common.page_lines(page, result):
+            hits = common.label_hits([line], ("문서확인번호",))
+            if not hits:
+                continue
+            label_words = hits[0][1]
+            if not label_words:
+                continue
+            label_right = max(word.x1 for word in label_words)
+            candidates = [word.text for word in line if word.x0 >= label_right]
+            # Some OCR engines include the label and value in one token.
+            for word in label_words:
+                suffix = re.sub(r".*?문서확인번호", "", word.text)
+                if suffix and suffix != word.text:
+                    candidates.insert(0, suffix)
+            pieces = []
+            for text in candidates:
+                if re.fullmatch(r"[\d\s\-‐‑‒–—―−﹘﹣－]+", text):
+                    pieces.append(text)
+                elif pieces:
+                    break
+            digits = re.sub(r"\D", "", "".join(pieces))
+            if 12 <= len(digits) <= 20:
+                values.append(digits)
+            break
+    return values
+
+
 def _parse_history(pages):
     rows: list[HistoryRow] = []
     for page, result in pages:
@@ -186,7 +228,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     validations.append(common.Validation("document_type", detected == DocType.NHIS_ACQUISITION_LOSS))
 
     for key, label in (("name", "성명"), ("birth", "생년월일"), ("issue", "발급일")):
-        value, words, same = common.consensus(headers, key)
+        if key in ("name", "birth"):
+            value, words, same = _observed_identity_consensus(headers, key)
+        else:
+            value, words, same = common.consensus(headers, key)
         if key == "issue":
             same = bool(value) and all(h.issue in (None, value) for h in headers)
         validations.append(common.Validation(f"{label}_consistent", bool(value) and same))
@@ -198,10 +243,15 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             warnings.append(f"{label}을 찾지 못해 담당자 확인이 필요합니다.")
             diagnostics[label] = f"라벨 '{label}' 또는 값을 찾지 못함"
 
-    name, _, names_same = common.consensus(headers, "name")
+    name, _, names_same = _observed_identity_consensus(headers, "name")
     validations.append(common.Validation("page_names_match", bool(name) and names_same))
-    if not names_same:
+    if not name or not names_same:
         warnings.append("쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못했습니다.")
+
+    document_numbers = _document_confirmation_numbers(pages)
+    if len(document_numbers) >= 2:
+        validations.append(common.Validation("document_confirmation_number_consistent",
+                                             len(set(document_numbers)) == 1))
 
     rows = _parse_history(pages)
     period, period_words = _query_period(pages)
