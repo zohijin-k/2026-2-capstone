@@ -5,23 +5,25 @@ from demo.backend.rules.doc_types import DocType
 from engine_v2.tests import p2_shape3_samples as sample
 
 
-@pytest.mark.parametrize("kind,detected,failures", [
-    ("payment", DocType.NHIS_PAYMENT,
-     set()),
-    ("qualification", DocType.NHIS_QUALIFICATION,
-     set()),
-    ("acquisition", DocType.NHIS_ACQUISITION_LOSS,
-     set()),
+@pytest.mark.parametrize("kind,detected", [
+    ("payment", DocType.NHIS_PAYMENT),
+    ("qualification", DocType.NHIS_QUALIFICATION),
+    ("acquisition", DocType.NHIS_ACQUISITION_LOSS),
 ])
-def test_exact_shape_remaining_failures(monkeypatch, tmp_path, kind, detected, failures):
+def test_exact_shape_is_complete_with_required_issue_date(monkeypatch, tmp_path, kind, detected):
+    from datetime import date
+
     result = sample.read_image(monkeypatch, tmp_path, kind)
     assert result.detected_doc_type == detected
-    assert {value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()} == failures
-    assert result.fields["양식판독상태"] == ("불완전" if failures else "완전")
-    expected_confidence = .9 if kind == "acquisition" else .95
-    assert result.confidence == (.4 if failures else expected_confidence)
+    assert not result.fields.get("판독검증실패")
+    assert not result.fields.get("판독경고")
+    assert result.fields["양식판독상태"] == "완전"
+    assert result.fields["발급일"] == sample.ISSUE
+    assert result.issue_date == date.fromisoformat(sample.ISSUE)
+    assert result.confidence == (.9 if kind == "acquisition" else .95)
     assert result.fields["성명"] == sample.NAME
     assert result.fields["생년월일"] == sample.BIRTH
+    assert sample.verdict(result).status == "PASS"
 
 
 @pytest.mark.parametrize("kind", ["payment", "qualification", "acquisition"])

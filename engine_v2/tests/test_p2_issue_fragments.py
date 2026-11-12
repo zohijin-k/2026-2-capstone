@@ -55,3 +55,19 @@ def test_missing_competing_or_labeled_nonissue_dates_remain_reviewed(monkeypatch
     assert "nhis_issue_location_unique" in result.fields["판독검증실패"]
     assert "발급일" not in result.fields
     assert result.confidence <= .4
+    verdict = sample.verdict(result)
+    assert verdict.status == "NEEDS_REVIEW"
+    assert all(finding.severity != "FAIL" for finding in verdict.findings)
+
+
+@pytest.mark.parametrize("kind", ["qualification", "acquisition"])
+@pytest.mark.parametrize("label", ["출력일시", "자격확인요청일", "유효기간"])
+def test_labeled_other_date_does_not_replace_or_compete_with_issue_date(monkeypatch, tmp_path, kind, label):
+    cells, _ = sample.document(kind)
+    y = 2810 if kind == "qualification" else 2650
+    cells.append((1100, y, 1600, y + 25, label + " 2026.04.03", 1))
+    result = sample.read_image(monkeypatch, tmp_path, kind, cells=cells)
+    assert result.fields["발급일"] == sample.ISSUE
+    assert result.fields["양식판독상태"] == "완전"
+    assert not result.fields.get("판독검증실패")
+    assert sample.verdict(result).status == "PASS"

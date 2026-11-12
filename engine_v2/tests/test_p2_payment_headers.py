@@ -61,9 +61,27 @@ def test_partial_misordered_or_inconsistent_payment_stays_in_review(monkeypatch,
     result = sample.read_image(monkeypatch, tmp_path, "payment", cells=cells)
     assert result.fields["양식판독상태"] == "불완전"
     assert result.confidence <= .4
+    verdict = sample.verdict(result)
+    assert verdict.status == "NEEDS_REVIEW"
+    assert all(finding.severity != "FAIL" for finding in verdict.findings)
     failed = result.fields["판독검증실패"]
     if defect in {"missing-component", "swapped-components", "extra-component"}:
         assert "payment_component_headers" in failed and "payment_columns" in failed
     else:
         assert "monthly_total_matches" in failed
         assert "payment_column_1_sum" in failed
+
+
+def test_group_header_glyphs_on_four_lines_still_require_the_ordered_eight_columns(monkeypatch, tmp_path):
+    cells, _ = sample.document("payment")
+    fragmented = []
+    for x0, y0, x1, y1, text, confidence in cells:
+        if text not in {"고지금액", "납부금액"}:
+            fragmented.append((x0, y0, x1, y1, text, confidence))
+            continue
+        for index, glyph in enumerate(text):
+            fragmented.append((x0, y0 + index * 13, x1, y0 + index * 13 + 12, glyph, confidence))
+    result = sample.read_image(monkeypatch, tmp_path, "payment", cells=fragmented)
+    assert result.fields["양식판독상태"] == "완전"
+    assert not result.fields.get("판독검증실패")
+    assert sample.verdict(result).status == "PASS"

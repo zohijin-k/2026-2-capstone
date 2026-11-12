@@ -278,3 +278,18 @@ def read_image(monkeypatch, tmp_path, kind, *, cells=None):
     assert result is not None
     assert result.engine == "own"
     return result
+
+
+def verdict(result):
+    """Check the authored identity and supported form using normal demo rules."""
+    from datetime import date
+    from demo.backend.rules.doc_check import check_document
+    from demo.backend.rules.doc_types import DocType
+    from demo.backend.rules.identity import Identity
+    from demo.backend.rules.required_docs import DocRequirement
+
+    requirement = DocRequirement("fake", result.detected_doc_type, "가짜 시험서류",
+                                 recent_years=5 if result.detected_doc_type == DocType.NHIS_ACQUISITION_LOSS else None,
+                                 premium_months=["2025-10", "2025-11", "2025-12"]
+                                 if result.detected_doc_type == DocType.NHIS_PAYMENT else [])
+    return check_document(requirement, result, identity=Identity(NAME, date.fromisoformat(BIRTH)))
