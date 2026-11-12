@@ -3,9 +3,9 @@
   "name": "fail-cases",
   "title": "Reject confirmed document and eligibility failure cases",
   "description": "Reject confirmed upload defects, assess provisional work continuity, and block certain income, age and work ineligibility before submission.",
-  "status": "in_progress",
-  "dev_type": null,
-  "scope": null,
+  "status": "review",
+  "dev_type": "fullstack",
+  "scope": "document-validation",
   "package": null,
   "priority": "P2",
   "creator": "codex",
@@ -20,7 +20,35 @@
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "changed-test-expectations.md",
+    "research/eligibility.md",
+    "research/daily-record.md",
+    "research/address-resolution.md",
+    "research/final-review.md",
+    "research/scenario-expectations.md",
+    "research/tiny-baseline-replay.md"
+  ],
+  "notes": "Implementation and complete verification finished; awaiting user verification. No push/PR/archive. Baseline cdcf68d; code verified at 4536155; preexisting untracked docs/audit excluded.",
+  "meta": {
+    "implementation_complete": true,
+    "code_review_complete": true,
+    "awaiting_user_verification": true,
+    "work_policy_provisional": true,
+    "verification": {
+      "engine_passed": 1236,
+      "engine_skipped": 3,
+      "backend_passed": 885,
+      "scenario_passed": 1885,
+      "scenario_failed": 0,
+      "scenario_modules": 18,
+      "p14_exit_code": 0,
+      "frontend_lint": "passed with preexisting warning",
+      "frontend_build": "passed with preexisting bundle warning"
+    },
+    "source_commit": "4536155"
+  }
 }
