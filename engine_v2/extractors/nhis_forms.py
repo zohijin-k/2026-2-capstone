@@ -110,3 +110,79 @@ def person_table_header(page, result, anchor: str) -> common.PageHeader:
     else:
         header.birth = header.birth_words = None
     return header
+
+
+def label_hits(lines, aliases):
+    """Compare spaced labels without joining or changing source value tokens.
+
+    Separate one-character glyphs must share a line and reasonably regular
+    spacing. Larger word fragments may form a label, but not across a cell gap.
+    Legacy readers retain their existing common.label_hits behavior.
+    """
+    from statistics import median
+
+    found = []
+    for row in lines:
+        for alias, words in common.label_hits([row], aliases):
+            widths = [(w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words]
+            scale = median(widths)
+            gaps = [b.x0 - a.x1 for a, b in zip(words, words[1:])]
+            if any(gap > 2.5 * scale for gap in gaps):
+                continue
+            glyphs = all(len(squash(w.text)) == 1 for w in words)
+            if glyphs and len(gaps) > 1 and max(gaps) - min(gaps) > scale:
+                continue
+            found.append((alias, words))
+    return found
+
+
+def table_columns(headers, body):
+    """Map ordered headers to persistent empty vertical corridors in body words.
+
+    Header centers only establish column order and which pair a corridor can
+    separate; body interval edges supply every actual boundary. Multiple equally
+    plausible corridors, overlaps without a gap, or missing evidence return None.
+    Marker cells can supply evidence for otherwise empty optional columns.
+    """
+    from statistics import median
+
+    if not headers or any(not words for words in headers):
+        return None
+    centers = [(min(w.x0 for w in words) + max(w.x1 for w in words)) / 2 for words in headers]
+    if any(a >= b for a, b in zip(centers, centers[1:])):
+        return None
+    words = [w for row in body for w in row if w.text.strip()]
+    if not words:
+        return None
+    scale = median((w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words)
+    intervals = []
+    for left, right in sorted((w.x0, w.x1) for w in words):
+        if intervals and left <= intervals[-1][1]:
+            intervals[-1][1] = max(intervals[-1][1], right)
+        else:
+            intervals.append([left, right])
+    gaps = [(a[1], b[0]) for a, b in zip(intervals, intervals[1:])]
+    boundaries = [float('-inf')]
+    for left, right in zip(centers, centers[1:]):
+        candidates = sorted(((b - a, a, b) for a, b in gaps
+                             if left < (a + b) / 2 < right and b - a >= scale), reverse=True)
+        if not candidates:
+            return None
+        width, a, b = candidates[0]
+        if len(candidates) > 1 and width - candidates[1][0] <= scale:
+            return None
+        boundaries.append((a + b) / 2)
+    boundaries.append(float('inf'))
+    return boundaries
+
+
+def column_cells(words, boundaries):
+    """Use full word intervals; an overlapping boundary is incomplete evidence."""
+    cells = [[] for _ in range(len(boundaries) - 1)]
+    for word in words:
+        matches = [i for i, (a, b) in enumerate(zip(boundaries, boundaries[1:]))
+                   if a <= word.x0 and word.x1 <= b]
+        if len(matches) != 1:
+            return None
+        cells[matches[0]].append(word)
+    return cells
