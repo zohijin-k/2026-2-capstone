@@ -212,10 +212,12 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
         bands[nearest].append(word)
 
     values = []
+    grammar_ok = rows_ok
     for month, band in zip(months, bands):
         cells = forms.column_cells(band, boundaries)
         if cells is None or squash(_text(cells[0])) != squash(month.text):
             rows_ok = False
+            grammar_ok = False
             continue
         row_values = []
         for column, cell in enumerate(cells[1:], 1):
@@ -223,6 +225,7 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
                                           row=squash(month.text), column=column, corrections=corrections)
             required = column not in OPTIONAL_COLUMNS
             rows_ok &= numeric and (amount is not None or not required)
+            grammar_ok &= numeric
             row_values.append(amount)
         values.append(row_values)
     checks.append(common.Validation("monthly_amounts_numeric", rows_ok and len(values) == 12))
@@ -236,15 +239,23 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
             total_numeric &= numeric and (amount is not None or column in OPTIONAL_COLUMNS)
             totals.append(amount)
     matches = []
+    absence_matches = []
     for column in range(8):
         observed = [row[column] for row in values]
         total = totals[column] if len(totals) == 8 else None
         empty = not any(value is not None for value in observed)
         matches.append(total_numeric and rows_ok and len(values) == 12 and
                        ((empty and total is None) or (total is not None and sum(value or 0 for value in observed) == total)))
+        absence_matches.append(total_numeric and grammar_ok and len(values) == 12 and
+                               ((empty and total is None and column + 1 in OPTIONAL_COLUMNS) or
+                                (total is not None and all(value is None or value >= 0 for value in observed) and
+                                 sum(value or 0 for value in observed) == total)))
     checks.append(common.Validation("monthly_total_matches", all(matches)))
     for column, matched in enumerate(matches, 1):
         checks.append(common.Validation(f"payment_column_{column}_sum", bool(matched)))
+    anchors = [word for group in groups + headers for word in group] + months + sums
+    checks.append(common.Validation("payment_billing_absence_certain",
+                                    all(absence_matches) and all(word.conf >= .85 for word in anchors)))
     return values, totals, corrections, checks
 
 

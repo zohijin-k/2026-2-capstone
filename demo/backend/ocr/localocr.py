@@ -347,6 +347,9 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
     detected = detected_override or detected_map.get(ex.detected_type)
     if detected == DocType.NHIS_PAYMENT:
         from engine_v2.extractors.nhis_payment import has_failed_payment_validation
+        from engine_v2.extractors.payment_period import FIELD, collect
+
+        fields[FIELD] = json.dumps(collect(pages, ex), ensure_ascii=False, separators=(",", ":"))
 
         if has_failed_payment_validation(fields):
             confidence = min(confidence, .4)

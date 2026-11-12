@@ -367,6 +367,64 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
     return []
 
 
+def _check_billing_months(ocr: OcrResult, req: DocRequirement) -> list[CheckFinding]:
+    """Reject only independently proven range or bounded amount omissions."""
+    from engine_v2.extractors.payment_period import FIELD
+
+    def review():
+        finding = _finding(
+            CODE_MISSING_BILLING_MONTHS,
+            "납부확인서의 조회기간 또는 심사 대상 고지월을 확실하게 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+            req, months=format_month_ranges(req.premium_months),
+        )
+        finding.severity = "NEEDS_REVIEW"
+        finding.how_to_fix = RETAKE_GUIDANCE
+        return [finding]
+
+    raw = ocr.fields.get(FIELD)
+    if raw is not None:
+        try:
+            data = json.loads(raw)
+            period = data.get("period")
+            if (data.get("version") != 1 or data.get("status") != "READABLE" or
+                    not isinstance(period, list) or len(period) != 2 or
+                    any(not isinstance(value, str) or len(value) != 7 or
+                        date.fromisoformat(value + "-01").strftime("%Y-%m") != value for value in period) or
+                    period[0] > period[1]):
+                return review()
+            missing = [month for month in req.premium_months if not period[0] <= month <= period[1]]
+            if not missing and data.get("amounts_certain") is True:
+                absent = data.get("absent_amount_months")
+                if not isinstance(absent, list) or any(not isinstance(value, str) for value in absent):
+                    return review()
+                missing = [month for month in req.premium_months if month in absent]
+            if missing:
+                rendered = format_month_ranges(missing)
+                finding = _finding(
+                    CODE_MISSING_BILLING_MONTHS,
+                    f"납부확인서에 심사 대상 고지월 {rendered}의 고지금액이 없어 평균 보험료를 계산할 수 없습니다.",
+                    req, months=rendered,
+                )
+                finding.detail = (f"독립 판독 조회기간 {period[0]}~{period[1]}; "
+                                  "제목·월 행 모순 없음. 금액 부재는 표 머리글·열·합계 검증 근거에 한함.")
+                return [finding]
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return review()
+
+    # Historical fields without independent range evidence retain their good
+    # monthly maps, but absence/corruption cannot establish a certain rejection.
+    raw_months = ocr.fields.get("월별고지금액")
+    if raw_months is None:
+        return review()
+    try:
+        found = json.loads(raw_months)
+        if not isinstance(found, dict) or any(month not in found for month in req.premium_months):
+            return review()
+    except (ValueError, TypeError):
+        return review()
+    return []
+
+
 def _check_document(
     req: DocRequirement,
     ocr: OcrResult,
@@ -576,22 +634,9 @@ def _check_document(
                     )
                 )
 
-    if req.slot_key == "nhis_payment" and req.premium_months and ocr.fields.get("월별고지금액"):
-        try:
-            found = json.loads(ocr.fields["월별고지금액"])
-            missing = [month for month in req.premium_months if month not in found]
-        except (ValueError, TypeError):
-            missing = list(req.premium_months)
-        if missing:
-            rendered = format_month_ranges(missing)
-            finding = _finding(
-                CODE_MISSING_BILLING_MONTHS,
-                f"납부확인서에 심사 대상 고지월 {rendered}이 없어 평균 보험료를 계산할 수 없습니다.",
-                req, months=rendered,
-            )
-            if ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
-                _uncertain(finding)
-            findings.append(finding)
+    if (not ocr.is_encrypted and ocr.detected_doc_type is DocType.NHIS_PAYMENT
+            and req.slot_key == "nhis_payment" and req.premium_months):
+        findings.extend(_check_billing_months(ocr, req))
 
     if (not ocr.is_encrypted and req.slot_key == "nhis_acquisition_loss" and req.recent_years
             and (ocr.fields.get("자격이력자료") or ocr.tier != "fixture")):

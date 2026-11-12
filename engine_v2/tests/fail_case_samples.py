@@ -89,8 +89,22 @@ def tiny_unknown():
 
 def missing_payment_months():
     cells,size=payment()
-    cells = [(x0,y0,x1,y1,"2024년 01월 ~ 2024년 09월 납부내역" if "2025년 10월" in text else text,c)
-             for x0,y0,x1,y1,text,c in cells if text not in {"보수외", "월별"}]
+    # Keep all actual positive amounts inside the printed query range. The
+    # annual template still prints twelve month labels with outside zeros.
+    authored = []
+    for x0,y0,x1,y1,text,c in cells:
+        if text in {"보수외", "월별"}:
+            continue
+        if "2025년 10월" in text:
+            text = "2024년 01월 ~ 2024년 09월 납부내역"
+        if 962 <= y0 <= 1660 and x0 > 300:
+            row = round((y0 - 962) / 59) + 1
+            if row in (10,11,12):
+                text = "0"
+            elif row in (1,2,3) and text == "0":
+                text = str({1:100000,2:20000,3:30000}[row] // (10 if 550 < x0 < 700 or 1350 < x0 < 1500 else 1))
+        authored.append((x0,y0,x1,y1,text,c))
+    cells = authored
     return [form_page(cells,size=size)]
 
 
