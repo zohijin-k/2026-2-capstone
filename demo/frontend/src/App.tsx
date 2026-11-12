@@ -13,7 +13,7 @@
 
 import { useState } from 'react'
 
-import ApplyFlow from './pages/applicant/ApplyFlow.tsx'
+import ApplyFlow, { APPLICANT_SESSION_KEY } from './pages/applicant/ApplyFlow.tsx'
 import OfficerConsole from './pages/officer/OfficerConsole.tsx'
 import './app-shell.css'
 
@@ -25,13 +25,21 @@ const MODES: { key: Mode; label: string }[] = [
 ]
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>('applicant')
+  const [mode, setMode] = useState<Mode>(() => window.sessionStorage.getItem('demo-mode') === 'officer' ? 'officer' : 'applicant')
   /** 값이 바뀌면 신청자 화면이 새로 마운트돼 사업 선택 화면으로 돌아간다. */
   const [applicantKey, setApplicantKey] = useState(0)
 
   const pick = (next: Mode) => {
-    if (next === 'applicant') setApplicantKey((k) => k + 1)
     setMode(next)
+    window.sessionStorage.setItem('demo-mode', next)
+    window.scrollTo({ top: 0 })
+  }
+
+  const goHome = () => {
+    window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
+    window.sessionStorage.setItem('demo-mode', 'applicant')
+    setMode('applicant')
+    setApplicantKey((key) => key + 1)
     window.scrollTo({ top: 0 })
   }
 
@@ -39,9 +47,9 @@ export default function App() {
     <>
       <nav className="shell" aria-label="화면 전환">
         <span className="shell__title">
-          <span className="shell__mark" aria-hidden="true">
+          <button className="shell__mark" type="button" onClick={goHome} aria-label="처음 화면으로 이동">
             전북
-          </span>
+          </button>
           <span>
             <strong>청년 지원사업 신청서류 자동 검토</strong>
             <small>전북청년 함께 두배적금 · 전북청년 취업지원패키지</small>

@@ -198,6 +198,7 @@ export interface ApplicationRow {
   form1_json: Record<string, unknown>
   self_check_json: Record<string, string>
   form5_json: Record<string, unknown>
+  identity_json: Partial<Identity> | null
 }
 
 export interface SelfCheckResult {
@@ -461,6 +462,12 @@ export const createApplication = (programCode: string) =>
     method: 'POST',
     body: JSON.stringify({ program_code: programCode }),
   })
+
+export const fetchApplication = (id: number) =>
+  json<ApplicationRow>(`/api/applications/${id}`)
+
+export const fetchApplicationConsents = (id: number) =>
+  json<{ consent_type: string; agreed: boolean }[]>(`/api/applications/${id}/consents`)
 
 export const patchApplication = (
   id: number,

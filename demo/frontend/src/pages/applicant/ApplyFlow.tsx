@@ -17,10 +17,15 @@
  *
  */
 
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   createApplication,
+  fetchApplication,
+  fetchApplicationConsents,
+  fetchPrograms,
+  fetchStatus,
+  fetchSubsidyItems,
   patchApplication,
   postConsents,
   postSelfCheck,
@@ -39,8 +44,9 @@ import ProgramPicker from './ProgramPicker.tsx'
 import SubsidyItems from './SubsidyItems.tsx'
 import PdfFormsWorkspace, { ApplicantFormsBulkMenu } from '../../forms/PdfFormsWorkspace.tsx'
 import { EMPTY_CONSENT, type ConsentValue } from '../../forms/consent-model.ts'
+import { CONSENT_OPTIONS } from '../../forms/consent-model.ts'
 import { EMPTY_FORM1, type Form1Value } from '../../forms/form1-model.ts'
-import { EMPTY_FORM5, type Form5Value, type SignMode } from '../../forms/form5-model.ts'
+import { EMPTY_FORM5, SIGN_MODES, type Form5Value, type SignMode } from '../../forms/form5-model.ts'
 import type { SelfCheckAnswers } from '../../forms/form2-model.ts'
 import './apply-flow.css'
 
@@ -53,6 +59,24 @@ type Stage =
   | 'final'
   | 'complete'
   | 'mypage'
+
+export const APPLICANT_SESSION_KEY = 'demo-applicant-page'
+
+function savedPage(): { appId: number; stage: Stage; previous: Stage } | null {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(APPLICANT_SESSION_KEY) ?? 'null') as
+      { appId?: unknown; stage?: unknown; previous?: unknown } | null
+    const stages: Stage[] = ['identity', 'forms', 'subsidy', 'upload', 'final', 'complete', 'mypage']
+    if (!value || !Number.isSafeInteger(value.appId) || Number(value.appId) <= 0 || !stages.includes(value.stage as Stage)) return null
+    return {
+      appId: Number(value.appId),
+      stage: value.stage as Stage,
+      previous: stages.includes(value.previous as Stage) ? value.previous as Stage : 'identity',
+    }
+  } catch {
+    return null
+  }
+}
 
 type Step = { key: 'identity' | 'forms' | 'upload' | 'final'; label: string }
 type StepperProgress = { completed: number; total: number }
@@ -87,6 +111,8 @@ function consentTypesOf(program: Program): ConsentType[] {
 }
 
 export default function ApplyFlow() {
+  const [initialPage] = useState(savedPage)
+  const [restoring, setRestoring] = useState(initialPage !== null)
   const [program, setProgram] = useState<Program | null>(null)
   const [appId, setAppId] = useState<number | null>(null)
   const [appNo, setAppNo] = useState('')
@@ -114,6 +140,75 @@ export default function ApplyFlow() {
   const [formProgress, setFormProgress] = useState<StepperProgress>({ completed: 0, total: 0 })
   const [uploadProgress, setUploadProgress] = useState<StepperProgress>({ completed: 0, total: 0 })
   const saveQueue = useRef<Promise<void>>(Promise.resolve())
+
+  useEffect(() => {
+    if (!initialPage) return
+    let active = true
+    const restore = async () => {
+      try {
+        const [application, programs, consents, status] = await Promise.all([
+          fetchApplication(initialPage.appId),
+          fetchPrograms(),
+          fetchApplicationConsents(initialPage.appId),
+          fetchStatus(initialPage.appId),
+        ])
+        const picked = programs.find((item) => item.code === application.program_code)
+        if (!picked) throw new Error('Program unavailable')
+        const subsidy = picked.has_subsidy_items ? await fetchSubsidyItems(initialPage.appId) : null
+        if (!active) return
+        setProgram(picked)
+        setAppId(application.id)
+        setAppNo(application.application_no)
+        const savedIdentity = application.identity_json
+        setIdentity(savedIdentity?.name && savedIdentity.birth ? savedIdentity as Identity : null)
+        setForm1({ ...EMPTY_FORM1, ...application.form1_json } as Form1Value)
+        setAnswers(application.self_check_json as SelfCheckAnswers)
+        setForm5({ ...EMPTY_FORM5, ...application.form5_json } as Form5Value)
+        setSignMode(application.form5_json.signatureScanUploaded ? SIGN_MODES[1] : SIGN_MODES[0])
+        setSelectedSubsidyTypes(subsidy?.selections.length ?? 0)
+        const consentValue = (type: string) => {
+          const item = consents.find((row) => row.consent_type === type)
+          return item ? CONSENT_OPTIONS[item.agreed ? 0 : 1] : ''
+        }
+        setConsent({
+          privacy: consentValue('privacy'),
+          uniqueId: consentValue('unique_id'),
+          thirdParty: consentValue('third_party'),
+        })
+        if (status.status !== 'draft') {
+          setSubmitted({
+            application_no: status.application_no,
+            submitted_at: status.submitted_at,
+            status: status.status,
+            message: '신청이 완료되었습니다.',
+            next_steps: [],
+            first_come: status.first_come,
+            supplement: status.supplement,
+            subsidy: status.subsidy,
+            notice: status.result_notice,
+          })
+        }
+        setStage(initialPage.stage === 'complete' && status.status === 'draft' ? 'final' : initialPage.stage)
+        setStageBeforeMypage(initialPage.previous)
+      } catch {
+        if (!active) return
+        window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
+      } finally {
+        if (active) setRestoring(false)
+      }
+    }
+    void restore()
+    return () => { active = false }
+  }, [initialPage])
+
+  useEffect(() => {
+    if (restoring) return
+    if (appId === null || stage === 'program') {
+      window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
+    } else {
+      window.sessionStorage.setItem(APPLICANT_SESSION_KEY, JSON.stringify({ appId, stage, previous: stageBeforeMypage }))
+    }
+  }, [appId, stage, stageBeforeMypage, restoring])
 
   const reportFormProgress = useCallback((completed: number, total: number) => {
     setFormProgress({ completed, total })
@@ -199,6 +294,7 @@ export default function ApplyFlow() {
     window.scrollTo({ top: 0 })
   }
 
+  if (restoring) return <p className="flow">신청 화면을 불러오는 중입니다...</p>
   if (error) return <p className="flow-error">{error}</p>
 
   if (program === null || stage === 'program') {

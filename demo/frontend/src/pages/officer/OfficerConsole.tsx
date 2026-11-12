@@ -27,23 +27,50 @@ import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './officer.css'
 
 const DEFAULT_QUERY: OfficerListQuery = { role: 'province', page: 1, page_size: 20 }
+const OFFICER_SESSION_KEY = 'demo-officer-page'
+
+function savedOfficerPage(): {
+  query: OfficerListQuery
+  open: { id: number; slot: string | null } | null
+  showCriteria: boolean
+  criteriaProgram: string
+} | null {
+  try {
+    const value = JSON.parse(window.sessionStorage.getItem(OFFICER_SESSION_KEY) ?? 'null') as {
+      query?: OfficerListQuery
+      open?: { id: number; slot: string | null } | null
+      showCriteria?: boolean
+      criteriaProgram?: string
+    } | null
+    if (!value?.query || typeof value.query.role !== 'string' || !Number.isSafeInteger(value.query.page)) return null
+    return {
+      query: value.query,
+      open: value.open && Number.isSafeInteger(value.open.id) ? value.open : null,
+      showCriteria: value.showCriteria === true,
+      criteriaProgram: value.criteriaProgram === 'job_package' ? 'job_package' : 'double_savings',
+    }
+  } catch {
+    return null
+  }
+}
 
 export default function OfficerConsole() {
+  const [initialPage] = useState(savedOfficerPage)
   const [roles, setRoles] = useState<OfficerRole[]>([])
-  const [query, setQuery] = useState<OfficerListQuery>(DEFAULT_QUERY)
+  const [query, setQuery] = useState<OfficerListQuery>(initialPage?.query ?? DEFAULT_QUERY)
   const [list, setList] = useState<OfficerList | null>(null)
   /**
    * 열려 있는 심사 건. `slot`은 목록의 서류 칸을 눌러 들어왔을 때 띄울 서류다 —
    * 행을 눌러 들어오면 null이고 상세가 첫 서류를 연다.
    */
-  const [open, setOpen] = useState<{ id: number; slot: string | null } | null>(null)
+  const [open, setOpen] = useState<{ id: number; slot: string | null } | null>(initialPage?.open ?? null)
   const [selected, setSelected] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   /** 목업으로 넘어갔는지는 목록을 한 번 읽어 봐야 안다 — 응답이 온 뒤에 다시 잰다. */
   const [mock, setMock] = useState(isOfficerMockActive())
-  const [showCriteria, setShowCriteria] = useState(false)
-  const [criteriaProgram, setCriteriaProgram] = useState('double_savings')
+  const [showCriteria, setShowCriteria] = useState(initialPage?.showCriteria ?? false)
+  const [criteriaProgram, setCriteriaProgram] = useState(initialPage?.criteriaProgram ?? 'double_savings')
   const showListSkeleton = useDelayedFlag(!list && !error && !showCriteria && open === null)
 
   useEffect(() => {
@@ -63,6 +90,10 @@ export default function OfficerConsole() {
   }, [query])
 
   useEffect(reload, [reload])
+
+  useEffect(() => {
+    window.sessionStorage.setItem(OFFICER_SESSION_KEY, JSON.stringify({ query, open, showCriteria, criteriaProgram }))
+  }, [query, open, showCriteria, criteriaProgram])
 
   const patch = (next: Partial<OfficerListQuery>) => {
     setQuery((prev) => ({ ...prev, ...next }))

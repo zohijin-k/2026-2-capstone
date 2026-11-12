@@ -22,9 +22,7 @@ Questions to answer:
 
 ## State Categories
 
-<!-- Local state, global state, server state, URL state -->
-
-(To be filled by the team)
+The demo uses React component state for the active applicant and officer screens. Keep only navigation coordinates (mode, application ID, stage, and officer view) in tab-scoped `sessionStorage` so refresh can restore the screen. Fetch application data and consent values from the API when restoring an applicant draft; do not duplicate forms or identity data in browser storage.
 
 ---
 

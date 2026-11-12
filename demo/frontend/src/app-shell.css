@@ -20,6 +20,7 @@
 
 /* 도 이름을 새긴 작은 인장 — 관공서 서비스임을 한눈에 */
 .shell__mark {
+  padding: 0;
   flex: none;
   display: grid;
   place-items: center;
@@ -27,9 +28,18 @@
   height: 32px;
   border: 1.5px solid rgb(255 255 255 / 85%);
   border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
   font-size: 11.5px;
+  font-family: inherit;
   font-weight: 800;
   letter-spacing: -0.02em;
+}
+
+.shell__mark:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
 }
 
 .shell__title > span:last-child {
