@@ -32,7 +32,7 @@ DOC_TYPE_KEYWORDS: list[tuple[DocType, tuple[str, ...]]] = [
     (DocType.NHIS_QUALIFICATION, ("자격확인서", "건강보험자격확인")),
     (DocType.NHIS_PAYMENT, ("보험료납부확인서", "건강보험료납부확인")),
     (DocType.INSURANCE_4, ("4대사회보험가입자가입내역확인서", "4대사회보험정보연계")),
-    (DocType.DAILY_WORK_RECORD, ("일용근로내역",)),
+    (DocType.DAILY_WORK_RECORD, ("일용근로내역", "일용근로·노무제공내역서", "일용근로ㆍ노무제공내역서", "일용근로노무제공내역서")),
     (DocType.BIZ_REG_PROOF, ("사업자등록증명",)),
     (DocType.BIZ_REG_CERT, ("사업자등록증",)),
     (DocType.FARM_BIZ_CERT, ("농업경영체",)),
@@ -120,6 +120,9 @@ def classify_pages_with_evidence(pages) -> tuple[DocType | None, str]:
     detected, evidence = classify_with_evidence("\n".join(r.text for _, r in pages))
     if detected is not None:
         return detected, evidence
+    from engine_v2.extractors.daily_work_record import recognizes
+    if recognizes(pages):
+        return DocType.DAILY_WORK_RECORD, "좌표상 상단 일용근로·노무제공내역서 제목을 확인했습니다."
     from engine_v2.pipeline.resident_title import classify_resident_title
     kind, fallback_evidence = classify_resident_title(pages)
     if kind is None:

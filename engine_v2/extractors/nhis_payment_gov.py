@@ -196,7 +196,7 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
     checks.append(common.Validation("payment_columns", boundaries is not None))
     checks.append(common.Validation("payment_sum_row", bool(sums) and bool(months) and sum_y > months[-1].cy))
     if not months_ok or boundaries is None or not sums or sum_y <= months[-1].cy:
-        return [], [], corrections, checks
+        return [], [], corrections, checks, {}
 
     row_height = min(b.cy - a.cy for a, b in zip(months, months[1:]))
     bands = [[] for _ in months]
@@ -212,10 +212,13 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
         bands[nearest].append(word)
 
     values = []
+    absence_states = {}
+    grammar_ok = rows_ok
     for month, band in zip(months, bands):
         cells = forms.column_cells(band, boundaries)
         if cells is None or squash(_text(cells[0])) != squash(month.text):
             rows_ok = False
+            grammar_ok = False
             continue
         row_values = []
         for column, cell in enumerate(cells[1:], 1):
@@ -223,8 +226,17 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
                                           row=squash(month.text), column=column, corrections=corrections)
             required = column not in OPTIONAL_COLUMNS
             rows_ok &= numeric and (amount is not None or not required)
+            grammar_ok &= numeric
             row_values.append(amount)
         values.append(row_values)
+        if row_values[0] == 0:
+            # Arithmetic proves the table, but an uncertain OCR zero can still
+            # conceal a nonzero value. Preserve confidence for this month only.
+            absence_states[int(MONTH.fullmatch(squash(month.text))[1])] = (
+                "ZERO_CONFIRMED" if all(word.conf >= .85 for word in cells[1]) else "ZERO_UNCERTAIN")
+        elif row_values[0] is None and not cells[1]:
+            # This is an observed empty bounded cell, not a failed numeric read.
+            absence_states[int(MONTH.fullmatch(squash(month.text))[1])] = "BLANK_CONFIRMED"
     checks.append(common.Validation("monthly_amounts_numeric", rows_ok and len(values) == 12))
     sum_cells = forms.column_cells(sum_words, boundaries)
     totals = []
@@ -236,16 +248,27 @@ def _monthly_table(lines, *, allow_correction, metadata_bottom):
             total_numeric &= numeric and (amount is not None or column in OPTIONAL_COLUMNS)
             totals.append(amount)
     matches = []
+    absence_matches = []
     for column in range(8):
         observed = [row[column] for row in values]
         total = totals[column] if len(totals) == 8 else None
         empty = not any(value is not None for value in observed)
         matches.append(total_numeric and rows_ok and len(values) == 12 and
                        ((empty and total is None) or (total is not None and sum(value or 0 for value in observed) == total)))
+        absence_matches.append(total_numeric and grammar_ok and len(values) == 12 and
+                               ((empty and total is None and column + 1 in OPTIONAL_COLUMNS) or
+                                (total is not None and all(value is None or value >= 0 for value in observed) and
+                                 sum(value or 0 for value in observed) == total)))
     checks.append(common.Validation("monthly_total_matches", all(matches)))
     for column, matched in enumerate(matches, 1):
         checks.append(common.Validation(f"payment_column_{column}_sum", bool(matched)))
-    return values, totals, corrections, checks
+    if not all(word.conf >= .85 for cell in (sum_cells or [])[1:] for word in cell):
+        absence_states = {month: "BLANK_UNCERTAIN" if state == "BLANK_CONFIRMED" else "ZERO_UNCERTAIN"
+                          for month, state in absence_states.items()}
+    anchors = [word for group in groups + headers for word in group] + months + sums
+    checks.append(common.Validation("payment_billing_absence_certain",
+                                    all(absence_matches) and all(word.conf >= .85 for word in anchors)))
+    return values, totals, corrections, checks, absence_states
 
 
 def extract(pages, today=None):
@@ -316,7 +339,7 @@ def extract(pages, today=None):
 
     allow_correction = all(page.source != PageSource.TEXT_LAYER and result.engine != "text_layer" for page, result in pages)
     metadata_bottom = max((word.y1 for row in period_rows for word in row), default=0)
-    values, totals, corrections, table_checks = _monthly_table(
+    values, totals, corrections, table_checks, absence_states = _monthly_table(
         lines, allow_correction=allow_correction, metadata_bottom=metadata_bottom)
     checks.extend(table_checks)
     bottom = _value_cells(lines, "납부총액", "용도구분")
@@ -331,6 +354,11 @@ def extract(pages, today=None):
         put("납부총액", str(grand_total), bottom[0])
     paid_matches = total_ok and grand_total is not None and len(totals) == 8 and grand_total == sum(value or 0 for value in totals[4:])
     checks.append(common.Validation("paid_total_matches", bool(paid_matches)))
+    if not bottom or any(word.conf < .85 for word in bottom[0]):
+        # Numeric sums corroborate absence only when their own read is certain.
+        # This metadata does not alter the established form completeness checks.
+        absence_states = {month: "BLANK_UNCERTAIN" if state.startswith("BLANK_") else "ZERO_UNCERTAIN"
+                          for month, state in absence_states.items()}
 
     issue, issue_words, issue_ok = forms.confirmation_issue_date(*pages[0]) if len(pages) == 1 else (None, [], False)
     checks.append(common.Validation("발급일_consistent", issue_ok))
@@ -370,4 +398,6 @@ def extract(pages, today=None):
             extracted.confidence = min(extracted.confidence, .4)
     warnings = [] if complete else ["납부확인서의 필수 정보 또는 월별 금액·합계를 완전히 확인하지 못했습니다."]
     return PaymentResult(DocType.NHIS_PAYMENT, .95, fields, checks, warnings,
-                         form_kind="government_payment", structure_complete=complete)
+                         form_kind="government_payment", structure_complete=complete,
+                         billing_absence_states={f"{year}-{month:02}": state for month, state in absence_states.items()}
+                         if year is not None else {})

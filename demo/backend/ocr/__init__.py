@@ -54,7 +54,7 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
         result = fallback_result or OcrResult(
             detected_doc_type=None,
             confidence=0.0,
-            image_quality=0.5,
+            image_quality=1.0,  # Recognition failure is not an image measurement.
             fields={"판독실패": "자동 판독이 되지 않아 담당자가 직접 확인합니다."},
             tier="none",
         )
@@ -81,6 +81,10 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
 
     ensure_nhis_required_fields(result)
     ensure_business_required_fields(result)
+
+    from .file_evidence import attach_file_evidence, normalize_image_quality
+    attach_file_evidence(result, file_path)
+    normalize_image_quality(result, file_path)
 
     result.fields = mask_data(result.fields)
     result.fallback_reason = mask_rrn(result.fallback_reason)

@@ -13,6 +13,7 @@
 """
 
 import math
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -42,11 +43,13 @@ from ..models import (
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
 from ..rules.age_eligibility import assess_age
+from ..rules.eligibility_blockers import age_blockers, eligibility_blockers
+from ..rules.work_continuity import assess_work
 from ..rules.household import overlap_members, qualification_members
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria, supplement_for_application
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
-from ..rules.required_docs import upload_slots
+from ..rules.required_docs import DocRequirement, upload_slots
 from ..rules.scoring import ScoreSheet, score_application
 from ..rules.subsidy import get_limit
 from .common import (
@@ -108,6 +111,47 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, list):
         return len(value) > 0
     return bool(str(value or "").strip())
+
+
+def document_blockers(
+    checklist: Sequence[DocRequirement], documents: Sequence[Document],
+) -> list[dict[str, Any]]:
+    """Project missing/failed upload blockers without application lookups."""
+    items: list[dict[str, Any]] = []
+    by_slot = {d.slot_key: d for d in documents}
+
+    for req in upload_slots(checklist):
+        doc = by_slot.get(req.slot_key)
+        if doc is None:
+            if req.required:
+                items.append(
+                    {
+                        "kind": "document",
+                        "target": req.slot_key,
+                        "label": req.label,
+                        "message": f"'{req.label}'을(를) 아직 올리지 않았습니다.",
+                        "goto": "upload",
+                    }
+                )
+            continue
+        if doc.stage1_status == "FAIL":
+            reasons = list(dict.fromkeys(
+                finding["message"] for finding in (doc.findings_json or [])
+                if finding.get("severity", "FAIL") == "FAIL"
+                and isinstance(finding.get("message"), str) and finding["message"].strip()
+            ))
+            reason = "\n".join(reasons) or "부적합 판정입니다."
+            items.append(
+                {
+                    "kind": "document",
+                    "target": req.slot_key,
+                    "label": req.label,
+                    "message": reason,
+                    "goto": "upload",
+                }
+            )
+
+    return items
 
 
 def _blockers(app: Application) -> list[dict[str, Any]]:
@@ -206,33 +250,7 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
     documents = list_documents(app.id or 0)
     criteria_version = for_application(app)
     criteria = read_criteria(criteria_version)
-    by_slot = {d.slot_key: d for d in documents}
-
-    for req in upload_slots(checklist):
-        doc = by_slot.get(req.slot_key)
-        if doc is None:
-            if req.required:
-                items.append(
-                    {
-                        "kind": "document",
-                        "target": req.slot_key,
-                        "label": req.label,
-                        "message": f"'{req.label}'을(를) 아직 올리지 않았습니다.",
-                        "goto": "upload",
-                    }
-                )
-            continue
-        if doc.stage1_status == "FAIL":
-            reason = (doc.findings_json or [{}])[0].get("message", "부적합 판정입니다.")
-            items.append(
-                {
-                    "kind": "document",
-                    "target": req.slot_key,
-                    "label": req.label,
-                    "message": reason,
-                    "goto": "upload",
-                }
-            )
+    items.extend(document_blockers(checklist, documents))
 
     # 근로확인서류가 있는 사업에서만 근로유형을 묻는다. 취업패키지는 근로요건이
     # 없으므로 이 항목 자체가 없다.
@@ -249,6 +267,9 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
             }
         )
 
+    rows = [document_fact(d) for d in documents if d.slot_key != UNASSIGNED_SLOT]
+    items.extend(eligibility_blockers(program, form1, app.identity_json, rows,
+                 (app.doc_context_json or {}).get("work_category"), criteria))
     return items
 
 
@@ -554,10 +575,20 @@ def _run_review(app: Application) -> Review:
             "message": age.basis,
             "doc_type": None,
         })
+    work = assess_work(program, datetime.fromisoformat(criteria["announcement_date"]).date(),
+                       (app.doc_context_json or {}).get("work_category"), rows, app.identity_json)
+    if program.has_work_requirement:
+        payload["work_continuity"] = work.as_dict()
+        if work.reason_code:
+            payload.setdefault("reasons", []).append({
+                "stage": "stage2_eligibility", "code": work.reason_code,
+                "detail_codes": work.detail_codes, "message": work.basis, "doc_type": None,
+            })
     additional_statuses = (
         "NEEDS_REVIEW" if household_needs_review else "PASS",
         "NEEDS_REVIEW" if income_needs_review else "PASS",
         age.status,
+        work.review_status,
     )
     final_status = _merge_statuses(final_status, *additional_statuses)
     stage2_status = _merge_statuses(stage2_status, *additional_statuses)
@@ -726,9 +757,11 @@ def submit(application_id: int) -> dict[str, Any]:
 
     blockers = _blockers(app)
     if blockers:
+        rejection_messages = [item["message"] for item in blockers if item["kind"] in {"eligibility", "document"}]
         raise HTTPException(
             400,
-            f"아직 제출할 수 없습니다. 확인이 필요한 항목이 {len(blockers)}건 있습니다.",
+            f"아직 제출할 수 없습니다. 확인이 필요한 항목이 {len(blockers)}건 있습니다. "
+            + " ".join(rejection_messages),
         )
 
     review = _run_review(app)
@@ -820,6 +853,7 @@ def status(application_id: int) -> dict[str, Any]:
         "program_code": program.code,
         "program_name": program.name,
         "status": app.status,
+        "eligibility_blockers": age_blockers(program, app.form1_json or {}, app.identity_json),
         "submitted_at": (
             app.submitted_at.isoformat(timespec="seconds") if app.submitted_at else None
         ),

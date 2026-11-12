@@ -49,6 +49,9 @@ class PaymentResult:
     diagnostics: dict[str, str] = field(default_factory=dict)
     form_kind: str | None = None
     structure_complete: bool | None = None
+    # Independent zero/blank evidence; low-confidence annual placeholders do
+    # not invalidate a complete form or unrelated requested billing months.
+    billing_absence_states: dict[str, str] = field(default_factory=dict)
 
 
 def _money_words(line):

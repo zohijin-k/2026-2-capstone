@@ -25,6 +25,7 @@ from pathlib import Path
 from sqlmodel import create_engine, select
 
 from .. import models
+from .scenario_support import complete_synthetic_work, seed_blocked_historical_review
 from ..rules.programs import DOUBLE_SAVINGS
 from ..rules.roles import ROLE_CITY, ROLE_PROVINCE, ROLE_TOWN
 
@@ -121,7 +122,16 @@ def _create(client, *, name: str, address: str, transfer_in: dict, uploads: dict
                 files={"file": (filename, fh, "application/pdf")},
                 data={"slot_key": slot, "declared_issue_date": "2026-03-05"},
             )
-    client.post(f"/api/applications/{app_id}/submit")
+    complete_synthetic_work(app_id)
+    final=client.get(f"/api/applications/{app_id}/final-check").json()
+    submitted=client.post(f"/api/applications/{app_id}/submit")
+    if any(item.get("code")=="OVER_LIMIT" for item in final["blockers"]):
+        check("과거 부적합 fixture의 현재 제출은 차단",submitted.status_code,400)
+        check("확정 소득 초과 final-check 차단",final["can_submit"],False)
+        check_true("차단 응답에 기준·본인 금액",all(value in submitted.json()["detail"] for value in ("311,031","340,000")))
+        seed_blocked_historical_review(app_id,submitted)
+    else:
+        check("정상/확인필요 fixture 제출",submitted.status_code,200)
     return app_id
 
 
@@ -845,7 +855,20 @@ def test_applicant_still_blind(client, ids) -> None:
     print("\n[9] 담당자 화면이 생겨도 신청자 마이페이지에는 여전히 점수가 없다 (R5.3)")
     status = client.get(f"/api/applications/{ids['A']}/status").json()
     raw = json.dumps(status, ensure_ascii=False)
-    check("총점 숫자(99) 없음", "99" in raw, False)
+    from ..rules.facts import parse_ymd
+    expected_birth=parse_ymd(BASE_FORM1["birth"]).isoformat()
+    safe_status=json.loads(raw)
+    births=[]
+    for document in safe_status["documents"]:
+        extracted=document.get("extracted") or {}
+        if "생년월일" in extracted:
+            births.append(extracted["생년월일"])
+            if extracted["생년월일"]==expected_birth:
+                extracted["생년월일"]="FAKE-VERIFIED-BIRTH"
+    check("공개 판독 생년월일은 합성 본인 값",births,[expected_birth])
+    # Exempt only the asserted applicant birth; preserve the old substring
+    # assertion across every other field, including embedded score text.
+    check("총점 숫자(99) 없음", "99" in json.dumps(safe_status,ensure_ascii=False), False)
     check("점수 키 없음", any(k in status for k in ("total_score", "score_json", "score_sheet")), False)
     check("담당자 메모 없음", "구비서류 5종" in raw, False)
 

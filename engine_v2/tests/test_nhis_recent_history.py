@@ -37,8 +37,10 @@ def test_serialized_coverage_matches_evidence_and_structure(source, case, covere
     if case == "complete":
         assert history["period"] is None
         assert history["rows"] == [
-            {"category": "직장가입자", "acquired": "2030-01-01", "lost": None},
-            {"category": "지역세대주", "acquired": "2028-01-01", "lost": "2029-01-01"}]
+            {"category": "직장가입자", "acquired": "2030-01-01", "lost": None,
+             "acquired_confidence":.99,"lost_confidence":None},
+            {"category": "지역세대주", "acquired": "2028-01-01", "lost": "2029-01-01",
+             "acquired_confidence":.99,"lost_confidence":.99}]
         assert len(result.history) == 2
         assert result.history[1].lost < result.history[0].acquired  # exactly one gap
         assert result.history[1].acquired > date(2026, 7, 8)

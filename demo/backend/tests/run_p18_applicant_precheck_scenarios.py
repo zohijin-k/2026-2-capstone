@@ -46,6 +46,13 @@ def review(name, result, code):
     check(name + " 재촬영 안내", all(bool(f.how_to_fix) for f in result.findings), True)
 
 
+def quality_rejection(name, result):
+    check(name + " 상태", result.status, "FAIL")
+    check(name + " 사유", "LOW_IMAGE_QUALITY" in result.codes, True)
+    check(name + " 확정 화질 FAIL", any(f.code == "LOW_IMAGE_QUALITY" and f.severity == "FAIL" for f in result.findings), True)
+    check(name + " PDF 재발급 안내", any("PDF로 받아" in f.how_to_fix for f in result.findings if f.code == "LOW_IMAGE_QUALITY"), True)
+
+
 def resident_words(marker="1/1", *, name=IDENTITY.name, birth="1999-01-01", index=0):
     from engine_v2.tests.test_resident_abstract import header, row, table_head
 
@@ -145,15 +152,14 @@ def test_uncertainty(complete):
         payment = DocRequirement("nhis_payment", DocType.NHIS_PAYMENT, "납부확인서", premium_months=["2025-10", "2025-11"])
         ocr = OcrResult(DocType.NHIS_PAYMENT, confidence, fields={"월별고지금액": '{"2025-10":"100000"}'})
         result = check_document(payment, ocr)
-        check(f"월 누락 {confidence}", result.status, status)
-        if status == "NEEDS_REVIEW":
-            review("낮은 고지월 판독", result, "MISSING_BILLING_MONTHS")
+        check(f"월 누락 {confidence}", result.status, "NEEDS_REVIEW")
+        review("조회범위 없는 고지월 판독", result, "MISSING_BILLING_MONTHS")
     wrong = replace(complete, detected_doc_type=DocType.RESIDENT_CERTIFICATE, classification_confidence=threshold - 0.01)
     review("종류만 저신뢰", check_document(req, wrong), "WRONG_DOCUMENT_TYPE")
     history = DocRequirement("nhis_acquisition_loss", DocType.NHIS_ACQUISITION_LOSS, "자격득실확인서", recent_years=5)
     review("조회기간 미판독", check_document(history, OcrResult(DocType.NHIS_ACQUISITION_LOSS, 1.0, fields={"자격이력자료": "읽기실패"})), "NHIS_HISTORY_PERIOD_UNREADABLE")
     review("조회기간 자료 없음", check_document(history, OcrResult(DocType.NHIS_ACQUISITION_LOSS, 1.0)), "NHIS_HISTORY_PERIOD_UNREADABLE")
-    review("저화질", check_document(req, replace(complete, image_quality=engine_config.IMAGE_QUALITY_THRESHOLD - 0.01), identity=IDENTITY), "LOW_IMAGE_QUALITY")
+    quality_rejection("저화질", check_document(req, replace(complete, image_quality=engine_config.IMAGE_QUALITY_THRESHOLD - 0.01), identity=IDENTITY))
     for field in ("초본신청인성명", "초본신청인생년월일"):
         fields = dict(complete.fields)
         fields.pop(field)

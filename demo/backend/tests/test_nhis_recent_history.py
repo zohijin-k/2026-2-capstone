@@ -128,7 +128,9 @@ def test_short_explicit_period_is_fail_only_when_readable(confidence, quality):
             "coverage_basis": "query_period", "recent_five_years_covered": False}
     result = checked(data, confidence=confidence, quality=quality)
     certain = confidence >= .85 and quality >= .6
-    assert result.status == ("FAIL" if certain else "NEEDS_REVIEW")
+    assert result.status == ("FAIL" if certain or quality < .6 else "NEEDS_REVIEW")
+    if quality < .6:
+        assert next(f.severity for f in result.findings if f.code == "LOW_IMAGE_QUALITY") == "FAIL"
     finding = next(f for f in result.findings if f.code == "NHIS_HISTORY_PERIOD_MISSING")
     assert finding.severity == ("FAIL" if certain else "NEEDS_REVIEW")
     assert ("다시 발급" in finding.how_to_fix) is certain

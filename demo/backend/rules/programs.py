@@ -142,6 +142,10 @@ class ProgramConfig:
     total_quota: int | None = None
     #: 근로요건(계속 근로 중)이 자격요건에 있는가. 근로확인서류·근로기간 배점의 전제다.
     has_work_requirement: bool = True
+    #: 잠정 기준. 공고일부터 역산할 달 수는 이 설정 하나로 변경한다.
+    work_continuity_months: int | None = None
+    #: 자가진단 문구에 따른 사업자 개업일 인정 상한.
+    business_opening_deadline: date | None = None
     #: 지원 항목을 복수로 골라 실비를 정산하는 사업인가.
     has_subsidy_items: bool = False
     #: 제출 전에 비어 있으면 안 되는 신청서 항목 (키, 화면 표기).
@@ -370,6 +374,8 @@ PROGRAMS: dict[str, ProgramConfig] = {
         apply_period=(date(2026, 3, 3), date(2026, 3, 16)),
         quota_by_region=DOUBLE_SAVINGS_QUOTA,
         has_work_requirement=True,
+        work_continuity_months=5,
+        business_opening_deadline=date(2025, 9, 3),
         has_subsidy_items=False,
         required_form_fields=DOUBLE_SAVINGS_REQUIRED_FIELDS,
         summary_fields=(

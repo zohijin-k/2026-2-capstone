@@ -26,6 +26,8 @@ class HistoryRow:
     words: list[common.Word]
     page: int
     number: int | None = None
+    acquired_confidence: float | None = None
+    lost_confidence: float | None = None
 
 
 @dataclass
@@ -171,17 +173,22 @@ def _parse_history(pages):
             if not any(id(word) not in date_word_ids for word in line):
                 continue
             acquired = lost = None
+            acquired_confidence = lost_confidence = None
             for date_words, value in dates:
                 x = (min(word.x0 for word in date_words) + max(word.x1 for word in date_words)) / 2
                 if "acquired" in positions and "lost" in positions:
                     if abs(x - positions["acquired"]) <= abs(x - positions["lost"]):
                         acquired = value
+                        acquired_confidence = min(word.conf for word in date_words)
                     else:
                         lost = value
+                        lost_confidence = min(word.conf for word in date_words)
                 elif acquired is None:
                     acquired = value
+                    acquired_confidence = min(word.conf for word in date_words)
                 else:
                     lost = value
+                    lost_confidence = min(word.conf for word in date_words)
             category = ""
             employer = ""
             for word in line:
@@ -195,7 +202,8 @@ def _parse_history(pages):
                 if positions.get("employer") is not None and word.x0 >= positions["employer"]:
                     # 사업장명은 추출 결과 객체에만 보관하며 결과 필드·경고·로그에 넣지 않는다.
                     employer += word.text
-            rows.append(HistoryRow(category, acquired, lost, employer, line, page.page))
+            rows.append(HistoryRow(category, acquired, lost, employer, line, page.page,
+                                   acquired_confidence=acquired_confidence,lost_confidence=lost_confidence))
     return rows
 
 
@@ -386,7 +394,9 @@ def _nhis_history(pages):
             employer = line_text(employer_words)
             row_cells_read &= (number is not None and category in categories and acquired is not None
                                and (not lost_words or lost is not None) and employer_complete)
-            rows.append(HistoryRow(category, acquired, lost, employer, line, page.page, number))
+            rows.append(HistoryRow(category, acquired, lost, employer, line, page.page, number,
+                                   min((word.conf for word in acquired_words),default=None),
+                                   min((word.conf for word in lost_words),default=None)))
     checks.extend([
         common.Validation("nhis_history_cells_read", bool(rows) and row_cells_read),
         common.Validation("nhis_row_numbers_continuous", bool(rows) and
@@ -516,7 +526,8 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     history_data = {
         "period": [value.isoformat() for value in period] if period else None,
         "rows": [{"category": row.category, "acquired": row.acquired.isoformat() if row.acquired else None,
-                  "lost": row.lost.isoformat() if row.lost else None} for row in rows],
+                  "lost": row.lost.isoformat() if row.lost else None,
+                  "acquired_confidence":row.acquired_confidence,"lost_confidence":row.lost_confidence} for row in rows],
     }
     dates_read = bool(rows) and all(row.acquired is not None for row in rows)
     order_ok = all(row.acquired <= row.lost for row in rows if row.acquired and row.lost)

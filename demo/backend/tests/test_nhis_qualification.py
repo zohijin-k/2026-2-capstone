@@ -126,7 +126,8 @@ def test_mocked_image_notification_uses_the_same_coordinate_extractor(tmp_path, 
     ocr = chain.read_document(str(path), DocType.RESIDENT_ABSTRACT)
     assert ocr.tier == "localocr"
     assert ocr.detected_doc_type == DocType.NHIS_QUALIFICATION
-    assert ocr.fields == converted().fields
+    assert ocr.fields == {**converted().fields,
+        "원본이미지크기": '[{"page":0,"width":1000,"height":1400}]'}
     assert checked(ocr).status == "PASS"
 
 

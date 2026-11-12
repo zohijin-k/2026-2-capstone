@@ -14,7 +14,7 @@ from sqlmodel import select
 from ..models import Application, Consent, Document, SubsidyItem, get_session
 from ..rules.criteria import for_application, issue_bounds, issue_rule_label, read_criteria
 from ..rules.months import format_month_ranges
-from ..rules.programs import get_program
+from ..rules.programs import ProgramConfig, get_program
 from ..rules.required_docs import (
     ApplicantDocInput,
     DocRequirement,
@@ -94,12 +94,14 @@ def doc_context(app: Application) -> ApplicantDocInput:
     )
 
 
-def checklist_for(app: Application) -> list[DocRequirement]:
-    criteria = read_criteria(for_application(app))
-    rows = build_checklist(
-        get_program(app.program_code), doc_context(app), criteria["subsidy_catalog"]
-    )
-    application_date = (app.submitted_at or app.created_at).date()
+def checklist_from_inputs(
+    program: ProgramConfig,
+    context: ApplicantDocInput,
+    criteria: dict[str, Any],
+    application_date: date,
+) -> list[DocRequirement]:
+    """Build the upload checklist without database lookup or persistence."""
+    rows = build_checklist(program, context, criteria["subsidy_catalog"])
     for req in rows:
         basis = criteria["document_date_bases"].get(req.slot_key, req.date_basis)
         if req.slot_key not in {"resident_abstract"} and not any(
@@ -114,7 +116,7 @@ def checklist_for(app: Application) -> list[DocRequirement]:
         req.min_issue_date, req.max_issue_date = (
             issue_bounds(criteria, req.slot_key, application_date) if basis != "none" else (None, None)
         )
-        if req.slot_key == "admin_info_consent" and ((app.doc_context_json or {}).get("paper_forms") or {}).get("서식5"):
+        if req.slot_key == "admin_info_consent" and context.paper_admin_consent:
             req.check_declared_date = False
             req.min_issue_date = req.max_issue_date = None
             req.date_basis = "none"
@@ -136,6 +138,15 @@ def checklist_for(app: Application) -> list[DocRequirement]:
         elif req.slot_key == "nhis_acquisition_loss":
             req.notes.append(f"최근 {criteria['nhis_acquisition_loss_years']}년 변동내역이 포함되어야 합니다.")
     return rows
+
+
+def checklist_for(app: Application) -> list[DocRequirement]:
+    return checklist_from_inputs(
+        get_program(app.program_code),
+        doc_context(app),
+        read_criteria(for_application(app)),
+        (app.submitted_at or app.created_at).date(),
+    )
 
 
 def list_documents(application_id: int) -> list[Document]:

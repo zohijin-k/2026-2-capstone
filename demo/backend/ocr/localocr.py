@@ -88,7 +88,10 @@ def _import_v2():
 
 def _quality(pages) -> float:
     """해상도로 화질을 근사한다 (엔진 IMAGE_QUALITY_THRESHOLD 0.6과 비교)."""
-    dpis = [p.dpi for p in pages if p.dpi]
+    raster = [p for p in pages if getattr(p, "source", None) != "text_layer"]
+    if not raster:
+        return 1.0  # Scalable text has no raster DPI, even in synthetic adapters.
+    dpis = [p.dpi for p in raster if p.dpi]
     if not dpis:
         return 0.75  # 사진 업로드: 물리 크기를 몰라 중간값
     low = min(dpis)
@@ -123,6 +126,9 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     fields["쪽표기자료"] = json.dumps({
         "markers": ex.page_markers, "confidence": ex.page_marker_confidence,
     })
+    from engine_v2.extractors.address_dates import assess
+    if ex.detected_type == v2types.RESIDENT_ABSTRACT:
+        fields["주소날짜검증자료"] = json.dumps(assess(pages, type_confidence=ex.type_confidence), ensure_ascii=False)
 
     for v2key, label in (
         ("issue_date", "발급일"), ("name", "성명"), ("birth_date", "생년월일"),
@@ -179,6 +185,8 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
         bboxes=bboxes,
         page_count=len(pages),
         tier=NAME,
+        classification_confidence=ex.type_confidence,
+        classification_evidence=ex.classification_evidence,
     )
 
 
@@ -281,6 +289,40 @@ def ensure_business_required_fields(result: OcrResult) -> OcrResult:
     return result
 
 
+def _identity_source_confidence(ex, pages, *, include_issue=False) -> float:
+    """Preserve observed confidence inside the existing identity value boxes.
+
+    Extracted-field confidence primarily reflects structural checks. Fresh
+    work eligibility also needs reliable applicant identity tokens. Compare
+    geometry only: redacted/erased resident-number words retain their bounds.
+    Unrelated low-confidence seals and notices do not contribute.
+    """
+    keys = [key for key in ("성명",) if key in ex.fields]
+    birth = next((key for key in ("생년월일", "생년월일표기") if key in ex.fields), None)
+    if birth:
+        keys.append(birth)
+    if include_issue and "발급일" in ex.fields:
+        keys.append("발급일")
+    confidence = 1.0
+    for key in keys:
+        box = ex.fields[key].bbox
+        if box is None:
+            confidence = min(confidence, .4)
+            continue
+        source = []
+        for page, result in pages:
+            if page.page != box.page:
+                continue
+            for word in result.words:
+                x0,y0,x1,y1 = word.bbox_px
+                cx,cy = page.px_to_pt((x0+x1)/2,(y0+y1)/2)
+                # Field boxes are rounded to 0.1pt by the shared extractor.
+                if box.x0-.1 <= cx <= box.x1+.1 and box.y0-.1 <= cy <= box.y1+.1:
+                    source.append(word.confidence)
+        confidence = min(confidence,min(source,default=.4))
+    return confidence
+
+
 def _from_business_proof(ex, pages, classification_evidence="") -> OcrResult:
     fields = {}
     bboxes = {}
@@ -304,7 +346,9 @@ def _from_business_proof(ex, pages, classification_evidence="") -> OcrResult:
         fields["판독경고"] = " ".join(ex.warnings)
     fields["양식판독상태"] = "완전" if ex.structure_complete else "불완전"
     issue = ex.fields.get("발급일")
-    confidence = min((value.confidence for value in ex.fields.values()), default=.4)
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=True)
+    fields["근로근거신뢰도"] = str(source_confidence)
+    confidence = min(min((value.confidence for value in ex.fields.values()), default=.4), source_confidence)
     return ensure_business_required_fields(OcrResult(
         detected_doc_type=DocType.BIZ_REG_PROOF if ex.detected_type.value == "biz_reg_proof" else None,
         confidence=min(confidence, ex.type_confidence, 1 if ex.structure_complete else .4),
@@ -333,7 +377,13 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         fields["판독검증실패"] = ", ".join(failed)
     if ex.warnings:
         fields["판독경고"] = " ".join(ex.warnings)
+    work_form = ex.detected_type.value in {"nhis_acquisition_loss", "daily_work_record"}
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=work_form)
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    if work_form:
+        fields["근로근거신뢰도"] = str(source_confidence)
+    if not pages or not all(result.engine == "jbai" for _,result in pages):
+        confidence = min(confidence, source_confidence)
     structure_complete = getattr(ex, "structure_complete", None)
     if structure_complete is not None:
         fields["양식판독상태"] = "완전" if structure_complete else "불완전"
@@ -347,6 +397,9 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
     detected = detected_override or detected_map.get(ex.detected_type)
     if detected == DocType.NHIS_PAYMENT:
         from engine_v2.extractors.nhis_payment import has_failed_payment_validation
+        from engine_v2.extractors.payment_period import FIELD, collect
+
+        fields[FIELD] = json.dumps(collect(pages, ex), ensure_ascii=False, separators=(",", ":"))
 
         if has_failed_payment_validation(fields):
             confidence = min(confidence, .4)
@@ -396,7 +449,7 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     bboxes: dict[str, BBox] = {}
     for key in ("성명", "생년월일", "발급일", "문서확인번호", "발급번호",
                 "가입내역", "보험별가입여부", "보험별가입자종별", "근로관련가입여부",
-                "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록"):
+                "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록", "추가첨부쪽"):
         extracted = ex.fields.get(key)
         if extracted is None:
             continue
@@ -441,7 +494,9 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
         fields["판독경고"] = " ".join(ex.warnings)
     issue = ex.fields.get("발급일")
     issue_date = date.fromisoformat(str(issue.value)) if issue else None
-    confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=True)
+    fields["근로근거신뢰도"] = str(source_confidence)
+    confidence = min(min((field.confidence for field in ex.fields.values()), default=0.5), source_confidence)
     if structure_complete is False:
         confidence = min(confidence, 0.4)
     detected = DocType.INSURANCE_4 if ex.detected_type.value == "insurance_4" else None
@@ -457,6 +512,16 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
         classification_evidence=classification_evidence,
         classification_confidence=0.97 if detected else 0.0,
     )
+
+
+def _from_supported_form(extractor, pages, v2types, evidence, detected):
+    from engine_v2.extractors.attached_pages import extract_form
+    ex, scoped = extract_form(extractor.extract, pages)
+    result = (_from_insurance4(ex, scoped, evidence) if detected == DocType.INSURANCE_4
+              else _from_nhis(ex, scoped, v2types, evidence, detected))
+    result.page_count = len(pages)
+    result.engine = _pages_engine(scoped)
+    return result
 
 
 #: 취업지원패키지 추가서류 → (engine_v2 추출기 모듈, engine_v2 서류 종류 값)
@@ -610,7 +675,7 @@ class LocalOcr:
             if classified is None:
                 return None
             detected = classified.detected_doc_type
-            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4, DocType.BIZ_REG_PROOF)
+            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4, DocType.BIZ_REG_PROOF, DocType.DAILY_WORK_RECORD)
                     and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION and detected is not None):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
             if detected == DocType.NHIS_QUALIFICATION:
@@ -635,13 +700,22 @@ class LocalOcr:
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
                 DocType.BIZ_REG_PROOF: v2types.BIZ_REG_PROOF,
+                DocType.DAILY_WORK_RECORD: v2types.DAILY_WORK_RECORD,
             }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
-            pages = load_pages(input_doc, engine)
+            if detected in {DocType.INSURANCE_4, DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.NHIS_QUALIFICATION}:
+                pages = load_pages(input_doc, engine, allow_page_errors=True)
+            else:
+                pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
             if detected is None:
                 detected, evidence = pdftext.classify_pages_with_evidence(pages)
+                if detected == DocType.DAILY_WORK_RECORD:
+                    from engine_v2.extractors import daily_work_record
+                    result = _from_nhis(daily_work_record.extract(pages), pages, v2types, evidence, detected)
+                    result.engine = _pages_engine(pages)
+                    return result
                 if detected not in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
                     return None
                 # Coordinate fallback changes classification only. Fields still
@@ -655,23 +729,24 @@ class LocalOcr:
             if detected == DocType.BIZ_REG_PROOF:
                 from engine_v2.extractors import business_registration
                 result = _from_business_proof(business_registration.extract(pages), pages, classified.classification_evidence)
+            elif detected == DocType.DAILY_WORK_RECORD:
+                from engine_v2.extractors import daily_work_record
+                result = _from_nhis(daily_work_record.extract(pages), pages, v2types,
+                                    classified.classification_evidence, detected)
             elif detected in _JOB_DOCS:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
             elif detected == DocType.INSURANCE_4:
-                result = _from_insurance4(
-                    insurance4_extractor.extract(pages), pages, classified.classification_evidence
-                )
+                result = _from_supported_form(insurance4_extractor, pages, v2types,
+                                              classified.classification_evidence, detected)
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
                 if detected == DocType.NHIS_QUALIFICATION:
                     from engine_v2.extractors import nhis_qualification
                     extractor = nhis_qualification
-                result = _from_nhis(
-                    extractor.extract(pages), pages, v2types,
-                    classified.classification_evidence, detected,
-                )
-            result.engine = _pages_engine(pages)
+                result = _from_supported_form(extractor, pages, v2types,
+                                              classified.classification_evidence, detected)
+            result.engine = result.engine or _pages_engine(pages)
             return result
 
         try:
@@ -691,11 +766,30 @@ class LocalOcr:
         text = "\n".join(result.text for _, result in pages)
         detected, evidence = pdftext.classify_pages_with_evidence(pages)
         if detected is None:
-            return None
+            # Do not discard successfully read words and independent folios just
+            # because damaged title glyphs cannot establish a document type.
+            from .file_evidence import independent_page_markers
+            markers = independent_page_markers(pages)
+            if markers is None:
+                return None  # Keep prior fallback results when there is no new usable evidence.
+            fields = {"독립쪽표기자료": json.dumps(markers)}
+            result = OcrResult(fields=fields, page_count=len(pages), tier=NAME,
+                               engine=engine, image_quality=_quality(page_images),
+                               classification_evidence=evidence)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
 
         if detected == DocType.BIZ_REG_PROOF:
             from engine_v2.extractors import business_registration
             result = _from_business_proof(business_registration.extract(pages), pages, evidence)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
+
+        if detected == DocType.DAILY_WORK_RECORD:
+            from engine_v2.extractors import daily_work_record
+            result = _from_nhis(daily_work_record.extract(pages), pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result
@@ -709,17 +803,17 @@ class LocalOcr:
         if detected == DocType.NHIS_QUALIFICATION:
             from engine_v2.extractors import nhis_qualification
             if nhis_qualification.is_notification(text):
-                result = _from_nhis(nhis_qualification.extract(pages), pages, v2types, evidence, detected)
+                result = _from_supported_form(nhis_qualification, pages, v2types, evidence, detected)
                 if path.suffix.lower() != ".pdf":
                     _merge_image_heuristics(result, path)
                 return result
 
         if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
             if detected == DocType.INSURANCE_4:
-                result = _from_insurance4(insurance4_extractor.extract(pages), pages, evidence)
+                result = _from_supported_form(insurance4_extractor, pages, v2types, evidence, detected)
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
-                result = _from_nhis(extractor.extract(pages), pages, v2types, evidence, detected)
+                result = _from_supported_form(extractor, pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result

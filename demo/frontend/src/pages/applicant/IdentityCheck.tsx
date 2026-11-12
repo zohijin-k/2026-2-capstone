@@ -13,7 +13,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import { verifyIdentity, type Identity } from '../../api.ts'
+import { fetchApplication, verifyIdentity, type Identity, type Blocker } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
 import PdfPages from '../../components/PdfPages.tsx'
 import SignaturePad from '../../components/SignaturePad.tsx'
@@ -78,6 +78,22 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [viewing, setViewing] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [eligibilityResult, setEligibilityResult] = useState<{
+    appId: number; birth: string; blockers: Blocker[]
+  } | null>(null)
+  const eligibilityBlockers = eligibilityResult?.appId === appId && eligibilityResult.birth === identity?.birth
+    ? eligibilityResult.blockers : []
+
+  useEffect(() => {
+    if (!identity) return
+    let active = true
+    fetchApplication(appId).then((data) => {
+      if (active) setEligibilityResult({ appId, birth: identity.birth, blockers: data.eligibility_blockers ?? [] })
+    }).catch(() => {
+      if (active) setError('신청 자격 안내를 불러오지 못했습니다. 다시 확인해 주세요.')
+    })
+    return () => { active = false }
+  }, [appId, identity])
 
   useLayoutEffect(() => {
     const input = phoneInput.current
@@ -108,6 +124,10 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
     return (
       <section className="idcheck">
         <h2 className="idcheck__title">본인인증</h2>
+        {eligibilityBlockers.map((blocker) => (
+          <p key={blocker.target} className="idcheck__error" role="alert">{blocker.message}</p>
+        ))}
+        {error && <p className="idcheck__error" role="alert">{error}</p>}
         <div className="idcheck__done">
           <strong>본인인증을 마쳤습니다.</strong>
           <dl>

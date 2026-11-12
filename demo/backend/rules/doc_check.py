@@ -55,6 +55,9 @@ CODE_NHIS_SUBSCRIBER_IDENTITY_REVIEW = "NHIS_SUBSCRIBER_IDENTITY_REVIEW"
 CODE_PAGES_INCOMPLETE = "PAGES_INCOMPLETE"
 CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
 CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
+CODE_IMAGE_RESOLUTION_TOO_LOW = "IMAGE_RESOLUTION_TOO_LOW"
+CODE_MISSING_ADDRESS_DATES = "MISSING_ADDRESS_DATES"
+CODE_DAILY_RECORDS_PARTIALLY_SELECTED = "DAILY_RECORDS_PARTIALLY_SELECTED"
 
 PHOTO_RETAKE_GUIDANCE = (
     "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
@@ -62,16 +65,25 @@ PHOTO_RETAKE_GUIDANCE = (
 )
 RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 확인합니다."
 
+QUALITY_REUPLOAD_GUIDANCE = (
+    "이미지가 흐리거나 작아 읽을 수 없습니다. "
+    "발급처에서 PDF로 받아 그대로 올리는 것이 가장 확실합니다. "
+    "사진은 서류 전체가 똑바로, 밝고 선명하게 나오게 다시 찍어 올려 주세요."
+)
+
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
 HOW_TO_FIX: dict[str, str] = {
+    CODE_DAILY_RECORDS_PARTIALLY_SELECTED: "전체 이력을 선택해 다시 발급받아 올려 주세요",
+    CODE_IMAGE_RESOLUTION_TOO_LOW: "선명한 원본(원본 PDF 또는 고해상도 스캔)으로 다시 올려 주세요",
+    CODE_MISSING_ADDRESS_DATES: "정부24에서 초본을 발급할 때 주소 변동 사항의 발생일·신고일이 표시되도록 선택해 다시 발급받아 주세요",
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
     "DOCUMENT_ISSUED_TOO_EARLY": "{cutoff} 이후 발급분만 인정됩니다. 발급처에서 새로 발급받아 다시 올려 주세요.",
     "DECLARED_DATE_MISMATCH": "입력하신 발급일과 서류에 찍힌 발급일이 다릅니다. 발급일을 다시 확인하시거나, 올바른 파일을 올려 주세요.",
     CODE_MISSING_BILLING_MONTHS: "조회기간에 {months}이 포함되도록 다시 발급해 주세요.",
     "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. " + RETAKE_GUIDANCE,
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
-    "LOW_IMAGE_QUALITY": RETAKE_GUIDANCE,
+    "LOW_IMAGE_QUALITY": QUALITY_REUPLOAD_GUIDANCE,
     "LOW_OCR_CONFIDENCE": RETAKE_GUIDANCE,
     "MISSING_SIGNATURE": "서명란에 서명한 뒤 다시 올려 주세요.",
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
@@ -131,7 +143,6 @@ def _has_final_consonant(value: str) -> bool:
 #: 화면캡처는 오탐 시 신청자가 억울해지므로 자동 반려하지 않는다.
 REVIEW_ONLY_CODES = {
     "LOW_OCR_CONFIDENCE",
-    "LOW_IMAGE_QUALITY",
     "NHIS_HISTORY_PERIOD_UNREADABLE",
     CODE_RESIDENT_APPLICANT_UNREADABLE,
     CODE_PAGES_UNREADABLE,
@@ -367,6 +378,68 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
     return []
 
 
+def _check_billing_months(ocr: OcrResult, req: DocRequirement) -> list[CheckFinding]:
+    """Reject only independently proven range or bounded amount omissions."""
+    from engine_v2.extractors.payment_period import FIELD
+
+    def review():
+        finding = _finding(
+            CODE_MISSING_BILLING_MONTHS,
+            "납부확인서의 조회기간 또는 심사 대상 고지월을 확실하게 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+            req, months=format_month_ranges(req.premium_months),
+        )
+        finding.severity = "NEEDS_REVIEW"
+        finding.how_to_fix = RETAKE_GUIDANCE
+        return [finding]
+
+    raw = ocr.fields.get(FIELD)
+    if raw is not None:
+        try:
+            data = json.loads(raw)
+            period = data.get("period")
+            if (data.get("version") != 1 or data.get("status") != "READABLE" or
+                    not isinstance(period, list) or len(period) != 2 or
+                    any(not isinstance(value, str) or len(value) != 7 or
+                        date.fromisoformat(value + "-01").strftime("%Y-%m") != value for value in period) or
+                    period[0] > period[1]):
+                return review()
+            missing = [month for month in req.premium_months if not period[0] <= month <= period[1]]
+            if not missing and data.get("amounts_certain") is True:
+                absent = data.get("absent_amount_months")
+                uncertain_absent = data.get("uncertain_absent_amount_months")
+                if (not isinstance(absent, list) or not isinstance(uncertain_absent, list) or
+                        any(not isinstance(value, str) for value in absent + uncertain_absent)):
+                    return review()
+                missing = [month for month in req.premium_months if month in absent]
+                if not missing and any(month in uncertain_absent for month in req.premium_months):
+                    return review()
+            if missing:
+                rendered = format_month_ranges(missing)
+                finding = _finding(
+                    CODE_MISSING_BILLING_MONTHS,
+                    f"납부확인서에 심사 대상 고지월 {rendered}의 고지금액이 없어 평균 보험료를 계산할 수 없습니다.",
+                    req, months=rendered,
+                )
+                finding.detail = (f"독립 판독 조회기간 {period[0]}~{period[1]}; "
+                                  "제목·월 행 모순 없음. 금액 부재는 표 머리글·열·합계 검증 근거에 한함.")
+                return [finding]
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return review()
+
+    # Historical fields without independent range evidence retain their good
+    # monthly maps, but absence/corruption cannot establish a certain rejection.
+    raw_months = ocr.fields.get("월별고지금액")
+    if raw_months is None:
+        return review()
+    try:
+        found = json.loads(raw_months)
+        if not isinstance(found, dict) or any(month not in found for month in req.premium_months):
+            return review()
+    except (ValueError, TypeError):
+        return review()
+    return []
+
+
 def _check_document(
     req: DocRequirement,
     ocr: OcrResult,
@@ -382,6 +455,28 @@ def _check_document(
     """
     findings: list[CheckFinding] = []
     nhis_review_needed = False
+
+    # File facts are independent of OCR confidence and survive type failure.
+    if ocr.is_encrypted:
+        return CheckResult("FAIL", [_finding("UNREADABLE_FILE", "파일을 열 수 없습니다.", req)])
+    from ..ocr.file_evidence import resolution_defect
+    if (size := resolution_defect(ocr)) is not None:
+        finding = _finding(CODE_IMAGE_RESOLUTION_TOO_LOW,
+                           "원본 이미지가 너무 작아 서류 종류 또는 주요 내용을 판독할 수 없습니다.", req)
+        finding.detail = f"원본 {size['width']}×{size['height']}px; 짧은 변 600px 및 긴 변 800px 미만과 미판독 조건 모두 충족."
+        findings.append(finding)
+        try:
+            data = json.loads(ocr.fields.get("독립쪽표기자료", "null"))
+            markers = data["markers"]
+            if (data["confidence"] >= .85 and len(markers) == ocr.page_count and
+                    all(isinstance(m, list) and len(m) == 2 and
+                        all(type(v) is int for v in m) and 1 <= m[0] <= m[1] for m in markers) and
+                    len({m[1] for m in markers}) == 1 and len({m[0] for m in markers}) < markers[0][1]):
+                findings.append(_finding(CODE_PAGES_INCOMPLETE,
+                    f"서류 {markers[0][1]}쪽 중 {len({m[0] for m in markers})}쪽만 올라왔습니다. 빠진 쪽까지 모두 올려 주세요.", req))
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass
+        return CheckResult("FAIL", findings)
 
     # 종류 판별이 끝나지 않았거나 다른 지원 서류로 판명되면 여기서 끝낸다.
     # 그 파일과 무관한 발급일·필수 항목 경고를 뒤에 붙이지 않는다.
@@ -419,6 +514,38 @@ def _check_document(
             if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
+
+    if ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT:
+        try:
+            data = json.loads(ocr.fields.get("주소날짜검증자료", "null"))
+            if (data["status"] == "MISSING" and data["confidence"] >= .85 and
+                    ocr.classification_confidence >= .85):
+                finding = _finding(CODE_MISSING_ADDRESS_DATES,
+                    "초본 주소 이력에 발생일·신고일 날짜 값이 없어 도 거주기간을 확인할 수 없습니다.", req)
+                finding.detail = "주소 표·행은 확인됐지만 날짜가 없습니다. 신청서 전입일은 참고 입력값이며 서류상 거주기간 근거를 대신하지 않습니다."
+                findings.append(finding)
+        except (ValueError, TypeError, KeyError):
+            pass
+
+    if ocr.detected_doc_type is DocType.DAILY_WORK_RECORD and ocr.tier != "fixture":
+        from engine_v2.extractors.daily_work_record import selection_status
+        if selection_status(ocr.fields) == "PARTIAL":
+            return CheckResult("FAIL", [_finding(CODE_DAILY_RECORDS_PARTIALLY_SELECTED,
+                "일용근로 이력 중 일부만 선택해 발급된 서류입니다. 전체 이력을 선택해 다시 발급받아 올려 주세요.", req)])
+        if ocr.fields.get("양식판독상태") != "완전":
+            return CheckResult("NEEDS_REVIEW", [_finding(CODE_REQUIRED_FIELD_UNREADABLE,
+                "일용근로·노무제공내역서의 표·조회기간·확인 내용을 완전히 읽지 못했습니다. 담당자가 확인합니다.",
+                req, field="표·조회기간")])
+        if identity is not None and not ocr.fields.get("생년월일"):
+            try:
+                candidates = json.loads(ocr.fields.get("생년월일후보", "[]"))
+                matched = (ocr.fields.get("성명", "").replace(" ", "") == identity.name and
+                           identity.birth.isoformat() in candidates)
+            except (ValueError, TypeError):
+                matched = False
+            if not matched:
+                return CheckResult("NEEDS_REVIEW", [_finding(CODE_IDENTITY_UNCERTAIN,
+                    "일용근로 서류의 신청인 성명·생년월일을 본인인증 정보와 확인해야 합니다.", req)])
 
     if (not ocr.is_encrypted and ocr.tier != "fixture" and ocr.detected_doc_type is DocType.BIZ_REG_PROOF):
         from ..ocr.localocr import ensure_business_required_fields
@@ -576,22 +703,9 @@ def _check_document(
                     )
                 )
 
-    if req.slot_key == "nhis_payment" and req.premium_months and ocr.fields.get("월별고지금액"):
-        try:
-            found = json.loads(ocr.fields["월별고지금액"])
-            missing = [month for month in req.premium_months if month not in found]
-        except (ValueError, TypeError):
-            missing = list(req.premium_months)
-        if missing:
-            rendered = format_month_ranges(missing)
-            finding = _finding(
-                CODE_MISSING_BILLING_MONTHS,
-                f"납부확인서에 심사 대상 고지월 {rendered}이 없어 평균 보험료를 계산할 수 없습니다.",
-                req, months=rendered,
-            )
-            if ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
-                _uncertain(finding)
-            findings.append(finding)
+    if (not ocr.is_encrypted and ocr.detected_doc_type is DocType.NHIS_PAYMENT
+            and req.slot_key == "nhis_payment" and req.premium_months):
+        findings.extend(_check_billing_months(ocr, req))
 
     if (not ocr.is_encrypted and req.slot_key == "nhis_acquisition_loss" and req.recent_years
             and (ocr.fields.get("자격이력자료") or ocr.tier != "fixture")):
@@ -808,9 +922,19 @@ def check_document(
     related_nhis_docs: list[tuple[str, dict[str, str]]] | None = None,
     suggested_slot_label: str | None = None,
 ) -> CheckResult:
-    """Check one upload and adapt only photo-specific guidance to its format."""
+    """Keep objective file quality independent of reading/identity uncertainty."""
     result = _check_document(req, ocr, declared_issue_date, file_format, identity,
                              related_nhis_docs, suggested_slot_label)
+    if not ocr.is_encrypted:
+        # The reader measures original source resolution independently of OCR.
+        # Apply this after all early returns and identity-related downgrades.
+        result.findings[:] = [f for f in result.findings if f.code != "LOW_IMAGE_QUALITY"]
+        specific_resolution = any(f.code == CODE_IMAGE_RESOLUTION_TOO_LOW for f in result.findings)
+        if ocr.image_quality < engine_config.IMAGE_QUALITY_THRESHOLD and not specific_resolution:
+            result.findings.append(_finding("LOW_IMAGE_QUALITY",
+                "이미지가 흐리거나 작아 읽을 수 없습니다.", req))
+        result.status = ("FAIL" if any(f.severity == "FAIL" for f in result.findings) else
+                         "NEEDS_REVIEW" if any(f.severity == "NEEDS_REVIEW" for f in result.findings) else "PASS")
     if file_format.lower() == "pdf":
         for finding in result.findings:
             finding.message = finding.message.replace(PHOTO_RETAKE_GUIDANCE, "")

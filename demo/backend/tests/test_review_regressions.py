@@ -173,7 +173,12 @@ def test_legacy_payment_sum_failure_reaches_actual_text_layer_upload(
                            files={"file": ("FAKE-quarter.pdf", path.read_bytes(), "application/pdf")},
                            data={"slot_key": "nhis_payment", "declared_issue_date": "2026-11-10"})
     assert response.status_code == 200
-    assert response.json()["status"] == ("NEEDS_REVIEW" if incorrect else "PASS")
+    assert response.json()["status"] == ("NEEDS_REVIEW" if incorrect or kind == "legacy" else "PASS")
+    if kind == "legacy":
+        # This fixture prints explicit month rows but no query period. A4 now
+        # requires review when that independently printed range is unreadable.
+        assert any(f["code"] == "MISSING_BILLING_MONTHS" and f["severity"] == "NEEDS_REVIEW"
+                   for f in response.json()["findings"])
     if incorrect:
         assert all(finding["severity"] != "FAIL" for finding in response.json()["findings"])
 

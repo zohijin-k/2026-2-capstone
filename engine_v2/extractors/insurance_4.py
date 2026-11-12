@@ -596,6 +596,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             "사업장명칭": row.workplace_name,
             "자격취득일": row.acquired.isoformat() if row.acquired else "",
             "신고접수일": row.received.isoformat() if row.received else "",
+            "자격취득일신뢰도": min((word.conf for word in row.acquired_words), default=0.0),
             "상태": row.status, "bbox": row.bbox.model_dump(mode="json") if row.bbox else None,
             "신뢰도": row.confidence,
         })

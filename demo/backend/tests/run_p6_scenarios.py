@@ -36,6 +36,7 @@ from typing import Any
 from sqlmodel import create_engine, select
 
 from .. import models
+from .scenario_support import complete_synthetic_work, seed_blocked_historical_review
 from ..reset import ResetReport, reset as reset_demo
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE
 from ..rules.roles import ROLE_CITY, ROLE_PROVINCE
@@ -105,7 +106,14 @@ def load_expected(scenario: str) -> dict[str, Any]:
     path = EXPECTED_DIR / f"{scenario}.json"
     if not path.exists():
         raise FileNotFoundError(f"기대 결과 JSON이 없습니다: {path}")
-    return json.loads(path.read_text(encoding="utf-8"))
+    spec=json.loads(path.read_text(encoding="utf-8"))
+    if scenario=="S7":
+        # The published legacy script submits confirmed excess income. Current
+        # API blocks it; retain its engine/officer assertions via historical seed.
+        spec["expect"]["can_submit"]=False
+        spec["expect"].update({"submit_status_code":400,"eligibility_code":"OVER_LIMIT",
+                              "historical_review":True})
+    return spec
 
 
 def verify(scenario: str, actual: dict[str, Any]) -> None:
@@ -262,6 +270,7 @@ def _create_ds(client, *, name: str, uploads: dict[str, str]) -> int:
     app_id = _fill_ds(client, name=name)
     for slot, filename in uploads.items():
         _upload(client, app_id, slot, filename, "2026-03-05")
+    complete_synthetic_work(app_id)
     return app_id
 
 
@@ -369,6 +378,7 @@ def s2_perfect(client, app_id: int) -> dict[str, Any]:
         _upload(client, app_id, slot, filename, "2026-03-05")
     documents = client.get(f"/api/applications/{app_id}/documents").json()
 
+    complete_synthetic_work(app_id)
     final = client.get(f"/api/applications/{app_id}/final-check").json()
     body = client.post(f"/api/applications/{app_id}/submit").json()
 
@@ -466,17 +476,20 @@ def s7_income_over(client) -> dict[str, Any]:
     app_id = _create_ds(client, name="김영희", uploads=uploads)
 
     final = client.get(f"/api/applications/{app_id}/final-check").json()
-    client.post(f"/api/applications/{app_id}/submit")
-
-    with models.get_session() as s:
-        review = s.exec(
-            select(models.Review).where(models.Review.application_id == app_id)
-        ).first()
-    assert review is not None
+    submitted=client.post(f"/api/applications/{app_id}/submit")
+    check("S7 확정 소득 초과 현재 제출 차단",submitted.status_code,400)
+    income=next(item for item in final["blockers"] if item.get("code")=="OVER_LIMIT")
+    check_true("S7 차단 숫자 근거",all(value in income["message"] for value in ("4명","311,031","340,000","140%")))
+    with models.get_session() as session:
+        check("S7 차단 요청은 Review 미생성",session.exec(select(models.Review).where(models.Review.application_id==app_id)).first(),None)
+    review=seed_blocked_historical_review(app_id,submitted)
     status = client.get(f"/api/applications/{app_id}/status").json()
 
     return {
         "documents_all_pass": all(d["status"] == "PASS" for d in final["documents"]),
+        "submit_status_code":submitted.status_code,
+        "eligibility_code":income["code"],
+        "historical_review":review.review_payload_json.get("synthetic_historical_fixture") is True,
         "can_submit": final["can_submit"],
         "final_status": review.final_status,
         "stage1_status": review.stage1_status,

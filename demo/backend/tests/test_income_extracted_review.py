@@ -1,5 +1,6 @@
 """Fictitious renamed PDFs carry both extracted evidence cells into final review."""
 from datetime import date
+import json
 
 import pytest
 from sqlmodel import select
@@ -31,6 +32,15 @@ def test_extracted_ab_survives_renaming_validation_storage_and_real_review(isola
     requirements = {row.slot_key: row for row in checklist_for(app)}
     identity = Identity(qualification_sample.NAME, date.fromisoformat(qualification_sample.BIRTH))
     with models.get_session() as session:
+        work=session.exec(select(models.Document).where(
+            models.Document.application_id==app.id, models.Document.slot_key=="work_proof")).one()
+        fields={**work.ocr_json["fields"],"성명":qualification_sample.NAME,"생년월일":qualification_sample.BIRTH}
+        rows=json.loads(fields["가입내역"])
+        for row in rows:
+            row["성명"]=qualification_sample.NAME
+        fields["가입내역"]=json.dumps(rows,ensure_ascii=False)
+        work.ocr_json={**work.ocr_json,"fields":fields}
+        session.add(work)
         for index, (slot, cells, size, wrong_expected) in enumerate((
             ("nhis_qualification", q_cells, q_size, DocType.NHIS_PAYMENT),
             ("nhis_payment", p_cells, p_size, DocType.NHIS_QUALIFICATION),

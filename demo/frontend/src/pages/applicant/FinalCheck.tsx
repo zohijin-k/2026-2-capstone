@@ -70,6 +70,7 @@ export default function FinalCheck({
       onSubmitted(await submitApplication(applicationId))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
+      fetchFinalCheck(applicationId).then(setData).catch(() => undefined)
     } finally {
       setBusy(false)
     }
@@ -121,7 +122,7 @@ export default function FinalCheck({
                   <span className="fcheck__todo-items">
                     {items.map((b) => (
                       <span key={`${b.kind}-${b.target}`} title={b.message}>
-                        {b.label}
+                        {b.kind === 'eligibility' ? `${b.label}: ${b.message}` : b.label}
                       </span>
                     ))}
                   </span>
