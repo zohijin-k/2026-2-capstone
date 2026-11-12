@@ -54,3 +54,25 @@ def test_authored_data_preserves_every_source_box_order_confidence_and_word_shap
     assert len(projected) == count
     encoded = json.dumps(projected, ensure_ascii=False, separators=(",", ":")).encode()
     assert hashlib.sha256(encoded).hexdigest() == digest
+
+
+def test_exact_acquisition_five_year_check_depends_on_issue_date_with_existing_gap_meaning():
+    import json
+    from datetime import date
+    from engine_v2.extractors import nhis_acquisition_loss as reader
+
+    cells, size = sample.document("acquisition")
+    result = reader.extract([sample.page(cells, size=size)])
+    history = json.loads(result.fields["자격이력자료"].value)
+    assert history["period"] is None
+    assert [(row["acquired"], row["lost"]) for row in history["rows"]] == [
+        ("2024-01-01", None), ("2020-01-01", "2023-01-01"), ("2016-01-01", "2019-01-01")]
+    rows = [(row.acquired, row.lost) for row in result.history]
+    assert rows[2][1] < date(2021, 3, 3)
+    assert rows[2][1] < rows[1][0] and rows[1][1] < rows[0][0]
+    assert reader.history_covers_recent_years(date.fromisoformat(sample.ISSUE), None, rows)
+    assert next(check.passed for check in result.validations if check.name == "recent_five_years_covered")
+    without_issue = [cell for cell in cells if cell[1] != 2585]
+    missing = reader.extract([sample.page(without_issue, size=size)])
+    assert not next(check.passed for check in missing.validations if check.name == "recent_five_years_covered")
+    assert "발급일" not in missing.fields
