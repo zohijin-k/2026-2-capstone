@@ -16,8 +16,8 @@ from .format_text import normalize_format_text
 
 DATE_RE = re.compile(r"(?<!\d)(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?(?!\d)")
 COMPACT_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)")
-RRN_RE = re.compile(r"(\d{6})\s*-\s*([1-8])\d{6}")
-MASKED_RRN_RE = re.compile(r"(\d{6})-([1-8])[*＊●•○xX×]{1,7}")
+RRN_RE = re.compile(r"(\d{6})\s*[-‐‑‒–—―−﹘﹣－]\s*([1-8])\s*\d{6}")
+MASKED_RRN_RE = re.compile(r"(\d{6})\s*[-‐‑‒–—―−﹘﹣－]\s*([1-8])\s*[*＊●•○◦∙·xX×✱✳Ｘ]{1,7}")
 NAME_RE = re.compile(r"[가-힣]{2,6}")
 
 
@@ -65,15 +65,26 @@ def dates_in_line(line: list[Word]) -> list[tuple[date, list[Word]]]:
         cursor += len(word.text)
         spans.append((start, cursor, word))
     text = normalize_format_text("".join(parts))
+    compact_parts: list[str] = []
+    compact_spans: list[tuple[int, int, Word]] = []
+    compact_cursor = 0
+    for word in line:
+        value = re.sub(r"\s+", "", normalize_format_text(word.text))
+        if value:
+            compact_parts.append(value)
+            compact_spans.append((compact_cursor, compact_cursor + len(value), word))
+            compact_cursor += len(value)
+    compact_text = "".join(compact_parts)
     matches = list(DATE_RE.finditer(text))
-    matches.extend(COMPACT_DATE_RE.finditer(re.sub(r"\s+", "", text)))
+    matches.extend(COMPACT_DATE_RE.finditer(compact_text))
     found = []
     for match in matches:
         value = parse_date(match.group())
         if value is None:
             continue
         if match.re is COMPACT_DATE_RE:
-            relevant = line
+            relevant = [word for start, end, word in compact_spans
+                        if start < match.end() and end > match.start()]
         else:
             relevant = [word for start, end, word in spans if start < match.end() and end > match.start()]
         if not any(value == existing for existing, _ in found):
@@ -152,25 +163,42 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
         if header.birth is None and "주민등록번호" in flat:
             hits = label_hits([line], ("주민등록번호",))
             label_words = hits[0][1] if hits else []
-            if label_words:
-                x0, x1 = min(w.x0 for w in label_words), max(w.x1 for w in label_words)
-                candidates = [w for w in line if w.x0 >= x1]
-                if not candidates and index + 1 < len(lines):
-                    candidates = [w for w in lines[index + 1]
-                                  if w.x1 >= x0 and w.x0 <= x1]
-            else:
-                candidates = line
-            # OCR may split the label, separator, gender digit, and mask across words.
-            # Remove whitespace only in a parsing copy; never inspect table body rows.
-            rrn_text = re.sub(r"\s+", "", normalize_format_text(" ".join(w.text for w in candidates)))
-            rrn = MASKED_RRN_RE.search(rrn_text) or RRN_RE.search(rrn_text)
+            # OCR can put the label and number on different nearby lines, with
+            # another header label between them. Keep the search tightly bound
+            # to the label's immediate header neighborhood and require an RRN
+            # shaped value, rather than scanning arbitrary page numbers.
+            candidate_lines = [line]
+            label_y = max((word.cy for word in label_words), default=line[0].cy)
+            for following in lines[index + 1 : index + 4]:
+                if following[0].cy - label_y > 6.0:
+                    break
+                candidate_lines.append(following)
+            rrn = None
+            rrn_words = []
+            for start in range(len(candidate_lines)):
+                for end in range(start + 1, min(len(candidate_lines), start + 3) + 1):
+                    candidates = [word for row in candidate_lines[start:end] for word in row]
+                    # The label line itself may include a value after the label;
+                    # later lines are constrained by the small vertical window.
+                    if start == 0 and label_words:
+                        right = max(word.x1 for word in label_words)
+                        inline = [word for word in candidates if word.x0 >= right]
+                        if inline:
+                            candidates = inline
+                    rrn_text = re.sub(r"\s+", "", normalize_format_text(" ".join(w.text for w in candidates)))
+                    match = MASKED_RRN_RE.search(rrn_text) or RRN_RE.search(rrn_text)
+                    if match:
+                        rrn, rrn_words = match, candidates
+                        break
+                if rrn:
+                    break
             if rrn:
                 yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
                 gender = rrn.group(2)
                 century = 2000 if gender in "3478" else 1900
                 try:
                     header.birth = date(century + yy, mm, dd)
-                    header.birth_words = candidates or line
+                    header.birth_words = rrn_words or line
                 except ValueError:
                     pass
         elif header.birth is None and "생년월일" in flat:
@@ -205,7 +233,51 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
 
 
 def page_headers(pages: list[tuple[PageImage, OcrResult]]) -> list[PageHeader]:
-    return [header_for_page(page, result) for page, result in pages]
+    headers = [header_for_page(page, result) for page, result in pages]
+    if pages and not any(header.issue is not None for header in headers):
+        issue, words, ambiguous = _closing_issue_date(*pages[-1])
+        if issue is not None and not ambiguous:
+            headers[-1].issue = issue
+            headers[-1].issue_words = words
+    return headers
+
+
+def _closing_issue_date(page: PageImage, result: OcrResult) -> tuple[date | None, list[Word], bool]:
+    """Read an unlabeled date only from the final confirmation/signatory block."""
+    lines = page_lines(page, result)
+    normalized = [squash(line_text(line)) for line in lines]
+    confirmations = [i for i, text in enumerate(normalized) if "확인합니다" in text]
+    issuers = [i for i, text in enumerate(normalized)
+               if "국민건강보험공단" in text and "이사장" in text]
+    if not confirmations or not issuers:
+        return None, [], False
+    confirmation = confirmations[-1]
+    issuer = next((i for i in issuers if i > confirmation), None)
+    if issuer is None:
+        return None, [], False
+
+    date_lines = []
+    block_dates = []
+    for index in range(confirmation + 1, min(issuer + 3, len(lines))):
+        found = dates_in_line(lines[index])
+        if not found:
+            continue
+        block_dates.extend(value for value, _ in found)
+        if len(found) != 1:
+            continue
+        text = normalize_format_text(line_text(lines[index]))
+        residue = re.sub(r"[\d\s년월일年月日./:\-‐‑‒–—―−﹘﹣－]", "", text)
+        if not residue:
+            date_lines.append((index, found[0][0], found[0][1]))
+    # A lone date immediately before the issuing officer is the primary value.
+    # Other dates in this same block (including a seal date) only corroborate it.
+    primary = [item for item in date_lines if item[0] == issuer - 1]
+    if len(primary) != 1:
+        return None, [], False
+    values = set(block_dates)
+    if len(values) > 1:
+        return None, [], True
+    return primary[0][1], primary[0][2], False
 
 
 def bbox(words: list[Word] | None, pages: dict[int, PageImage]) -> BBox | None:

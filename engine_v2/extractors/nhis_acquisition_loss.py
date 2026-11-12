@@ -84,7 +84,13 @@ def _parse_history(pages):
         positions = _header_positions([(page, result)])
         header_y = None
         lines = common.page_lines(page, result)
+        closing_index = next((index for index, line in enumerate(lines)
+                              if "확인합니다" in squash(line_text(line)) or
+                              ("국민건강보험공단" in squash(line_text(line)) and
+                               "이사장" in squash(line_text(line)))), len(lines))
         for index, line in enumerate(lines):
+            if index >= closing_index:
+                continue
             flat = squash(line_text(line))
             header_block = [line]
             if index + 1 < len(lines):
@@ -105,6 +111,11 @@ def _parse_history(pages):
                 continue
             dates = [(words, value) for value, words in common.dates_in_line(line)]
             if not dates:
+                continue
+            date_word_ids = {id(word) for date_words, _ in dates for word in date_words}
+            # A date by itself can occur in the confirmation footer. Real table
+            # rows carry at least one other cell token (category/workplace/etc.).
+            if not any(id(word) not in date_word_ids for word in line):
                 continue
             acquired = lost = None
             for date_words, value in dates:
