@@ -11,6 +11,8 @@
  */
 
 import { useEffect, useState } from 'react'
+import { Skeleton, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 
 import {
   fetchSubsidyItems,
@@ -165,6 +167,7 @@ export default function SubsidyItems({
   const [draft, setDraft] = useState<Draft>({})
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const showSkeleton = useDelayedFlag(!state && !error)
 
   useEffect(() => {
     fetchSubsidyItems(applicationId)
@@ -189,7 +192,15 @@ export default function SubsidyItems({
   }
 
   if (error && !state) return <p className="flow-error">{error}</p>
-  if (!state) return <p className="subsidy__loading">지원 항목을 불러오는 중…</p>
+  if (!state) return showSkeleton ? (
+    <Skeleton className="subsidy subsidy__skeleton">
+      <SkeletonCard><SkeletonLine width="88%" /><SkeletonLine width="66%" /></SkeletonCard>
+      <div className="subsidy__skeleton-grid">
+        {[0, 1, 2, 3].map((item) => <SkeletonCard key={item}><SkeletonLine width="52%" /><SkeletonLine width="80%" /><SkeletonLine width="38%" /></SkeletonCard>)}
+      </div>
+      <SkeletonCard><SkeletonLine width="32%" /><SkeletonLine width="62%" /></SkeletonCard>
+    </Skeleton>
+  ) : null
 
   const estimate = state.estimate
 

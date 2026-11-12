@@ -15,11 +15,14 @@ import { useEffect, useState } from 'react'
 import { fetchStatus, type ApplicationStatus } from '../../api.ts'
 import FileLink from '../../components/FileLink.tsx'
 import StatusBadge from '../../components/StatusBadge.tsx'
+import { Skeleton, SkeletonBlock, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './my-page.css'
 
 export default function MyPage({ applicationId }: { applicationId: number }) {
   const [data, setData] = useState<ApplicationStatus | null>(null)
   const [error, setError] = useState('')
+  const showSkeleton = useDelayedFlag(!data && !error)
 
   useEffect(() => {
     fetchStatus(applicationId)
@@ -28,7 +31,14 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
   }, [applicationId])
 
   if (error) return <p className="flow-error">{error}</p>
-  if (!data) return <p className="mypage__loading">불러오는 중…</p>
+  if (!data) return showSkeleton ? (
+    <Skeleton className="mypage mypage__skeleton">
+      <SkeletonCard className="mypage__skeleton-head"><SkeletonLine width="42%" /><SkeletonLine width="26%" /></SkeletonCard>
+      <SkeletonBlock className="mypage__skeleton-progress" />
+      <SkeletonCard><SkeletonLine width="72%" /></SkeletonCard>
+      {[0, 1, 2].map((item) => <SkeletonCard key={item} className="mypage__skeleton-box"><SkeletonLine width="30%" />{Array.from({ length: 3 }, (_, index) => <SkeletonLine key={index} width={index === 1 ? '82%' : '96%'} />)}</SkeletonCard>)}
+    </Skeleton>
+  ) : null
 
   return (
     <div className="mypage">

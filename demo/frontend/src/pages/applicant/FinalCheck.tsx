@@ -23,6 +23,8 @@ import {
 } from '../../api.ts'
 import FileLink from '../../components/FileLink.tsx'
 import StatusBadge from '../../components/StatusBadge.tsx'
+import { Skeleton, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './final-check.css'
 
 /** 남은 항목을 어느 화면에서 고치는지 기준으로 묶는다. 순서는 신청 순서대로. */
@@ -53,6 +55,7 @@ export default function FinalCheck({
   const [data, setData] = useState<FinalCheckData | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const showSkeleton = useDelayedFlag(!data && !error)
 
   useEffect(() => {
     fetchFinalCheck(applicationId)
@@ -73,7 +76,11 @@ export default function FinalCheck({
   }
 
   if (error && !data) return <p className="flow-error">{error}</p>
-  if (!data) return <p className="fcheck__loading">확인 중…</p>
+  if (!data) return showSkeleton ? (
+    <Skeleton className="fcheck fcheck__skeleton">
+      {[0, 1, 2, 3].map((item) => <SkeletonCard key={item} className="fcheck__skeleton-box"><SkeletonLine width="34%" />{Array.from({ length: item === 0 ? 1 : 4 }, (_, index) => <SkeletonLine key={index} width={index % 2 ? '74%' : '92%'} />)}</SkeletonCard>)}
+    </Skeleton>
+  ) : null
 
   return (
     <div className="fcheck">

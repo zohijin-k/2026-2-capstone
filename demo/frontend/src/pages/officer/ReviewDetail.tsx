@@ -22,6 +22,8 @@ import {
   type ScoreItemRow,
 } from '../../api.ts'
 import StatusBadge from '../../components/StatusBadge.tsx'
+import { Skeleton, SkeletonBlock, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import DocumentViewer from './DocumentViewer.tsx'
 import { dotClass } from './format.ts'
 import ScoreSheet6 from './ScoreSheet6.tsx'
@@ -109,6 +111,7 @@ export default function ReviewDetail({
   const [focus, setFocus] = useState<Focus | null>(null)
   const [memo, setMemo] = useState('')
   const [saving, setSaving] = useState(false)
+  const showSkeleton = useDelayedFlag((!detail || detail.documents.length === 0) && !error)
 
   const load = () => {
     fetchReviewDetail(applicationId, role)
@@ -133,7 +136,15 @@ export default function ReviewDetail({
   }, [detail, activeDocId])
 
   if (error) return <p className="officer__error">{error}</p>
-  if (!detail || !activeDoc) return <p className="officer__loading">심사 정보를 불러오는 중…</p>
+  if (!detail || !activeDoc) return showSkeleton ? (
+    <Skeleton className="review__skeleton">
+      <div className="review__skeleton-header"><SkeletonLine width="22%" /><SkeletonLine width="34%" /><SkeletonLine width="18%" /></div>
+      <div className="review__skeleton-split">
+        <div className="review__skeleton-left"><div className="review__skeleton-tabs">{Array.from({ length: 5 }, (_, i) => <SkeletonLine key={i} width="68%" />)}</div><SkeletonBlock className="review__skeleton-page" /></div>
+        <div className="review__skeleton-right"><SkeletonLine width="58%" />{Array.from({ length: 9 }, (_, i) => <SkeletonLine key={i} width={i % 3 ? '82%' : '96%'} />)}<SkeletonBlock /></div>
+      </div>
+    </Skeleton>
+  ) : null
 
   const formIndex = detail.forms.findIndex((f) => f.form_no === activeForm)
   const viewingForm = formIndex >= 0 ? detail.forms[formIndex] : null

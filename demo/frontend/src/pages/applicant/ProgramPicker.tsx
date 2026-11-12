@@ -24,6 +24,8 @@ import {
   type ProgramDetail,
 } from '../../api.ts'
 import CriteriaEditor from '../../components/CriteriaEditor.tsx'
+import { Skeleton, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './program-picker.css'
 
 const dash = (value: string) => value.replaceAll('-', '. ')
@@ -456,6 +458,7 @@ export default function ProgramPicker({
   const [error, setError] = useState('')
   const [criteria, setCriteria] = useState<Record<string, CriteriaData>>({})
   const [editing, setEditing] = useState<string | null>(null)
+  const showSkeleton = useDelayedFlag(!programs && !error)
 
   useEffect(() => {
     fetchPrograms()
@@ -468,7 +471,22 @@ export default function ProgramPicker({
   }, [])
 
   if (error) return <p className="flow-error">{error}</p>
-  if (!programs) return <p className="ppick__loading">사업 목록을 불러오는 중…</p>
+  if (!programs) return showSkeleton ? (
+    <div className="ppick ppick__skeleton">
+      <Skeleton className="ppick__skeleton-inner">
+        <SkeletonLine width="82%" />
+        <div className="ppick__skeleton-grid">
+          {[0, 1].map((item) => (
+            <SkeletonCard key={item} className="ppick__skeleton-card">
+              <SkeletonLine width="62%" />
+              <SkeletonLine width="38%" />
+              {Array.from({ length: 7 }, (_, index) => <SkeletonLine key={index} width={index % 2 ? '78%' : '92%'} />)}
+            </SkeletonCard>
+          ))}
+        </div>
+      </Skeleton>
+    </div>
+  ) : null
 
   return (
     <div className="ppick">

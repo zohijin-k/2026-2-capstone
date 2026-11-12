@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { Skeleton, SkeletonCard, SkeletonLine } from './Skeleton.tsx'
+import useDelayedFlag from '../hooks/useDelayedFlag.ts'
 
 import {
   fetchOfficerCriteria,
@@ -65,6 +67,7 @@ export default function CriteriaEditor({
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [monthYear, setMonthYear] = useState(2025)
+  const showSkeleton = useDelayedFlag((!form || !current) && !error)
 
   useEffect(() => {
     fetchOfficerCriteria(code)
@@ -77,7 +80,12 @@ export default function CriteriaEditor({
   }, [code])
 
   if (error) return <p role="alert">{error}</p>
-  if (!form || !current) return <p>심사 기준을 불러오는 중…</p>
+  if (!form || !current) return showSkeleton ? (
+    <Skeleton className="criteria-editor__skeleton">
+      <SkeletonLine width="34%" />
+      {[0, 1, 2].map((group) => <SkeletonCard key={group}><SkeletonLine width="28%" />{Array.from({ length: group === 1 ? 5 : 4 }, (_, i) => <div className="criteria-editor__skeleton-field" key={i}><SkeletonLine width="42%" /><SkeletonBlock /></div>)}</SkeletonCard>)}
+    </Skeleton>
+  ) : null
 
   const changeRule = (key: string, rule: IssueRule) =>
     setForm((prev) => prev && ({ ...prev, document_issue_rules: { ...prev.document_issue_rules, [key]: rule } }))

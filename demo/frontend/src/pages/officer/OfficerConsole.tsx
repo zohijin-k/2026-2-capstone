@@ -22,6 +22,8 @@ import {
 import ApplicationList from './ApplicationList.tsx'
 import ReviewDetail from './ReviewDetail.tsx'
 import CriteriaEditor from '../../components/CriteriaEditor.tsx'
+import { Skeleton, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './officer.css'
 
 const DEFAULT_QUERY: OfficerListQuery = { role: 'province', page: 1, page_size: 20 }
@@ -42,6 +44,7 @@ export default function OfficerConsole() {
   const [mock, setMock] = useState(isOfficerMockActive())
   const [showCriteria, setShowCriteria] = useState(false)
   const [criteriaProgram, setCriteriaProgram] = useState('double_savings')
+  const showListSkeleton = useDelayedFlag(!list && !error && !showCriteria && open === null)
 
   useEffect(() => {
     fetchOfficerRoles()
@@ -172,9 +175,13 @@ export default function OfficerConsole() {
           onBulk={bulk}
           busy={busy}
         />
-      ) : (
-        <p className="officer__loading">접수 목록을 불러오는 중…</p>
-      )}
+      ) : showListSkeleton ? (
+        <Skeleton className="officer__table-skeleton">
+          <div className="officer__filters-skeleton"><SkeletonLine width="18%" /><SkeletonLine width="24%" /><SkeletonLine width="14%" /><SkeletonLine width="20%" /></div>
+          <div className="officer__table-skeleton-head">{Array.from({ length: 8 }, (_, i) => <SkeletonLine key={i} width={i === 2 ? '72%' : '52%'} />)}</div>
+          {Array.from({ length: 8 }, (_, row) => <div className="officer__table-skeleton-row" key={row}>{Array.from({ length: 8 }, (_, col) => <SkeletonLine key={col} width={col === 2 ? '78%' : '64%'} />)}</div>)}
+        </Skeleton>
+      ) : null}
     </div>
   )
 }

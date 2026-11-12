@@ -24,6 +24,8 @@ import {
   type UploadedDocument,
 } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
+import { Skeleton, SkeletonBlock, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import Modal from '../../components/Modal.tsx'
 import PdfPages from '../../components/PdfPages.tsx'
 import StatusBadge from '../../components/StatusBadge.tsx'
@@ -241,6 +243,7 @@ function SlotCard({
   const [interviewFormOpen, setInterviewFormOpen] = useState(false)
   const [interviewPdfReady, setInterviewPdfReady] = useState(false)
   const [interviewHwp, setInterviewHwp] = useState<string | null>(null)
+  const showBusySkeleton = useDelayedFlag(busy)
   const doc = item.documents[0]
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
@@ -326,6 +329,16 @@ function SlotCard({
             </label>
           )}
           {dateWarning && <p className="dslot__date-warning" role="status">{dateWarning}</p>}
+          {showBusySkeleton && (
+            <Skeleton className="dslot__processing" label="서류를 읽는 중">
+              <SkeletonBlock className="dslot__processing-thumb" />
+              <span className="dslot__processing-copy">
+                <span className="dslot__processing-label">서류를 읽는 중</span>
+                <SkeletonLine width="72%" />
+                <SkeletonLine width="48%" />
+              </span>
+            </Skeleton>
+          )}
           <button
             type="button"
             className="btn btn--primary dslot__upload"
@@ -376,6 +389,7 @@ export default function DocumentUpload({
   const [declared, setDeclared] = useState<Record<string, YMD>>({})
   const [busySlot, setBusySlot] = useState('')
   const [error, setError] = useState('')
+  const showChecklistSkeleton = useDelayedFlag(!checklist && !error)
 
   useEffect(() => {
     fetchChecklist(applicationId)
@@ -444,7 +458,17 @@ export default function DocumentUpload({
   }
 
   if (error && !checklist) return <p className="flow-error">{error}</p>
-  if (!checklist) return <p className="dupload__loading">서류 목록을 불러오는 중…</p>
+  if (!checklist) return showChecklistSkeleton ? (
+    <Skeleton className="dupload__skeleton-list">
+      {Array.from({ length: 5 }, (_, index) => (
+        <SkeletonCard key={index} className="dupload__skeleton-slot">
+          <SkeletonLine width="38%" />
+          <SkeletonLine width="78%" />
+          <SkeletonLine width="54%" />
+        </SkeletonCard>
+      ))}
+    </Skeleton>
+  ) : null
 
   const uploadItems = checklist.items.filter((i) => i.upload)
   const onlineItems = checklist.items.filter((i) => !i.upload)
