@@ -342,7 +342,8 @@ def check_document(
             return CheckResult(status=finding.severity, findings=[finding])
 
     if (not ocr.is_encrypted and ocr.tier != "fixture"
-            and ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS):
+            and (ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS or
+                 (ocr.detected_doc_type is DocType.NHIS_QUALIFICATION and "양식판독상태" in ocr.fields))):
         missing = []
         for label in ("성명", "생년월일", "발급일"):
             value = str(ocr.fields.get(label) or "").strip()
@@ -357,14 +358,14 @@ def check_document(
         if ocr.fields.get("양식판독상태") == "불완전":
             return CheckResult(status="NEEDS_REVIEW", findings=[_finding(
                 CODE_REQUIRED_FIELD_UNREADABLE,
-                "자격득실확인서의 양식 또는 표 구조를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                f"{_display_doc_type(ocr.detected_doc_type)}의 양식 또는 표 구조를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
                 req, field="양식·표 구조",
             )])
         if missing:
             nhis_review_needed = True
             findings.append(_finding(
                 CODE_REQUIRED_FIELD_UNREADABLE,
-                "자격득실확인서의 필수 정보를 읽지 못했습니다. 담당자가 원본을 확인합니다.",
+                f"{_display_doc_type(ocr.detected_doc_type)}의 필수 정보를 읽지 못했습니다. 담당자가 원본을 확인합니다.",
                 req, field="·".join(missing),
             ))
 

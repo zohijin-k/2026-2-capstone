@@ -178,8 +178,10 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
 
 
 def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
-    """Keep acquisition-loss completeness true after final header-value safety."""
-    if result.detected_doc_type != DocType.NHIS_ACQUISITION_LOSS or result.tier == "fixture":
+    """Keep supported NHIS forms complete after final header-value safety."""
+    if (result.tier == "fixture" or not (
+            result.detected_doc_type == DocType.NHIS_ACQUISITION_LOSS or
+            (result.detected_doc_type == DocType.NHIS_QUALIFICATION and "양식판독상태" in result.fields))):
         return result
     from engine_v2.pipeline.field_safety import remove_header_only_fields
 
@@ -235,6 +237,7 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
             confidence = min(confidence, 0.4)
     detected_map = {
         v2types.NHIS_PAYMENT: DocType.NHIS_PAYMENT,
+        v2types.NHIS_QUALIFICATION: DocType.NHIS_QUALIFICATION,
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
@@ -481,8 +484,15 @@ class LocalOcr:
                 return None
             detected = classified.detected_doc_type
             if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4)
-                    and detected not in _JOB_DOCS):
+                    and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
+            if detected == DocType.NHIS_QUALIFICATION:
+                from engine_v2.extractors.nhis_qualification import is_notification
+                import pymupdf
+
+                with pymupdf.open(path) as document:
+                    if not is_notification(" ".join(page.get_text() for page in document)):
+                        return None  # Other qualification forms retain their PdfText reader.
         elif engine == "off":
             return None
 
@@ -494,6 +504,7 @@ class LocalOcr:
         if text_pdf:
             v2type = v2types(_JOB_DOCS[detected][1]) if detected in _JOB_DOCS else {
                 DocType.NHIS_PAYMENT: v2types.NHIS_PAYMENT,
+                DocType.NHIS_QUALIFICATION: v2types.NHIS_QUALIFICATION,
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
             }[detected]
@@ -510,6 +521,9 @@ class LocalOcr:
                 )
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
+                if detected == DocType.NHIS_QUALIFICATION:
+                    from engine_v2.extractors import nhis_qualification
+                    extractor = nhis_qualification
                 result = _from_nhis(
                     extractor.extract(pages), pages, v2types,
                     classified.classification_evidence, detected,
@@ -541,6 +555,14 @@ class LocalOcr:
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result
+
+        if detected == DocType.NHIS_QUALIFICATION:
+            from engine_v2.extractors import nhis_qualification
+            if nhis_qualification.is_notification(text):
+                result = _from_nhis(nhis_qualification.extract(pages), pages, v2types, evidence, detected)
+                if path.suffix.lower() != ".pdf":
+                    _merge_image_heuristics(result, path)
+                return result
 
         if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
             if detected == DocType.INSURANCE_4:

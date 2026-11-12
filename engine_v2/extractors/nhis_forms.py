@@ -53,7 +53,8 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
 def person_table_header(page, result, anchor: str) -> common.PageHeader:
     """Read only the labeled identity table beside its form-specific anchor."""
     lines = common.page_lines(page, result)
-    anchors = [word for row in lines for word in row if anchor in squash(word.text)]
+    hits = common.label_hits(lines, (anchor,))
+    anchors = hits[0][1] if hits else []
     if not anchors:
         return common.PageHeader(page.page)
     anchor_y = anchors[0].cy
@@ -96,8 +97,14 @@ def person_table_header(page, result, anchor: str) -> common.PageHeader:
     for row in common.group_lines(selected):
         words = [word for word in row if word.x0 >= rrn_left - .5]
         text = squash(common.normalize_format_text(line_text(words)))
-        matches = list(common.MASKED_RRN_RE.finditer(text)) + list(common.RRN_RE.finditer(text))
-        rrns.extend((common.birth_from_rrn(match.group()), words) for match in matches)
+        # A label may be merged with its value, but unrelated text or an
+        # overlong mask cannot be discarded around a plausible number.
+        if text.startswith("주민등록번호"):
+            text = text[len("주민등록번호"):].lstrip(":：")
+        if not text:
+            continue
+        match = common.MASKED_RRN_RE.fullmatch(text) or common.RRN_RE.fullmatch(text)
+        rrns.append((common.birth_from_rrn(match.group()) if match else None, words))
     if len(rrns) == 1 and rrns[0][0] is not None:
         header.birth, header.birth_words = rrns[0]
     else:
