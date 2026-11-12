@@ -363,7 +363,9 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         if type(covered) is bool and history_text:
             try:
                 history = json.loads(history_text)
-                history["recent_five_years_covered"] = covered
+                # Preserve the extractor's tri-state; legacy readers only
+                # supplied a boolean validation and still need this fallback.
+                history.setdefault("recent_five_years_covered", covered)
                 fields["자격이력자료"] = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
             except (TypeError, ValueError):
                 pass

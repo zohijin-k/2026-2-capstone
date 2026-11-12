@@ -71,18 +71,22 @@ def _header_positions(pages):
 def _query_period(pages):
     periods = []
     words = []
+    label_present = False
+    unreadable = False
     for page, result in pages:
         for line in common.page_lines(page, result):
-            text = line_text(line)
-            if "조회" not in squash(text) and "대상기간" not in squash(text):
+            if not common.label_hits([line], ("조회기간", "조회대상기간", "대상기간")):
                 continue
+            label_present = True
             dates = [value for value, _ in common.dates_in_line(line)]
-            if len(dates) >= 2:
+            if len(dates) == 2:
                 periods.append((min(dates), max(dates)))
                 words = line
-    if not periods:
-        return None, []
-    return (min(pair[0] for pair in periods), max(pair[1] for pair in periods)), words
+            else:
+                unreadable = True
+    if unreadable or not periods or len(set(periods)) != 1:
+        return None, [], label_present
+    return periods[0], words, label_present
 
 
 def _observed_identity_consensus(headers, key: str):
@@ -242,6 +246,14 @@ def _nhis_document_number(pages):
     return None
 
 
+_BLANK_MARKERS = ("이하여백", "이하여뱍")
+
+
+def _blank_marker_hits(line):
+    # A bounded comparison-only OCR variant; source words and cells stay intact.
+    return nhis_forms.label_hits([line], _BLANK_MARKERS)
+
+
 def _nhis_history(pages):
     """Split observed body columns; reserve date tokens before employer."""
     rows = []
@@ -278,7 +290,7 @@ def _nhis_history(pages):
                         and nhis_forms.table_noise(word, header_height)
                         and not re.search(r"[가-힣\d]", word.text))])
         marker_rows = [index for index, line in enumerate(body)
-                       if "이하여백" in squash(line_text(line))]
+                       if _blank_marker_hits(line)]
         marker_index = marker_rows[0] if marker_rows else len(body)
         bounded_body = body[:marker_index + 1]
         # Reserve observed date occurrences before measuring whitespace. A long
@@ -308,12 +320,12 @@ def _nhis_history(pages):
             flat = squash(line_text(line))
             if "확인합니다" in flat or "국민건강보험공단" in flat:
                 break
-            marker_hits = nhis_forms.label_hits([line], ("이하여백",))
+            marker_hits = _blank_marker_hits(line)
             marker_words = marker_hits[0][1] if len(marker_hits) == 1 else []
             if marker_words:
                 marker_valid = (employer_left <= min(word.x0 for word in marker_words) and
                                 max(word.x1 for word in marker_words) <= date_left and
-                                re.sub(r"[^가-힣A-Za-z\d]", "", flat) == "이하여백")
+                                re.sub(r"[^가-힣A-Za-z\d]", "", flat) in _BLANK_MARKERS)
                 markers.append(marker_valid)
                 marker_seen = True
                 marker_y = max(word.cy for word in marker_words)
@@ -412,6 +424,33 @@ def history_covers_recent_years(
     return any(lost and lost < cutoff for _, lost in row_dates)
 
 
+def assess_history_coverage(
+    issue_date: date | None,
+    period: tuple[date, date] | None,
+    rows: Iterable[tuple[date | None, date | None]],
+    *,
+    period_label_present: bool,
+    structure_valid: bool,
+    complete_nhis_history: bool,
+    years: int = 5,
+) -> tuple[bool | None, str]:
+    """Separate proved insufficiency from absent/unreadable range evidence."""
+    if issue_date is None or not structure_valid:
+        return None, "undetermined"
+    if period is not None:
+        return history_covers_recent_years(issue_date, period, (), years), "query_period"
+    if period_label_present:
+        return None, "undetermined"
+    if history_covers_recent_years(issue_date, None, rows, years):
+        return True, "history_rows"
+    if complete_nhis_history:
+        # 추정: no query-period cell plus a bounded 이하여백 ending and all
+        # structure checks imply a complete NHIS listing. This is a form
+        # interpretation, not a verified issuer guarantee about all history.
+        return True, "full_history"
+    return None, "undetermined"
+
+
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> AcquisitionLossResult:
     del today
     form_kind = _form_kind(pages)
@@ -473,15 +512,12 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         rows = _parse_history(pages)
     if form_kind == "unknown":
         validations.append(common.Validation("form_recognized", False))
-    period, period_words = _query_period(pages)
+    period, period_words, period_label_present = _query_period(pages)
     history_data = {
         "period": [value.isoformat() for value in period] if period else None,
         "rows": [{"category": row.category, "acquired": row.acquired.isoformat() if row.acquired else None,
                   "lost": row.lost.isoformat() if row.lost else None} for row in rows],
     }
-    history_text = json.dumps(history_data, ensure_ascii=False, separators=(",", ":"))
-    fields["자격이력자료"] = common.make_field(history_text, history_text,
-        [word for row in rows for word in row.words], page_map, 0.9, sources)
     dates_read = bool(rows) and all(row.acquired is not None for row in rows)
     order_ok = all(row.acquired <= row.lost for row in rows if row.acquired and row.lost)
     validations.extend((common.Validation("history_dates_read", dates_read),
@@ -506,18 +542,26 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
 
     issue = fields.get("발급일")
     issue_date = date.fromisoformat(issue.value) if issue else None
-    period, period_words = _query_period(pages)
-    spans_five_years = bool(issue_date and history_covers_recent_years(
-        issue_date, period, ((row.acquired, row.lost) for row in rows)
-    ))
-    if issue_date:
-        status = "최근 5년 포함" if spans_five_years else "최근 5년 미포함"
-        fields["변동내역"] = common.make_field(status, status, period_words or
-            next((row.words for row in rows if row.acquired), []), page_map,
-            common.confidence([issue_date is not None, dates_read]), sources)
-    else:
+    structure_valid = all(check.passed for check in validations)
+    spans_five_years, coverage_basis = assess_history_coverage(
+        issue_date, period, ((row.acquired, row.lost) for row in rows),
+        period_label_present=period_label_present,
+        structure_valid=structure_valid,
+        complete_nhis_history=form_kind == "nhis" and structure_valid,
+    )
+    history_data.update(recent_five_years_covered=spans_five_years,
+                        coverage_basis=coverage_basis, coverage_years=5,
+                        period_label_present=period_label_present)
+    history_text = json.dumps(history_data, ensure_ascii=False, separators=(",", ":"))
+    fields["자격이력자료"] = common.make_field(history_text, history_text,
+        [word for row in rows for word in row.words], page_map, 0.9, sources)
+    status = {True: "최근 5년 포함", False: "최근 5년 미포함", None: "최근 5년 확인 필요"}[spans_five_years]
+    fields["변동내역"] = common.make_field(status, status, period_words or
+        next((row.words for row in rows if row.acquired), []), page_map,
+        common.confidence([issue_date is not None, dates_read]), sources)
+    if not issue_date:
         diagnostics["변동내역"] = "발급일을 찾지 못해 최근 5년 범위를 계산하지 못함"
-    validations.append(common.Validation("recent_five_years_covered", spans_five_years))
+    validations.append(common.Validation("recent_five_years_covered", spans_five_years is True))
 
     active_jobs = [row for row in rows if row.category in {"직장", "직장가입자"} and row.acquired and row.lost is None]
     if active_jobs:
