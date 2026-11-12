@@ -14,3 +14,6 @@ Prevent false income approval/rejection and enforce inclusive program birth rang
 
 ## Constraints
 Branch feat/income-eligibility from e10438a; no main merge, push or PR. Commit each of nine stages. Do not access private data or execute real documents. Masked /tmp layouts are read-only; never copy wholesale. Do not touch docs/audit/. No residence, identifier-retention or unrelated extractor changes. Final task status review, awaiting user confirmation.
+
+## Follow-up confirmed requirements
+The user's follow-up supersedes requirements 4–5 where they conflict: definite FAIL from any source wins over NEEDS_REVIEW; final includes engine final plus household/income/age/overlap, while stage2 includes only engine stage2 plus those additional results. Preserve reasons and synchronize stored/payload/action/officer list/detail. Existing overlapping applications retain their own FAIL while officer decisions are reset as before. For rows with mixed limits, above both ordinary limits but at/below mixed is UNDETERMINED / INCOME_MIXED_POSSIBLE; above all available limits is certain excess. No mixed membership selection. One-person behavior and ordinary middle/low rules remain. Five ordered local commits, task review/user-confirmation state retained.
