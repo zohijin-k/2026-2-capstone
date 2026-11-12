@@ -25,9 +25,13 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
     """Select a unique date-only line strictly between confirmation and issuer."""
     lines = common.page_lines(page, result)
     confirmations = [i for i, row in enumerate(lines) if "확인합니다" in squash(line_text(row))]
+    if len(confirmations) != 1:
+        return None, [], False
+    # A seal can obscure the officer's role. The observed organization below
+    # confirmation supplies the closing anchor without completing missing text.
     issuers = [i for i, row in enumerate(lines)
-               if "국민건강보험공단" in squash(line_text(row)) and "이사장" in squash(line_text(row))]
-    if len(confirmations) != 1 or len(issuers) != 1 or confirmations[0] >= issuers[0]:
+               if i > confirmations[0] and "국민건강보험공단" in squash(line_text(row))]
+    if len(issuers) != 1:
         return None, [], False
     candidates = []
     for row in lines[confirmations[0] + 1:issuers[0]]:
@@ -113,18 +117,25 @@ def person_table_header(page, result, anchor: str) -> common.PageHeader:
     return header
 
 
-def label_hits(lines, aliases):
+def label_hits(lines, aliases, *, x_bounds=None):
     """Compare spaced labels without joining or changing source value tokens.
 
     Separate one-character glyphs must share a line and reasonably regular
     spacing. Larger word fragments may form a label, but not across a cell gap.
-    Legacy readers retain their existing common.label_hits behavior.
+    An explicitly observed label-cell interval permits justified glyph spacing.
+    Values outside that interval never participate in the comparison.
     """
     from statistics import median
 
     found = []
     for row in lines:
+        if x_bounds is not None:
+            left, right = x_bounds
+            row = [word for word in row if left <= word.x0 and word.x1 <= right]
         for alias, words in common.label_hits([row], aliases):
+            if x_bounds is not None:
+                found.append((alias, words))
+                continue
             widths = [(w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words]
             scale = median(widths)
             gaps = [b.x0 - a.x1 for a, b in zip(words, words[1:])]
@@ -137,13 +148,15 @@ def label_hits(lines, aliases):
     return found
 
 
-def table_columns(headers, body):
+def table_columns(headers, body, *, optional_columns=()):
     """Map ordered headers to persistent empty vertical corridors in body words.
 
     Header centers only establish column order and which pair a corridor can
     separate; body interval edges supply every actual boundary. Multiple equally
     plausible corridors, overlaps without a gap, or missing evidence return None.
     Marker cells can supply evidence for otherwise empty optional columns.
+    Explicit optional columns may additionally use observed header gaps within
+    empty body space. Missing headers and ambiguous occupied corridors fail.
     """
     from statistics import median
 
@@ -164,17 +177,44 @@ def table_columns(headers, body):
             intervals.append([left, right])
     gaps = [(a[1], b[0]) for a, b in zip(intervals, intervals[1:])]
     boundaries = [float('-inf')]
-    for left, right in zip(centers, centers[1:]):
+    for index, (left, right) in enumerate(zip(centers, centers[1:])):
         candidates = sorted(((b - a, a, b) for a, b in gaps
                              if left < (a + b) / 2 < right and b - a >= scale), reverse=True)
         if not candidates:
-            return None
+            if index not in optional_columns and index + 1 not in optional_columns:
+                return None
+            header_left = max(word.x1 for word in headers[index])
+            header_right = min(word.x0 for word in headers[index + 1])
+            empty = [(float('-inf'), intervals[0][0]), *gaps,
+                     (intervals[-1][1], float('inf'))]
+            candidates = sorted((min(b, header_right) - max(a, header_left),
+                                 max(a, header_left), min(b, header_right))
+                                for a, b in empty
+                                if min(b, header_right) - max(a, header_left) >= scale)
+            candidates.reverse()
+            if not candidates:
+                return None
         width, a, b = candidates[0]
         if len(candidates) > 1 and width - candidates[1][0] <= scale:
             return None
         boundaries.append((a + b) / 2)
     boundaries.append(float('inf'))
-    return boundaries
+    return boundaries if all(a < b for a, b in zip(boundaries, boundaries[1:])) else None
+
+
+def table_noise(word, reference_height: float) -> bool:
+    """Identify OCR geometry anomalies for a caller's explicitly scoped region.
+
+    Callers must retain ordinary cells and use this only on OCR pages in an
+    observed blank/header-gap region. A low confidence by itself is insufficient.
+    """
+    if reference_height <= 0:
+        return False
+    height = word.y1 - word.y0
+    width = word.x1 - word.x0
+    tall = word.conf < .75 and height > 2.5 * reference_height
+    tiny = word.conf < .3 and height < .6 * reference_height and width < .8 * reference_height
+    return tall or tiny
 
 
 def column_cells(words, boundaries):

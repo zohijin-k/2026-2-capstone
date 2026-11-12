@@ -131,3 +131,9 @@ Only masked shape sources are used for real-document structure. Synthetic integr
 ## Stage 2 outcome
 
 All supplied failures are classified individually above. The supported changes follow observed geometry and typed-cell constraints. Unknown Latin numeric glyphs remain reviewable. Issue-date duplication outside the closing block already works, so the additional position test guards that behavior. The shortened issuer role remains inference. The five-year helper already permits insurance gaps and keeps its meaning.
+
+## Stage 3 outcome
+
+Shared NHIS geometry now accepts explicitly optional header-backed empty columns while retaining strict default corridor ambiguity checks (`engine_v2/extractors/nhis_forms.py:151`). Bounded label comparison supports justified glyph labels using observed cell bounds (`:120`). Closing organization scope retains unique date-only evidence even with an obscured officer role (`:24`). Geometry-plus-confidence noise recognition is opt-in for bounded OCR callers (`:205`). Source value words remain intact.
+
+The amount-cell helper `engine_v2/extractors/format_text.py:24` returns normalized integer text or unreadable plus correction categories. It permits only O/o→0, I/l→1 and valid three-digit group punctuation. Unknown A stays unreadable. Numeric correction consumers must enforce arithmetic before completeness. Shared coordinate helpers add 21 tests and numeric helpers add 26 tests. Focused NHIS/portal/backend coverage passed 332 tests in the implementer's run, and the numeric plus format-parser set passed 98 tests.
