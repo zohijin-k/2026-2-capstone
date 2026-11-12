@@ -84,7 +84,7 @@ applicant = Applicant(
 
     program="전북청년적금",
 
-    income_decile=5,                  # 건강보험료 기준 소득분위 (1~10)
+    income_decile=5,                  # 건강보험료 기준 소득분위 (1\~10)
 
     prior_support_count=0,
 

@@ -6,9 +6,9 @@
 
 - 요구사항: `.trellis/tasks/09-16-demo-site/prd.md`
 - 설계: `.trellis/tasks/09-16-demo-site/design.md`
-- 업무 규칙 원문(자격요건·제출서류·심사표 배점·중위소득 기준표): `docs/demo-site-dev-plan.md`
+- 업무 규칙 관련 옛 기록: [보관 문서](../docs/archive/demo-site-dev-plan.md)
 - **시연 대본**: [`docs/demo-script.md`](docs/demo-script.md)
-- **담당자 화면 목업 데이터**: [`docs/officer-mock-data.md`](docs/officer-mock-data.md)
+- 담당자 화면 목업 데이터의 옛 기록: [보관 문서](../docs/archive/officer-mock-data.md)
 
 > ⚠️ **PC 전용**이다. 서식 원형을 지키기 위해 폭 940px 고정 레이아웃을 쓴다(R8.6).
 > 좁은 화면에서는 셀을 재배치하지 않고 가로 스크롤만 생긴다.
@@ -29,7 +29,7 @@ demo/
 │   ├── engine_adapter.py   engine/ 와의 유일한 접점
 │   ├── api/ ocr/ rules/    라우터 · 판독 3계층 · 업무 규칙
 │   ├── forms/          원본 PDF 위 입력·서명 렌더링 및 서식 응답
-│   └── tests/          P2\~P15 시나리오 검증 스크립트 (pytest 없이 실행)
+│   └── tests/          P2\~P20 시나리오 검증 스크립트 (pytest 없이 실행)
 ├── frontend/           React + Vite (신청자 화면 · 담당자 화면)
 ├── fixtures/
 │   ├── make_samples.py 시연용 더미 서류 생성기
@@ -40,7 +40,6 @@ demo/
 │   ├── form_coords/    서식별 필드 좌표 맵 JSON
 │   └── expected/       시연 시나리오 10종의 기대 결과 JSON
 ├── docs/demo-script.md 시연 대본
-├── docs/officer-mock-data.md 담당자 화면 목업 데이터 (+ 대안 2종)
 ├── storage/            업로드 원본 (gitignore)
 └── demo.db             SQLite (gitignore)
 ```
@@ -82,14 +81,11 @@ PYTHONIOENCODING=utf-8 PYTHONUTF8=1 python -m demo.fixtures.make_samples
 `engine/` 을 import 할 수 있다.
 
 ```bash
-# 터미널 1 — 백엔드 (저장소 루트에서, .env의 전북AI 설정을 함께 넘긴다)
-uvicorn demo.backend.main:app --reload --port 8000 --env-file .env
+# 터미널 1 — 백엔드 (저장소 루트에서)
+uvicorn demo.backend.main:app --reload --port 8000
 ```
 
-`.env`가 없거나 `JBAI_API_KEY`·`JBAI_ALLOW_REAL_DOCS=true` 중 하나라도 빠지면 전북AI 없이
-로컬 OCR부터 동작한다. 변수 설명은 저장소 루트의 `.env.example`에 있다.
-own을 선택하려면 저장소 루트에서 `pip install -r engine_v2/requirements.txt`와
-`python engine_v2/tools/fetch_own_models.py`를 한 번 실행한다. 모델 파일은 저장소에 포함되지 않는다.
+이번 제출에서는 전북AI를 사용하지 않는다(연동 코드는 있으나 이번 제출에서는 사용하지 않음). JBAI_* 설정은 비워 둔 채 실행한다. 데모 로컬 OCR은 macOS를 포함한 모든 환경에서 own이 기본이다. own 모델은 macOS에서도 설치해야 한다. 저장소 루트에서 `pip install -r engine_v2/requirements.txt`와 `python engine_v2/tools/fetch_own_models.py`를 실행한다. 모델 파일은 저장소에 포함되지 않는다.
 
 ```bash
 # 터미널 2 — 프론트엔드
@@ -102,7 +98,7 @@ npm run dev
 
 접수된 신청 건이 하나도 없으면 담당자 화면은 **목업 데이터**로 채워진다(상단에 노란
 배너가 뜬다). `?mock=1`로 강제로 켜고 `?mock=0`으로 끈다 —
-[`docs/officer-mock-data.md`](docs/officer-mock-data.md).
+[보관된 담당자 화면 목업 기록](../docs/archive/officer-mock-data.md).
 
 확인용 엔드포인트:
 
@@ -238,17 +234,9 @@ WOFF2, PDF 합성에는 TTF 서브셋을 사용하며, 각 글꼴 폴더에 SIL 
 
 ## 7. 알아 둘 것
 
-- **판독(OCR)은 단계형 체인**이다. 생성 샘플의 고정 응답을 먼저 확인하고, 지원되는
-  텍스트 레이어 없는 서류에는 전북AI OCR을 호출한다. 인증·통신·응답 오류 또는 서류별
-  필수 항목·쪽 완전성 등 판독 검증 실패 시 로컬 OCR(`ENGINE_V2_OCR` 선택 엔진)로 대체한다. 검증을
-  통과한 결과는 환각 점수와 무관하게 사용하고, 잡음은 담당자 화면에 참고 표시한다.
-  텍스트 PDF는 로컬 판독기와 PyMuPDF 텍스트 계층이 처리한다. 요청에는 temperature 0을
-  사용하며 모델 특수 토큰은 제거한다. 전북AI는 좌표를 주지 않아 원본 위치 강조를 제공하지
-  못한다. 실제 초본 시험은 전북AI 판독 검증을 통과하지 못해 현재 로컬 OCR로 대체되고
-  있으며, own을 신청 화면 로컬 OCR의 기본 엔진으로 연결하는 작업은 진행 중이다. 엔진·대체 사유·품질 메모는 담당자 화면에만
-  표시한다 (`ocr/jbai.py`, `tests/run_p15_jbai_scenarios.py`).
-- 로컬 엔진 선택값은 `applevision` / `own` / `easyocr` / `paddle` / `off`다. 데모 어댑터의 현재 암묵 기본값은 macOS에서 Apple Vision, 그 밖의 환경에서 EasyOCR이며, own 연결 뒤 기본값을 own으로 바꿀 예정이다. 독립 실행형 `engine_v2.engine.run`/CLI 기본값은 macOS에서 Apple Vision, 그 밖의 환경에서 own이다.
-- 판독 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(선택 엔진) → PDF 텍스트다. 전북AI를 사용하지 않거나 서류별 검증에 실패하면 다음 로컬 계층이 시도된다.
+- **판독(OCR)은 단계형 체인**이다. 판독 순서는 시연 고정 응답 → 로컬 OCR → PDF 텍스트다. 전북AI 연동 코드는 있으나 이번 제출에서는 사용하지 않으며 JBAI_* 설정은 비워 둔다.
+- 데모 로컬 OCR은 macOS를 포함한 모든 환경에서 own이 기본이다. 기본 선택에서 own 모델 파일이 없을 때만 easyocr로 대체한다. 명시한 own의 모델 누락·해시 오류·추론 오류에는 다른 OCR 엔진으로 대체하지 않는다. own 모델 설치는 macOS에서도 필요하다.
+- `ENGINE_V2_OCR`의 비어 있지 않은 값은 데모 엔진 선택에 우선한다. `off`는 데모 전용이고, `engine_v2.engine.run`과 CLI 선택값은 `own` / `applevision` / `easyocr` / `paddle`이다.
 - **점수는 신청자에게 절대 보이지 않는다**(공고문: "평가결과는 공개하지 않음").
   마이페이지 응답에 점수 관련 필드가 하나라도 섞이면 검증 스크립트가 잡는다.
 - **미확정 가정값**에는 `(데모 추정치)` 라벨이 붙어 있다. 중위소득 100\~130% 환산
