@@ -3,7 +3,7 @@
   "name": "acq-loss-nhis-form",
   "title": "자격득실확인서 공단 발급 양식 지원",
   "description": "공단 자격득실·자격확인 통보 및 4대보험 포털 양식 지원, 거짓 PASS 수정과 안내 문구 개선. 사용자 구현 승인, 단계별 커밋.",
-  "status": "review",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "document-ai",
   "package": null,
@@ -29,6 +29,6 @@
   ],
   "notes": "2026-11-13 A/B/C 및 지정 경고 구현·전체 검증 완료. 사용자 확인 대기(review), 완료/아카이브·푸시·PR 없음. verification.md 참조.",
   "meta": {
-    "awaiting_user_confirmation": true
+    "awaiting_user_confirmation": false
   }
 }

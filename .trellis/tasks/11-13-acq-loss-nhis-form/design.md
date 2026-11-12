@@ -162,3 +162,8 @@ C 포털은 출력일시·확인용·관찰된 머리 표 좌표의 긍정 단�
 
 ### 7단계 확인 대기
 세 문제 모두 제시된 합성 배치에서 해결했고 최종 실패는 없다. 완료 상세와 기준선 비교는 verification.md가 정본이다. 작업은 review로 두며 사용자 확인 전 완료/아카이브 처리하지 않는다. docs/audit/engine-walkthrough.md는 수정·커밋하지 않았다.
+
+## Shape-derived follow-up (approved 2026-11-13)
+The follow-up replaces assumptions about centered header starts with word-only evidence. Read the redacted external layout in place; never copy its contents into the repository. New fixtures use fictitious values and preserve token fragmentation, left-aligned body cells, split date lines and relative spacing. Existing government24 paths stay unchanged.
+
+Execution order: commit failing shape regressions; add label comparison and persistent body-gap column helpers; apply identity/history fixes to A; apply member-table fixes to B; remove fixed header bands from C; add coordinate title fallback only after legacy classification returns unknown; run all regression suites and document remaining assumptions. Each implementation step has its own commit. Unknown/ambiguous cells remain incomplete and NEEDS_REVIEW. No push, PR or audit-document edits.

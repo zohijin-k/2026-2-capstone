@@ -15,3 +15,12 @@
 
 ## 보존한 경계
 공고일 이상, 슬롯 대체 불허, 기존 정부24, 일반 PdfText, Fixture, UI 구조, OCR 사슬 예외 처리와 기존 가입자/가족 규칙을 보존했다. 공통 도우미 변경은 기존 회귀와 새 값 셀 모호성 회귀로 확인했다. 실제 서류는 접근하지 않았고 모든 자료는 명백한 가짜 값이었다.
+
+## Approved follow-up sequence
+1. Freeze A/B/C failures using OcrWord/PageImage fixtures shaped like the redacted observations (strict xfail until each fix).
+2. Add form-scoped spaced-label matching and table boundaries from persistent vertical gaps across body words; reject ambiguous evidence.
+3. Read A identity below overlapping name label, then use observed history columns.
+4. Reuse identity rule for B and publish the unchanged household JSON contract only after complete validation.
+5. Recognize C by relative body labels; keep portal issue-number checks separate and group split date occurrences by row spacing.
+6. Add a shared resident-title coordinate fallback and route both LocalOcr paths through existing resident extraction.
+7. Run all engine/backend/scenario tests, review the complete diff, update task evidence and leave review status pending user verification.
