@@ -23,7 +23,7 @@ from demo.backend.rules.doc_types import DocType
 from demo.backend.tools import verify_upload as tool
 from engine_v2.pipeline import ocr as coordinate_ocr
 from engine_v2.tests import fail_case_samples as cases, p2_resident_samples
-from engine_v2.tests.nhis_form_samples import acquisition_cells, insurance_portal_cells, qualification_cells, text_pdf
+from engine_v2.tests.nhis_form_samples import acquisition_cells, insurance_portal_cells, text_pdf
 from demo.backend.tests.test_daily_work_uploads import text_pdf as daily_pdf
 
 SECRET = "가짜비밀성명출력금지"

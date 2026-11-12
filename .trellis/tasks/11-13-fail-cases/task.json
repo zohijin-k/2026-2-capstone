@@ -30,9 +30,10 @@
     "research/address-resolution.md",
     "research/final-review.md",
     "research/scenario-expectations.md",
-    "research/tiny-baseline-replay.md"
+    "research/tiny-baseline-replay.md",
+    "verify-upload.md"
   ],
-  "notes": "Implementation and complete verification finished; awaiting user verification. No push/PR/archive. Baseline cdcf68d; code verified at 4536155; preexisting untracked docs/audit excluded.",
+  "notes": "Implementation and complete verification finished; awaiting user verification. No push/PR/archive. Baseline cdcf68d; code verified at 4536155; preexisting untracked docs/audit excluded. Upload-verification follow-up completed with 44 synthetic tests and full baseline comparison; existing image-title classification limitation reported without changing rules. Awaiting user verification.",
   "meta": {
     "implementation_complete": true,
     "code_review_complete": true,
@@ -49,6 +50,24 @@
       "frontend_lint": "passed with preexisting warning",
       "frontend_build": "passed with preexisting bundle warning"
     },
-    "source_commit": "4536155"
+    "source_commit": "4536155",
+    "upload_verification_followup": {
+      "implementation_complete": true,
+      "code_review_complete": true,
+      "awaiting_user_verification": true,
+      "plan_commit": "dffdd7e",
+      "implementation_commit": "0ad6d76",
+      "acceptance_commit": "2d1f220",
+      "engine_passed": 1236,
+      "engine_skipped": 3,
+      "backend_passed": 929,
+      "new_synthetic_tests": 44,
+      "scenario_passed": 1885,
+      "scenario_failed": 0,
+      "scenario_modules": 18,
+      "p14_exit_code": 0,
+      "existing_image_title_limitation_reported": true,
+      "real_document_execution": false
+    }
   }
 }

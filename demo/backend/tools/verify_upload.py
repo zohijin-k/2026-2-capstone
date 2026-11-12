@@ -179,7 +179,7 @@ def _refresh_pairs(identity, checklist, documents):
     return results
 
 
-def _attachment_count(ocr):
+def _additional_page_count(ocr):
     try:
         pages = json.loads(ocr.fields.get("추가첨부쪽", "[]"))
     except (TypeError, ValueError):
@@ -236,7 +236,7 @@ def _document(args, program, category, criteria, checklist):
     ]
     for finding in result.findings:
         lines.append(f"reason: {_code(finding.code)} {_enum(finding.severity, {'PASS', 'FAIL', 'NEEDS_REVIEW', 'INFO'})}")
-    lines.append(f"additional_pages: {_attachment_count(ocr)}")
+    lines.append(f"additional_pages: {_additional_page_count(ocr)}")
     if work is not None:
         lines.append(f"work_status: {_enum(work.status, {'MET', 'NOT_MET', 'UNDETERMINED'})}")
         if work.reason_code:
@@ -249,7 +249,6 @@ def _document(args, program, category, criteria, checklist):
 def _income(args, program, category, criteria, checklist):
     from ..api.common import document_fact
     from ..api.review import document_blockers
-    from ..rules.doc_types import DocType
     from ..rules.eligibility_blockers import eligibility_blockers
     from ..rules.facts import build_facts
     from ..rules.identity import identity_of

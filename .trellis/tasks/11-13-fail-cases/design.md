@@ -140,3 +140,24 @@ Use a positive output schema containing only enum/code names, statuses, bounded 
 Use authored encrypted PDF, image and source-shaped coordinate fixtures only. Cover cases 1, 3a, 3b, 4, 5, 6, 7, their expected codes/statuses and actual blocker projection. Exercise common upload and final-check functions, not fabricated status summaries. Test slots/category/default criteria, missing identity, income MET/OVER_LIMIT/UNDETERMINED, cross-document identity, safe errors/help, malicious dynamic metadata, native output suppression, numeric redaction and no filesystem/DB/storage/log writes. Record the synthetic OCR seam where exact OCR accuracy remains unverified (추정). Keep existing tests intact.
 
 Run full engine/backend suites and all eighteen scenario modules after source review for synthetic-only execution. Compare against engine 1236 passed / 3 skipped, backend 885 passed, counting scenarios 1885 passed / 0 failed, P14 exit zero. Review diff and update the backend contract with the CLI boundary, then commit verification evidence and leave task awaiting user verification.
+
+### Follow-up implementation and verification evidence
+
+Plan dffdd7e; implementation 0ad6d76; synthetic acceptance 2d1f220. API `demo/backend/api/documents.py:327` and CLI `demo/backend/tools/verify_upload.py:211` call the same `upload_assessment.assess_upload` (`:42`, read_document `:58`, check_document `:70`). Paired NHIS recheck shares `assess_nhis_identity` (`upload_assessment.py:133`, API `documents.py:256`, CLI `verify_upload.py:175`). `checklist_from_inputs` (`api/common.py:97`) applies real default criteria without a DB; `document_blockers` (`api/review.py:116`) and existing eligibility_blockers provide the actual selected-document/work/income flags.
+
+All 44 new synthetic acceptance tests passed. Existing tests were neither removed nor weakened. Separate review confirmed unchanged decision blocks and caught a CLI-only omission: work-capable acquisition/loss evidence outside work_proof must also reflect the actual work blocker. That orchestration condition and its regression were included in the acceptance commit; no rule/threshold/extractor changed. A final helper rename avoids the existing applicant-download source scanner's reserved tokens without changing or bypassing its checks.
+
+The image-only interleaved insurance title is an existing confirmed classifier limitation (`ocr/pdftext.py:118`, `ocr/localocr.py:764`, fixture `engine_v2/tests/fail_case_samples.py:56`, regression `tests/test_verify_upload.py:395`). It was reported and retained as NEEDS_REVIEW, not repaired. Case 3b's expected certain work rejection is verified with an authored text-layer portal plus two image attachments. Actual documents and native filesystem isolation remain unverified (추정); saved criteria overrides and unsupplied application settings are outside the CLI input scope. See verify-upload.md for complete commands, privacy boundary and acceptance details.
+
+### Follow-up full verification
+
+| Suite | Requested baseline | Follow-up | Difference |
+|---|---|---|---|
+| engine_v2 pytest | 1236 passed, 3 skipped | 1236 passed, 3 skipped | Unchanged |
+| backend pytest | 885 passed | 929 passed | 44 additional synthetic CLI tests |
+| Counting scenarios | 1885 passed, 0 failed | 1885 passed, 0 failed | Unchanged |
+| P14 | exit zero | exit zero | Unchanged |
+
+Commands: `.venv/bin/python -B -m pytest engine_v2/tests -q`, `.venv/bin/python -B -m pytest demo/backend/tests -q`, every `demo.backend.tests.run_p*_scenarios` module sequentially. All eighteen scenario exit codes are zero. Final targeted rerun: 44 passed after the helper rename; independent review subset: 11 passed. Only nonsemantic cleanup followed the full backend run (helper rename to satisfy the existing scanner, unused imports). P4's unchanged scanner passed. `git diff --check` passed. Logs are synthetic-only at `/tmp/verify-upload-engine.log`, `/tmp/verify-upload-backend.log`, `/tmp/verify-upload-scenarios.log`, and `/tmp/verify-upload-scenarios-summary.log`.
+
+No engine rules, thresholds, extractors or existing tests changed. No private document inspection/execution, input copying by the tool, DB/storage/log creation by the tool, audit-document change, merge, push or PR. API file/DB persistence remains only in the normal API; synthetic API tests still use their isolated stores. Preexisting untracked docs/audit/ is excluded. Task remains review / awaiting user verification.
