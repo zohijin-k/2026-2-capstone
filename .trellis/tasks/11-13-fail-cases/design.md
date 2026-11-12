@@ -118,3 +118,25 @@ Commands: `.venv/bin/python -m pytest engine_v2/tests -q`; corresponding demo/ba
 The final code/spec review covered backend and frontend contracts and all task requirements. Source files under `engine/` and `docs/audit/engine-walkthrough.md` were not changed or committed. No private directory inspection, real-document execution, push, PR or main merge occurred. The preexisting untracked `docs/audit/` remains excluded. Browser layout and real-document OCR accuracy were not executed/verified; synthetic source geometry and API behavior were verified.
 
 Task remains `review` / awaiting user verification; do not archive or publish automatically.
+
+## 후속: 실서류 확인 도구
+
+The follow-up is authorized on the current feature branch. Commit this plan before implementation, then commit implementation, synthetic acceptance tests, and complete verification separately. Keep the existing audit document and untracked audit directory excluded. Never inspect private documents or run a command against them. No push, PR, merge, or archive.
+
+### Shared path and boundary
+
+Extract the existing explicit-slot upload orchestration from `api/documents.py:382` onward into a callable assessment function: read_document, optional consent observations, check_document, and existing consent/receipt adjustments in the same order. Supply identity, checklist, uploaded rows and receipt input explicitly; keep DB lookup, destination creation, copying, replacement and persistence in the API. Do not change checks, thresholds, reasons, or status precedence. Extract checklist construction/criteria application from `api/common.py:111` into an input-only helper shared by the API and CLI. The CLI uses default_criteria with build_checklist and the same criteria application, never DB criteria lookup. Stored custom criteria, electronic forms and subsidy selections are outside this CLI's input scope; report that limit.
+
+For work and income, reuse document_fact, assess_work, build_facts, score_income and eligibility_blockers after upload assessment, matching final-check ordering. Reuse the document FAIL blocker projection from review._blockers if extraction is needed; ignore missing unrelated application fields/documents. A blocker flag describes only the selected document/work or income assessment, not overall application readiness.
+
+### CLI and privacy contract
+
+Create `demo/backend/tools/verify_upload.py`: --program (default double_savings), --slot, --work-category, --self-identity, --slots-list, and one input path. --income accepts exactly three ordered inputs: payment, qualification, acquisition/loss. Build genuine business/category slots and reject unsupported combinations with fixed error codes. Self identity uses only an explicitly readable name and full birth date, without guessing the century; missing either is reported as 본인정보 없음 and assessment continues. For income derive the reference identity from payment only, preserving cross-document mismatch checks.
+
+Use a positive output schema containing only enum/code names, statuses, bounded confidence formatted to two decimals, counts, static slot names and O/X. Never serialize OCR fields, findings messages, basis, evidence, filenames, paths or exception strings. Redact every numeric run of four or more digits, including static year-bearing slot labels. Silence Python/native stdout and stderr and logging during assessment; emit only the prepared safe summary afterward. Prevent write attempts during CLI assessment (including bytecode, DB, cache, model downloads and logs); do not copy inputs. Surface blocked write/error as a fixed safe code instead of traceback. Preserve the configured OCR chain; remote permission/settings remain the existing chain's responsibility.
+
+### Acceptance and verification
+
+Use authored encrypted PDF, image and source-shaped coordinate fixtures only. Cover cases 1, 3a, 3b, 4, 5, 6, 7, their expected codes/statuses and actual blocker projection. Exercise common upload and final-check functions, not fabricated status summaries. Test slots/category/default criteria, missing identity, income MET/OVER_LIMIT/UNDETERMINED, cross-document identity, safe errors/help, malicious dynamic metadata, native output suppression, numeric redaction and no filesystem/DB/storage/log writes. Record the synthetic OCR seam where exact OCR accuracy remains unverified (추정). Keep existing tests intact.
+
+Run full engine/backend suites and all eighteen scenario modules after source review for synthetic-only execution. Compare against engine 1236 passed / 3 skipped, backend 885 passed, counting scenarios 1885 passed / 0 failed, P14 exit zero. Review diff and update the backend contract with the CLI boundary, then commit verification evidence and leave task awaiting user verification.
