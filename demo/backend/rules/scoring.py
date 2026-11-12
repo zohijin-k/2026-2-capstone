@@ -23,8 +23,7 @@ MAX_TOTAL = 100
 ESTIMATE_LABEL = "(데모 추정치)"
 
 #: 중위소득 140% 판정 상한 — 노인장기요양보험료 제외.
-#: 1~7인 값은 공고문 제2026-443호, 8~10인 값은 보건복지부 소득판정기준표(2025.1.1. 고시).
-#: 8~10인 값은 공고문 표 범위(최대 7인) 밖의 참고값이며 담당자 확인을 표시한다.
+#: 1~10인 모두 공고문 공식 값 (사용자 확인).
 MEDIAN_INCOME_140: dict[int, dict[str, int]] = {
     1: {"직장": 118_821, "지역": 46_072},
     2: {"직장": 196_177, "지역": 133_680, "혼합": 198_905},
@@ -38,9 +37,9 @@ MEDIAN_INCOME_140: dict[int, dict[str, int]] = {
     10: {"직장": 599_810, "지역": 591_277, "혼합": 673_463},
 }
 
-#: 코드가 지원하는 최대 가구원수. 11인 이상은 10인 값을 적용하고 담당자 확인을 남긴다.
+#: 공식 기준표 최대 가구원수. 11인 이상은 소득 판정 불가다.
 MAX_SUPPORTED_HOUSEHOLD = max(MEDIAN_INCOME_140)
-OFFICIAL_NOTICE_MAX_HOUSEHOLD = 7
+OFFICIAL_NOTICE_MAX_HOUSEHOLD = MAX_SUPPORTED_HOUSEHOLD
 
 #: 신청 자격 상한. 이 값을 넘으면 점수와 무관하게 부적합이다.
 INCOME_LIMIT_PERCENT = 140.0
@@ -190,6 +189,8 @@ class ScoreSheet:
     income_percent: float | None = None
     #: 140% 초과 여부. 초과면 점수와 무관하게 자격 부적합이다.
     income_over_limit: bool = False
+    income_status: str = "UNDETERMINED"
+    income_reason_codes: list[str] = field(default_factory=list)
     #: 동점자 정렬 키 (시행지침 우선순위 ①~④).
     tiebreak: list[float] = field(default_factory=list)
     #: 화면에 그대로 띄우는 주의 문구. `(데모 추정치)` 라벨이 여기에 들어간다.
@@ -206,10 +207,33 @@ class ScoreSheet:
             "max_total": self.max_total,
             "income_percent": self.income_percent,
             "income_over_limit": self.income_over_limit,
+            "income_status": self.income_status,
+            "income_reason_codes": self.income_reason_codes,
             "incomplete": self.incomplete,
             "tiebreak": self.tiebreak,
             "notes": self.notes,
         }
+
+
+@dataclass
+class IncomeScoreResult:
+    """Authoritative eligibility plus the existing four scoring return values."""
+
+    item: ScoreItem
+    percent: float | None
+    over_limit: bool
+    notes: list[str]
+    status: str
+    reason_codes: list[str]
+
+    def __iter__(self):
+        return iter((self.item, self.percent, self.over_limit, self.notes))
+
+    def __getitem__(self, index):
+        return (self.item, self.percent, self.over_limit, self.notes)[index]
+
+    def __len__(self):
+        return 4
 
 
 # ---------------------------------------------------------------- 계산 도우미
@@ -237,31 +261,17 @@ def korean_age_at(birth: date, basis: date) -> int:
 
 def premium_limit_140(household_size: int, insurance_type: str) -> tuple[int, str]:
     """가구원수·가입구분별 140% 건보료 상한과 주석."""
-    note = ""
+    if type(household_size) is not int or household_size not in MEDIAN_INCOME_140:
+        raise ValueError("공식 소득 기준표는 1~10인 가구만 지원합니다.")
     size = household_size
-    if size > MAX_SUPPORTED_HOUSEHOLD:
-        size = MAX_SUPPORTED_HOUSEHOLD
-        note = (
-            f"{ESTIMATE_LABEL} 공고문 표는 {OFFICIAL_NOTICE_MAX_HOUSEHOLD}인까지만 제공되어 "
-            f"{household_size}인 가구에 보건복지부 소득판정기준표(2025.1.1. 고시)의 "
-            "10인 기준을 적용했습니다. 담당자 확인이 필요합니다."
-        )
-    elif size > OFFICIAL_NOTICE_MAX_HOUSEHOLD:
-        note = (
-            f"{ESTIMATE_LABEL} 보건복지부 소득판정기준표(2025.1.1. 고시) 값을 적용했습니다. "
-            f"이 값은 공고문 표({OFFICIAL_NOTICE_MAX_HOUSEHOLD}인까지) 밖의 값이므로 담당자 확인이 필요합니다."
-        )
-    size = max(1, size)
     row = MEDIAN_INCOME_140[size]
     if insurance_type in row:
-        return row[insurance_type], note
-    # 1인 가구에는 혼합 값이 없다. 직장 기준으로 대체하고 그 사실을 남긴다.
-    fallback = row.get("직장") or next(iter(row.values()))
-    extra = (
-        f"{ESTIMATE_LABEL} {size}인 가구의 '{insurance_type}' 기준값이 공고문 표에 "
-        "없어 직장가입자 기준을 적용했습니다."
-    )
-    return fallback, " ".join(x for x in (note, extra) if x)
+        return row[insurance_type], ""
+    # Preserve the public informational helper's historical one-person lookup.
+    # Eligibility never selects this fallback or a mixed limit.
+    if size == 1 and insurance_type == "혼합":
+        return row["직장"], f"{ESTIMATE_LABEL} 1인 혼합 기준이 없어 참고 환산에 직장 기준을 적용했습니다."
+    raise ValueError("해당 가입구분의 공식 소득 기준값이 없습니다.")
 
 
 def income_percent(
@@ -294,65 +304,99 @@ def _missing(key: str, label: str, max_score: int, what: str, source: FactSource
     )
 
 
-def score_income(facts: ScoringFacts) -> tuple[ScoreItem, float | None, bool, list[str]]:
-    """1. 중위소득 (40점). 가구원수 + '25.10~12월 고지금액 평균으로 판정한다."""
+def score_income(facts: ScoringFacts) -> IncomeScoreResult:
+    """1. 중위소득: 정수 상한으로 자격을 정하고 별도로 점수 구간을 환산한다."""
     source = facts.source("income")
-    if not facts.household_size or not facts.monthly_premium:
-        missing = _missing(
-            "income", "중위소득(가구소득)", 40,
-            "건강보험 자격확인서 가구원 수" if facts.household_size_issue else "가구원수 또는 건강보험료 고지금액",
-            source,
-        )
-        if facts.household_size_issue:
-            missing.basis = facts.household_size_issue + " 담당자 재검토가 필요합니다."
-        return (
-            missing,
-            None,
-            False,
-            [facts.household_size_issue] if facts.household_size_issue else [],
-        )
-
-    insurance_type = facts.insurance_type if facts.insurance_type in INSURANCE_TYPES else "직장"
-    percent, base_100, note = income_percent(
-        facts.household_size, facts.monthly_premium, insurance_type
-    )
-    score, band = next(
-        (s, b) for lower, s, b in INCOME_BANDS if percent >= lower
-    )
-    over = percent > INCOME_LIMIT_PERCENT
-    basis = (
-        f"{facts.household_size}인 가구 {insurance_type}가입자, 고지금액 평균 "
-        f"{facts.monthly_premium:,}원 ÷ 100% 기준 {base_100:,}원 = 중위소득 "
-        f"{percent:.1f}% → {band}"
-    )
-    if over:
-        basis += f" · 신청 상한 {INCOME_LIMIT_PERCENT:.0f}% 초과"
-    notes = [
-        f"{ESTIMATE_LABEL} 100% 기준선은 공고문 140% 기준표를 선형 환산한 값입니다. "
-        "TF에서 원표를 확보하면 상수 표만 교체합니다."
-    ]
-    if note:
-        notes.append(note)
+    notes = []
     if facts.household_size_form_mismatch:
         form_count, certificate_count = facts.household_size_form_mismatch
         notes.append(
             f"신청서 입력 가구원수 {form_count}명과 건강보험 자격확인서 "
             f"가구원수 {certificate_count}명이 다릅니다. 판정에는 자격확인서 값을 사용했습니다."
         )
-    return (
-        ScoreItem(
-            key="income",
-            label="중위소득(가구소득)",
-            score=score,
-            max_score=40,
-            band=band,
-            basis=basis,
-            source=source,
-        ),
-        round(percent, 1),
-        over,
-        notes,
+    details, reasons = [], []
+    size, premium = facts.household_size, facts.monthly_premium
+    if facts.household_size_issue or type(size) is not int or size < 1:
+        details.append(facts.household_size_issue or "건강보험 자격확인서 가구원 수를 확인하지 못했습니다.")
+        reasons.append("HOUSEHOLD_SIZE_UNCONFIRMED")
+    elif size not in MEDIAN_INCOME_140:
+        details.append("11인 이상 가구는 공식 소득 기준표가 없어 자동 판정할 수 없습니다.")
+        reasons.append("HOUSEHOLD_SIZE_UNSUPPORTED")
+    if (facts.premium_determinable is False or facts.premium_issue or
+            type(premium) is not int or premium < 0):
+        details.append(facts.premium_issue or "판정 대상 석 달의 신뢰할 수 있는 건강보험료 고지금액이 필요합니다.")
+        reasons.append(facts.premium_reason_code or "PREMIUM_AMOUNT_UNCONFIRMED")
+    if facts.insurance_explicit_conflict:
+        details.append(facts.insurance_issue or "기록된 가입구분이 다른 가입구분 근거와 일치하지 않습니다.")
+        reasons.append("INSURANCE_EXPLICIT_CONFLICT")
+    if details:
+        item = _missing("income", "중위소득(가구소득)", 40, "소득 요건 판정 근거", source)
+        item.basis = " ".join(details) + " 담당자 재검토가 필요합니다."
+        return IncomeScoreResult(item, None, False, notes + details, "UNDETERMINED", reasons)
+
+    row = MEDIAN_INCOME_140[size]
+    minimum, maximum = min(row["직장"], row["지역"]), max(row["직장"], row["지역"])
+    category = facts.insurance_type if facts.insurance_type in {"직장", "지역"} else None
+    if premium <= minimum:
+        over = False
+        reason = "INCOME_AT_OR_BELOW_BOTH_LIMITS"
+        decision = f"직장·지역 두 상한 중 낮은 {minimum:,}원 이하 → 소득 요건 충족"
+    elif premium > maximum:
+        over = True
+        reason = "INCOME_ABOVE_BOTH_LIMITS"
+        decision = f"직장·지역 두 상한 중 높은 {maximum:,}원 초과 → 140% 초과 확정"
+    elif category is not None:
+        limit = row[category]
+        over = premium > limit
+        reason = "INCOME_ABOVE_CATEGORY_LIMIT" if over else "INCOME_AT_OR_BELOW_CATEGORY_LIMIT"
+        decision = f"확정된 {category} 상한 {limit:,}원 " + ("초과 → 140% 초과 확정" if over else "이하 → 소득 요건 충족")
+    else:
+        item = _missing("income", "중위소득(가구소득)", 40, "일치하는 가입구분 근거", source)
+        item.basis = (
+            f"{size}인 가구 고지금액 평균 {premium:,}원은 직장·지역 상한 "
+            f"{minimum:,}원과 {maximum:,}원 사이입니다. "
+            + (facts.insurance_issue or "가입구분을 확정하지 못했습니다.")
+            + " 담당자 재검토가 필요합니다."
+        )
+        reasons = facts.insurance_reason_codes or ["INSURANCE_EVIDENCE_INSUFFICIENT"]
+        return IncomeScoreResult(item, None, False, notes + [item.basis], "UNDETERMINED", list(reasons))
+
+    # Unknown membership does not prevent a category-independent eligibility
+    # decision. Its score estimate uses a disclosed reference row, not a category fact.
+    reference = category
+    if reference is None:
+        reference = min(("직장", "지역"), key=lambda key: row[key]) if not over else max(
+            ("직장", "지역"), key=lambda key: row[key])
+        notes.append(
+            f"{ESTIMATE_LABEL} 가입구분 미확정: 점수 구간만 {reference} 기준표로 임시 환산했습니다. "
+            "소득 요건은 직장·지역 두 상한 비교로 확정했습니다."
+        )
+    percent, base_100, note = income_percent(size, premium, reference)
+    score, band = next((score, band) for lower, score, band in INCOME_BANDS if percent >= lower)
+    membership = f"{category}가입자" if category else "가입구분 미확정"
+    basis = (
+        f"{size}인 가구 {membership}, 고지금액 평균 {premium:,}원 · {decision} · "
+        f"100% 기준 {base_100:,}원으로 점수 환산 {percent:.1f}% → {band}"
     )
+    evidence = []
+    for key, label in (("A", "사업장관리번호"), ("B", "사업장명칭")):
+        record = facts.insurance_evidence.get(key)
+        if record:
+            evidence.append(f"{label} {record.get('state', '못 읽음')}({record.get('category') or '모름'})")
+    for key in ("explicit_qualification", "explicit_payment"):
+        record = facts.insurance_evidence.get(key)
+        if record and record.get("category"):
+            evidence.append(f"기록된 가입구분 {record['category']}")
+    if evidence:
+        basis += " · " + " · ".join(evidence)
+    notes.append(
+        f"{ESTIMATE_LABEL} 100% 기준선은 공고문 140% 기준표를 선형 환산한 값입니다. "
+        "TF에서 원표를 확보하면 상수 표만 교체합니다."
+    )
+    if note:
+        notes.append(note)
+    item = ScoreItem("income", "중위소득(가구소득)", score, 40, band, basis, source)
+    return IncomeScoreResult(item, round(percent, 1), over, notes, "OVER_LIMIT" if over else "MET", [reason])
 
 
 def score_residence(facts: ScoringFacts, basis_date: date) -> ScoreItem:
@@ -446,7 +490,8 @@ def score_application(
     설정에서 주입받는다. 두 날짜가 다르다 — 두배적금은 공고일 2026-03-03,
     연령은 2025-12-31 기준이다.
     """
-    income_item, percent, over_limit, notes = score_income(facts)
+    income = score_income(facts)
+    income_item, percent, over_limit, notes = income
     items = [
         income_item,
         score_residence(facts, announcement_date),
@@ -459,6 +504,8 @@ def score_application(
         total=total,
         income_percent=percent,
         income_over_limit=over_limit,
+        income_status=income.status,
+        income_reason_codes=income.reason_codes,
         notes=notes,
     )
     sheet.tiebreak = tiebreak_key(sheet, facts, announcement_date)
