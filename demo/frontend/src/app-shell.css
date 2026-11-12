@@ -1,11 +1,12 @@
 /* 신청자 / 담당자 화면 전환 띠. 시연용이라 최소한만 둔다. */
+.shell__inner { display: contents; }
 
 .shell {
   display: flex;
   align-items: center;
   gap: 16px;
-  height: 56px;
-  padding: 0 24px;
+  min-height: 52px;
+  padding: 8px 24px;
   background: var(--brand);
   color: #fff;
   box-shadow: 0 1px 0 rgb(0 0 0 / 18%);
@@ -16,6 +17,7 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
+  margin-right: auto;
 }
 
 /* 도 이름을 새긴 작은 인장 — 관공서 서비스임을 한눈에 */
@@ -46,7 +48,10 @@
   display: grid;
   line-height: 1.25;
   min-width: 0;
+  overflow: hidden;
 }
+
+.shell__title strong, .shell__title small { overflow: hidden; text-overflow: ellipsis; }
 
 .shell__title strong {
   font-size: 14.5px;
@@ -60,7 +65,7 @@
 }
 
 .shell__tabs {
-  margin-left: auto;
+  flex-shrink: 0;
   display: inline-flex;
   padding: 3px;
   border-radius: 9px;
@@ -97,4 +102,69 @@
 .shell__tab:focus-visible {
   outline: 2px solid #fff;
   outline-offset: 1px;
+}
+
+.shell__application { display: flex; flex-shrink: 0; }
+.shell__application[hidden], .shell__application:empty { display: none; }
+.shell__application-controls { display: flex; align-items: center; gap: 14px; }
+.shell__application-number { color: rgb(255 255 255 / 72%); font-size: 11px; white-space: nowrap; }
+.shell__application-number strong { margin-left: 6px; color: #fff; font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.shell__mypage { padding: 4px 10px; border: 1px solid rgb(255 255 255 / 35%); border-radius: 4px; background: transparent; color: #fff; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.shell__mypage:hover:not(:disabled) { background: rgb(255 255 255 / 10%); }
+.shell__mypage:disabled { color: rgb(255 255 255 / 65%); cursor: default; }
+.shell__mypage:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+@media (max-width: 850px) {
+  .shell { flex-wrap: wrap; gap: 8px 12px; padding: 8px 16px; }
+  .shell__title { flex: 1; }
+  .shell__application { order: 2; flex-basis: 100%; justify-content: flex-end; }
+  .shell__application-controls { flex-wrap: wrap; justify-content: flex-end; gap: 6px 14px; }
+  .shell__title strong { font-size: 13px; white-space: normal; }
+  .shell__title small { display: none; }
+}
+
+@media (max-width: 520px) {
+  .shell { gap: 6px 10px; }
+  .shell__title { gap: 8px; }
+  .shell__title strong { font-size: 11px; }
+  .shell__tab { padding: 4px 9px; font-size: 12px; }
+}
+
+/* Applicant chrome has its own palette; original PDF and officer tokens stay intact. */
+.app-shell--applicant {
+  --workspace-accent: #315dcc;
+  --workspace-ink: #233047;
+  --workspace-muted: #66758b;
+  --workspace-border: #dfe5ed;
+  --workspace-tint: #edf3ff;
+  min-height: 100dvh;
+  background: #f5f7fa;
+}
+.app-shell--applicant .shell { display: block; min-height: 56px; padding: 0 16px; border-bottom: 1px solid #e1e6ed; background: #fff; color: var(--workspace-ink); box-shadow: none; }
+.app-shell--applicant .shell__inner { display: flex; align-items: center; gap: 20px; width: 100%; max-width: 1160px; min-height: 56px; margin: 0 auto; padding: 10px 0; }
+.app-shell--applicant .shell__title { gap: 10px; }
+.app-shell--applicant .shell__title strong { color: var(--workspace-ink); font-size: 15px; font-weight: 700; letter-spacing: -0.035em; }
+.app-shell--applicant .shell__title small { display: none; }
+.app-shell--applicant .shell__mark { width: 30px; height: 30px; border: 1px solid #284166; border-radius: 8px; background: #284166; color: #fff; font-size: 11px; }
+.app-shell--applicant .shell__mark:focus-visible { outline-color: var(--workspace-accent); }
+.app-shell--applicant .shell__application-controls { gap: 16px; }
+.app-shell--applicant .shell__application-number { color: var(--workspace-muted); font-size: 11px; }
+.app-shell--applicant .shell__application-number strong { margin-left: 8px; color: var(--workspace-ink); font-size: 12px; font-weight: 600; }
+.app-shell--applicant .shell__mypage { min-height: 32px; padding: 5px 12px; border-color: #d8e0eb; border-radius: 7px; background: #fff; color: #34445c; font-size: 12px; font-weight: 600; }
+.app-shell--applicant .shell__mypage:hover:not(:disabled) { border-color: #adbedf; background: #f7f9fd; }
+.app-shell--applicant .shell__mypage:disabled { color: #8190a3; background: #f8fafc; }
+.app-shell--applicant .shell__mypage:focus-visible { outline-color: var(--workspace-accent); }
+.app-shell--applicant .shell__tabs { padding: 2px; border: 1px solid #e1e7ef; border-radius: 8px; background: #f3f6fa; }
+.app-shell--applicant .shell__tab { padding: 4px 12px; border: 1px solid transparent; border-radius: 5px; color: #637189; font-size: 12px; }
+.app-shell--applicant .shell__tab:hover { color: var(--workspace-ink); }
+.app-shell--applicant .shell__tab--on { border-color: #d8e1ed; background: #fff; color: #284166; }
+.app-shell--applicant .shell__tab:focus-visible { outline-color: var(--workspace-accent); }
+@media (max-width: 850px) {
+  .app-shell--applicant .shell__inner { flex-wrap: wrap; gap: 8px 14px; }
+  .app-shell--applicant .shell__application-controls { gap: 8px 14px; }
+}
+@media (max-width: 520px) {
+  .app-shell--applicant .shell__title strong { font-size: 12px; }
+  .app-shell--applicant .shell__tab { padding: 4px 8px; }
+  .app-shell--applicant .shell__application-number strong { font-size: 11px; }
 }
