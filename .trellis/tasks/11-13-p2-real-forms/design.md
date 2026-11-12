@@ -19,17 +19,48 @@ The smallest behavior gaps are unredacted coordinate/text ingestion, OCR tokeniz
 9. Full engine/backend/scenario regression and cross-layer review.
 10. Record final outcomes and set status to review.
 
-## Initial cause classification
+## Failure classification
 
-| Form and failed checks | Category | Shape evidence and investigation target |
-| --- | --- | --- |
-| Payment `monthly_amounts_numeric`, `monthly_total_matches`, `paid_total_matches` | (가), cascading arithmetic failures | Numeric cells at x390–421 and x1195–1231, y959–1487 contain `A` at confidence .33–.67. Original glyph identity is inference. Eight header columns include entirely empty optional columns. |
-| Qualification `nhis_issue_location_unique`, `발급일_consistent`, `발급일_required` | (나)/(다), pending code trace | Request date x1841–2079 y677–729, issue date x1114–1375 y2726–2789, validity date in sentence x278–889 y3011–3059. Confirmation y2635–2689 and issuer y2855–2950 bound the intended date. |
-| Qualification `nhis_blank_marker`, `household_rows_read`, `subscriber_matches_first_member` | (나)/(다), pending code trace | Single member y1481–1547, marker x977–1159 y1596–1655, empty management cell and trailing low-confidence artifacts y1976–2186. |
-| Acquisition `nhis_history_cells_read`, `nhis_row_numbers_continuous`, `nhis_current_loss_blank`, `history_dates_read` | (나)/(다), pending code trace | Three numbered rows y1111–1427, empty employer column under header x966–1226, low-confidence tall overprint x845–1105 y1201–1420. |
-| Acquisition `nhis_neighbor_dates_continuous` | (다) | User reports genuine gaps. Shape dates at x1652–1867 and x2048–2263 cannot establish ordering. Code and synthetic dates must verify the rule. |
-| Acquisition `nhis_blank_marker`, `recent_five_years_covered` | (나)/(다), pending trace | Marker x646–831 y1489–1554 and trailing blank rows/overprints y2033–2339. Five-year coverage depends on valid row extraction. |
-| Business proof lacking validations | (라) | Dedicated extractor absent from engine registry. Labels and right-side values span y568–1834, final unlabeled date x1311–1567 y2112–2156. |
+The following tables record every supplied failure. Category (가) means character recognition, (나) token/line segmentation, (다) a rule rejecting a normal variation, and (라) a propagated or other failure. Exact original glyphs and date values remain inference (추정) because the sources replace them with shape characters.
+
+### Qualification
+
+| Failed validation | Category | Shape evidence | Code mechanism and action |
+| --- | --- | --- | --- |
+| `nhis_issue_location_unique` | (가), inferred issuer-label omission or stamp interference | `/tmp/layout_shape2.txt:172` confirmation at (292,2635,1159,2689), `:173` date at (1114,2726,1375,2789), `:175` issuer at (764,2855,1643,2950) has eight Hangul plus two Hangul. Adjacent stamp words `:174` and `:176` have confidence .33/.35. Exact issuer characters remain unknown. | `engine_v2/extractors/nhis_forms.py:23` requires both `국민건강보험공단` and `이사장` on one grouped row. Replacing the two-character role with fictitious `이사` in the same boxes reproduces failure. Restoring `이사장` passes. This is a reproduction of a plausible mechanism, with actual missing character still inference. Select a unique issuing-organization block below confirmation and above validity, using position and observed organization text, while retaining ambiguous-date rejection. |
+| `발급일_consistent` | (라), propagated missing issue value | Same bounded date at source `:173`. | `engine_v2/extractors/nhis_qualification.py:152` passes the helper result to the required field check at `:157`. Fix the source selection. |
+| `발급일_required` | (라), propagated missing issue value | Same bounded date at source `:173`. | Added by the adapter required-field guard at `demo/backend/ocr/localocr.py`, after extractor conversion. Keep this guard. |
+| `nhis_blank_marker` | (다) | Marker at source `:168`, (977,1596,1159,1655), has no recognized dash words. Trailing fragments `:169`–`:171` occur at y1976–2186, confidence .10–.39. | `engine_v2/extractors/nhis_qualification.py:96` returns before marker analysis when body-only column discovery fails. Additionally `:111` rejects every trailing Hangul/digit, including artifacts in distant empty rows. Bound the geometry to the marker. Recognize marker-only rows and preserve checks against plausible table data hidden beside or immediately after the marker. |
+| `household_rows_read` | (다), with (나) artifact grouping | The one genuine member occupies source `:165`–`:167`, y1481–1547. Its loss and suspension cells are empty. Source `:164` adds a tiny confidence .18 digit at (797,1480,827,1507), outside the real identity/date cells. Header loss/suspension cells exist at `:161` and `:163`. | `engine_v2/extractors/nhis_forms.py:165` discovers gaps only between occupied body intervals. With two entirely empty rightmost columns, a required corridor does not exist, causing `table_columns` to return `None`. The row loop at `nhis_qualification.py:113` also treats every grouped artifact row as a member. Use observed ordered headers plus persistent whitespace and row anchors. Only discount noise with measured geometry/confidence evidence. |
+| `subscriber_matches_first_member` | (라), propagated no member rows | Subscriber source `:152`–`:153` and member `:165`–`:167` have matching placeholder shape, with actual equality established by user description only. | `engine_v2/extractors/nhis_qualification.py:181` requires an extracted first member. A failed column grid returns an empty list at `:98`. Preserve the equality check after row extraction is repaired. |
+
+### Acquisition-loss
+
+| Failed validation | Category | Shape evidence | Code mechanism and action |
+| --- | --- | --- | --- |
+| `nhis_history_cells_read` | (다), with (나) watermark grouping | Three genuine rows span source `:206`–`:217`, y1111–1427. Employer cells are empty under source `:202`, (966,978,1226,1044). A tall confidence .64 `.AA` token at source `:209`, (845,1201,1105,1420), overlaps row bands. Distant artifacts `:219`–`:222` also enter body geometry. | `engine_v2/extractors/nhis_acquisition_loss.py:264` includes all words before confirmation in corridor discovery. `nhis_forms.table_columns` requires one occupied-body corridor per adjacent header and cannot recognize an entirely empty employer column reliably. Marker and watermark intervals also bridge candidate whitespace. Derive the geometry from bounded genuine row bands and ordered headers, retaining employer continuation safety checks. |
+| `nhis_row_numbers_continuous` | (라), propagated missing rows | Source `:207`, `:211`, `:214` each contains a high-confidence single-digit row-number shape. Actual original numbers remain unavailable. | If column discovery returns `None`, the branch at `nhis_acquisition_loss.py:275` skips all rows, so the nonempty continuity check at `:336` fails. Preserve sequence validation after extracting the observed three rows. A separate numeric-recognition error would remain reviewable. |
+| `nhis_current_loss_blank` | (라), propagated missing rows | First row has only acquired date source `:208` and no loss-date token. | The check at `nhis_acquisition_loss.py:338` requires nonempty rows, so failed geometry also produces this failure. Keep current-row blank-loss validation. |
+| `nhis_neighbor_dates_continuous` | (다), plus propagated empty rows | Lower loss dates at source `:213` and `:217`, x2048–2263. Their relation to upper acquired dates cannot be proved from numeric placeholders. The user explicitly identifies coverage gaps. | `nhis_acquisition_loss.py:339` requires exact equality. Change the inequality to lower loss <= upper acquired and require both relevant dates. Lower loss > upper acquired remains structural uncertainty. |
+| `nhis_blank_marker` | (다) | Source `:218`, (646,1489,831,1554), contains a marker-only OCR token. Below it, source `:219`–`:222` contains distant watermark fragments at y2033–2339. | `nhis_acquisition_loss.py:289` requires more than one token on the marker line, so a marker without recognized dashes fails. `:297` turns every subsequent nonempty line into a structural failure. Support absent/arbitrary separator punctuation and distinguish bounded row evidence from distant watermark artifacts. |
+| `history_dates_read` | (라), propagated empty rows | All five expected date tokens in the genuine rows have confidence 1.0 at source `:208`, `:212`, `:213`, `:216`, `:217`. | Nonempty/all-acquired check at `nhis_acquisition_loss.py:440` fails after grid failure skips rows. Date correctness cannot be proved from the placeholder values, so synthetic valid and invalid dates must cover the final parser. |
+| `recent_five_years_covered` | (라), propagated empty rows | Three row dates exist, but original date values are redacted. | `nhis_acquisition_loss.py:465` calls the existing helper with empty rows after geometry failure. Whether the real date values satisfy the five-year rule remains inference. Preserve the helper's existing semantics and test coverage with gaps. |
+
+### Payment
+
+| Validation | Category | Shape evidence | Source cause |
+| --- | --- | --- | --- |
+| `monthly_amounts_numeric` | (가), plus (다) unsafe cell-selection assumption | `/tmp/layout_shape2.txt:45`–`:89` has twelve one-digit or two-digit month labels with alphabetic `A` in mandatory money cells. Examples are x391–421 y962–1011 at .49, x1195–1231 y961–1013 at .50, x592–621 y1375–1421 at .38. Nonzero-looking late rows have valid digit/comma shapes at lines 90–104. | `nhis_payment.py:58` accepts only decimal money. Lines 257–260 record missing numeric rows. Lines 273–293 choose the nearest numeric amount among the whole row, so a neighboring valid cell can become a missing column's value. Boundaries and whole-cell validation are needed before correction. |
+| `monthly_total_matches` | (가) cascading to arithmetic verification, with (다) grouped-header selection | Sum row has health/care amounts at x332–478 and x546–669, y1726–1780, source lines 105–109. Group header `고지금액` is centered x640–778, source line 22. Empty optional body columns span header centers around x809 and x1010, source lines 24–42. | `nhis_payment.py:221` uses distance to the whole group header when choosing the sum cell. That can select the care total, while body rows use the health subheader at line 273. Lines 461–466 then compare mismatched/incomplete sums. Original numeric mismatch remains inference. |
+| `paid_total_matches` | (가) cascading to arithmetic verification, with (다) missing eight-column contract | Paid health/care group spans x1141–1284 and x1352–1476, source lines 107/109. `납부총액` has a separate bottom amount x738–879 y1799–1848, source lines 110–113. | `nhis_payment.py:225` selects the total nearest the whole paid-group header. Lines 274–280 use the same whole-group center for paid body values. Lines 468–474 compare this chosen component against chosen totals. The separate `납부총액` amount is unreachable because line 228 stops on `합계`. |
+
+### Business registration proof
+
+| Failure | Category | Shape and source evidence | Action |
+| --- | --- | --- | --- |
+| No dedicated extraction validations, confidence .8 | (라) | `/tmp/layout_shape2.txt:243` title, `:251`–`:277` labeled rows, `:280` final date. Engine registry lacks a business-proof entry and `LocalOcr._generic` caps unvalidated OCR at .8. | Add the dedicated reader and validate complete identity, checksum and required rows before confidence can exceed the review threshold. |
+
+Qualification issue-date selection already excludes request and expiry positions. Duplicate values outside the issuing block are harmless. The shortened issuer-role hypothesis remains inference. Details and executable synthetic reproductions are in `research/nhis.md` and `research/payment-resident.md`.
 
 ## Privacy inventory and stage 1 result
 
@@ -96,3 +127,7 @@ Stage 1 adds 103 synthetic tests, including four full/split and image/text uploa
 ## Verification and unresolved assumptions
 
 Only masked shape sources are used for real-document structure. Synthetic integration proves pipeline behavior. Actual original glyph correction and resulting real-file accuracy cannot be established from placeholders alone.
+
+## Stage 2 outcome
+
+All supplied failures are classified individually above. The supported changes follow observed geometry and typed-cell constraints. Unknown Latin numeric glyphs remain reviewable. Issue-date duplication outside the closing block already works, so the additional position test guards that behavior. The shortened issuer role remains inference. The five-year helper already permits insurance gaps and keeps its meaning.
