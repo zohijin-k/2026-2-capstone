@@ -160,10 +160,11 @@ def assess_nhis_identity(
             detected = DocType(row.doc_type or "")
         except ValueError:
             detected = None
+        raw_quality = raw.get("image_quality")
         ocr = OcrResult(
             detected_doc_type=detected,
             confidence=float(raw.get("confidence") or 0.0),
-            image_quality=float(raw.get("image_quality") or 0.0),
+            image_quality=float(1.0 if raw_quality is None else raw_quality or 0.0),
             issue_date=issue_date,
             fields=dict(raw.get("fields") or {}),
             bboxes=bboxes,
