@@ -116,7 +116,8 @@ def test_table_noise_requires_both_confidence_and_geometry_evidence():
     low = replace(ordinary, conf=.1)
     tall = replace(ordinary, y1=ordinary.y0 + 4 * height, conf=.64)
     tiny = replace(ordinary, x1=ordinary.x0 + height / 2,
-                   y1=ordinary.y0 + height / 2, conf=.18)
+                   y1=ordinary.y0 + height / 2, conf=.18,
+                   px=(10, 30, 16, 36))
     assert not forms.table_noise(low, height)
     assert forms.table_noise(tall, height)
     assert forms.table_noise(tiny, height)

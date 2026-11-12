@@ -145,3 +145,11 @@ Acquisition history now derives the bounded table through its marker, reads empt
 The neighboring date rule is lower loss <= upper acquisition (`:379`). An overlap remains incomplete and reaches NEEDS_REVIEW before eligibility. `history_covers_recent_years` retains its existing printed-lookback/old-loss meaning and already permits gaps. Government24 has no matching neighbor-continuity validation, so no additional rule needed adjustment. The old invalid-neighbor test's fake lower loss changed from before the upper acquisition to after it, preserving the test's assertions and invalid-history intent.
 
 Added 84 engine tests and 8 backend tests, including six actual image-PDF uploads. Every row count 1–10, names 2–4 characters, resolution/jitter/skew, empty employers, full/masked birth, gaps, overlaps and hidden fragments are covered. Engine-focused 300 and cross-layer-focused 244 tests passed.
+
+## Stage 5 outcome
+
+Qualification now reads a single member with empty management, loss and suspension cells, deriving the optional columns from observed headers and marker-bounded body whitespace (`engine_v2/extractors/nhis_qualification.py:83`). Tiny/tall glyphs require geometric and confidence evidence within observed gaps. Names, dates and ordinary fragments after the marker remain incomplete. Household counts/lists are published only after every row and subscriber-first-member check passes.
+
+The issue date remains scoped below confirmation and above the closing organization. Identical values in request and validity positions pass. A second valid or malformed date inside that block, including one grouped into a tall issuer row, remains ambiguous (`engine_v2/extractors/nhis_forms.py:24`). The obscured issuer-role explanation for the real OCR failure remains inference.
+
+The source-shaped fixture preserves the five-plus-one title split, tiny preheader/member glyphs, low-confidence trailing fragments and two seal words. Added 82 engine and 8 backend tests, including seven image-PDF uploads. Every household count 1–10 and names 2–4, resolution/jitter/skew, optional empty cells and date/marker corruption are covered. The old/new NHIS and portal focused suite passed 523 tests. The shared noise helper now compares physical width and height in matching units (`nhis_forms.py:210`).

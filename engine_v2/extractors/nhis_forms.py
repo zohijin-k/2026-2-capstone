@@ -33,6 +33,10 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
                if i > confirmations[0] and "국민건강보험공단" in squash(line_text(row))]
     if len(issuers) != 1:
         return None, [], False
+    # Tall issuer lettering can pull a separate nearby date into its grouped
+    # row. Such a date still competes with the primary issuing date.
+    if re.search(r"\d", line_text(lines[issuers[0]])):
+        return None, [], False
     candidates = []
     for row in lines[confirmations[0] + 1:issuers[0]]:
         dates = common.dates_in_line(row)
@@ -212,7 +216,10 @@ def table_noise(word, reference_height: float) -> bool:
     if reference_height <= 0:
         return False
     height = word.y1 - word.y0
-    width = word.x1 - word.x0
+    # Word x/y percentages use different page dimensions. Express pixel width
+    # in the same units as height before comparing the glyph's proportions.
+    pixel_height = word.px[3] - word.px[1]
+    width = ((word.px[2] - word.px[0]) * height / pixel_height) if pixel_height > 0 else 0
     tall = word.conf < .75 and height > 2.5 * reference_height
     tiny = word.conf < .3 and height < .6 * reference_height and width < .8 * reference_height
     return tall or tiny

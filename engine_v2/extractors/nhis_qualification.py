@@ -5,11 +5,12 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
+from statistics import median
 
 from . import nhis_common as common, nhis_forms as forms
 from ..pipeline.layout import line_text, squash
 from ..pipeline.ocr import OcrResult
-from ..pipeline.preprocess import PageImage
+from ..pipeline.preprocess import PageImage, PageSource
 from ..schemas.models import DocType, ExtractedField
 
 NOTICE_RE = re.compile(r"(?<!\d)\d-\d{4}-\d{8}-\d{6}(?!\d)")
@@ -79,7 +80,7 @@ def _date_cell(words, *, optional=False):
     return None, optional and bool(re.fullmatch(r"[\s\-－—–]+", text))
 
 
-def _household(lines):
+def _household(lines, *, ocr_page=False):
     headers = [i for i, row in enumerate(lines)
                if all(common.label_hits([row], (label,)) for label in
                       ("성명", "주민등록번호", "자격취득일", "자격상실일"))]
@@ -93,22 +94,49 @@ def _household(lines):
     end = next((i for i in range(index + 1, len(lines))
                 if "확인합니다" in squash(line_text(lines[i]))), len(lines))
     body = lines[index + 1:end]
-    bounds = forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in header_hits], body)
-    if bounds is None:
-        return [], False, False
     markers = [i for i, row in enumerate(body) if "이하여백" in squash(line_text(row))]
     marker_ok = len(markers) == 1
     marker_index = markers[0] if markers else len(body)
+    heights = [word.y1 - word.y0 for row in body[:marker_index] for word in row if word.conf >= .8]
+    reference_height = median(heights or [word.y1 - word.y0 for word in header])
+    if ocr_page and all(len(hit) == 1 for hit in header_hits):
+        gaps = [(max(word.x1 for word in left[0][1]), min(word.x0 for word in right[0][1]))
+                for left, right in zip(header_hits, header_hits[1:])]
+        # Only measured tiny/tall artifacts entirely inside observed header
+        # whitespace can be excluded. All ordinary value-cell tokens remain.
+        body = common.group_lines([word for row in body for word in row
+            if not (forms.table_noise(word, reference_height) and any(
+                left <= word.x0 and word.x1 <= right for left, right in gaps))])
+        markers = [i for i, row in enumerate(body) if "이하여백" in squash(line_text(row))]
+        marker_ok = len(markers) == 1
+        marker_index = markers[0] if markers else len(body)
+    bounds = forms.table_columns(
+        [hit[0][1] if len(hit) == 1 else [] for hit in header_hits], body[:marker_index + 1],
+        optional_columns=(3, 4), minimum_gap_ratio=.5 if ocr_page else 1.0)
+    if bounds is None:
+        return [], False, False
     if marker_ok:
         marker_row = body[marker_index]
-        marker_hits = common.label_hits([marker_row], ("이하여백",))
+        marker_hits = forms.label_hits([marker_row], ("이하여백",))
         marker_words = marker_hits[0][1] if len(marker_hits) == 1 else []
-        marker_ok = (bool(marker_words) and squash(line_text(marker_words)) == "이하여백" and
-                     bounds[2] <= min(word.x0 for word in marker_words) < bounds[3] and
-                     all(any(word is marker for marker in marker_words) or
-                         re.fullmatch(r"[\s\-－—–]+", word.text)
-                         for word in marker_row) and
-                     not any(re.search(r"[가-힣\d]", line_text(row)) for row in body[marker_index + 1:]))
+        marker_ok = (bool(marker_words) and
+                     bounds[2] <= min(word.x0 for word in marker_words) and
+                     max(word.x1 for word in marker_words) <= bounds[3] and
+                     re.sub(r"[^가-힣A-Za-z\d]", "", squash(line_text(marker_row))) == "이하여백")
+        marker_y = max((word.cy for word in marker_words), default=0)
+        anchor_y = [row[0].cy for row in body[:marker_index]]
+        pitches = [b - a for a, b in zip(anchor_y, anchor_y[1:]) if b > a]
+        row_pitch = median(pitches) if pitches else 2 * reference_height
+        for row in body[marker_index + 1:]:
+            text = line_text(row)
+            if not re.search(r"[가-힣A-Za-z\d]", text):
+                continue
+            distant_noise = (ocr_page and min(word.cy for word in row) > marker_y + 2.5 * row_pitch and
+                all(not re.search(r"[가-힣A-Za-z\d]", word.text) or
+                    (forms.table_noise(word, reference_height) and
+                     not re.search(r"[가-힣]", word.text)) for word in row))
+            if not distant_noise:
+                marker_ok = False
     rows = []
     for row in body[:marker_index]:
         cells = forms.column_cells(row, bounds)
@@ -176,7 +204,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     expiry = [common.parse_date(line_text(row)) for row in lines if "까지유효합니다" in squash(line_text(row))]
     if len(expiry) == 1:
         result.valid_until = expiry[0]
-    members, marker_ok, rows_ok = _household(lines)
+    members, marker_ok, rows_ok = _household(lines, ocr_page=page.source != PageSource.TEXT_LAYER)
     result.members = members
     first_matches = bool(members and header.name and header.birth and
                          members[0].name == header.name and members[0].birth == header.birth)

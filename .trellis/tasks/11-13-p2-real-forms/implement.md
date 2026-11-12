@@ -5,7 +5,7 @@
 - [x] Finish per-check cause classification and shared OCR helper plan. Commit stage 2.
 - [x] Implement shared OCR helpers and regressions. Commit stage 3.
 - [x] Implement acquisition-history gaps and variants. Commit stage 4.
-- [ ] Implement qualification variants and date scoping. Commit stage 5.
+- [x] Implement qualification variants and date scoping. Commit stage 5.
 - [ ] Implement payment OCR variant with arithmetic checks. Commit stage 6.
 - [ ] Implement business-proof extractor, adapter and identity checks. Commit stage 7.
 - [ ] Investigate and correct resident numbering review behavior. Commit stage 8.

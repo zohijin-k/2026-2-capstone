@@ -75,3 +75,66 @@ def acquisition(*, name=NAME, count=3, gap=True, overlap=False, full_rrn=True,
                       cell(1141, marker_y + 764, 1248, marker_y + 841, "가", 1),
                       cell(1309, marker_y + 768, 1410, marker_y + 850, "상", .93)])
     return cells, (2480, max(3505, footer_y + 440))
+
+
+def qualification(*, name=NAME, count=1, noise=True, marker="이하여백", separators=False,
+                  same_dates=True, issuer_role=" 이사", empty_management=True):
+    """One member, empty management/suspension cells and distant seal artifacts."""
+    request = "2026.03.03" if same_dates else "2026.03.01"
+    validity = "2026.03.03" if same_dates else "2026.04.03"
+    cells = [cell(2112, 40, 2317, 82, "국민건강보험공단", 1),
+             cell(220, 220, 346, 281, "1/1", .99),
+             cell(721, 365, 1757, 456, "건강보험 자격확인(통보)서", .99),
+             cell(185, 551, 1013, 605, "통보번호:0-0000-20260301-000000", .99),
+             cell(210, 676, 444, 732, "수신기관명", 1),
+             cell(671, 671, 908, 736, "가상기관용", 1),
+             cell(1180, 677, 1503, 729, "자격확인요청일", 1),
+             cell(1841, 677, 2079, 729, request, 1),
+             cell(229, 820, 429, 880, "증번호", .98),
+             cell(658, 826, 919, 878, "00000000000", 1),
+             cell(1180, 824, 1506, 876, "사업장관리번호", 1),
+             cell(732, 956, 845, 1031, "성명", 1),
+             cell(1517, 964, 1911, 1017, "주 민 등 록 번 호", .95),
+             cell(227, 998, 428, 1064, "가입자", 1),
+             cell(233, 1065, 424, 1125, "(세대주)", 1),
+             cell(789 - 27 * len(name), 1091, 789 + 27 * len(name), 1163, name, 1),
+             cell(1551, 1103, 1878, 1151, "900101–1******", .97),
+             cell(989, 1224, 1416, 1304, "자격확인내", 1),
+             cell(1420, 1236, 1486, 1292, "역", 1),
+             cell(185, 1361, 369, 1438, "성명", 1),
+             cell(501, 1370, 787, 1427, "주민등록번호", 1),
+             cell(949, 1368, 1188, 1434, "자격취득일", .99),
+             cell(1301, 1368, 1540, 1434, "자격상실일", 1),
+             cell(1730, 1370, 2194, 1430, "급여정지사유 및 기간", .98)]
+    if not empty_management:
+        cells.append(cell(1841, 826, 2079, 878, "00000000000", 1))
+    for index in range(count):
+        y = 1481 + 112 * index
+        member_name = name if index == 0 else "가상원"
+        cells.extend([cell(155, y, 155 + 47 * len(member_name), y + 66, member_name, 1),
+                      cell(413, y + 12, 706, y + 54, "900101–1******", .98),
+                      cell(959, y + 7, 1180, y + 58, "2020.01.01", 1)])
+    marker_y = 1481 + 112 * count + 3
+    cells.append(cell(977, marker_y, 1159, marker_y + 59, marker, 1))
+    if separators:
+        cells.extend([cell(155, marker_y, 295, marker_y + 55, "===", 1),
+                      cell(413, marker_y, 706, marker_y + 55, "~~", 1),
+                      cell(1301, marker_y, 1540, marker_y + 55, "···", 1),
+                      cell(1730, marker_y, 2194, marker_y + 55, "--", 1)])
+    footer_y = max(2635, marker_y + 1000)
+    cells.extend([cell(292, footer_y, 1159, footer_y + 54,
+                       "이와같이 건강보험자격을 확인합니다.", .98),
+                  cell(1114, footer_y + 91, 1375, footer_y + 154, "2026.03.03", 1),
+                  cell(764, footer_y + 220, 1643, footer_y + 315, "국민건강보험공단" + issuer_role, 1),
+                  cell(278, footer_y + 376, 889, footer_y + 424, validity + " 까지 유효합니다.", .98)])
+    if noise:
+        cells.extend([cell(1521, 1279, 1566, 1322, "1", .2),
+                      cell(954, 1303, 968, 1315, "1", .15),
+                      cell(1614, 1362, 1675, 1423, "I", .54),
+                      cell(797, 1480, 827, 1507, "1", .18),
+                      cell(1725, marker_y + 380, 1753, marker_y + 410, ".", .39),
+                      cell(772, marker_y + 382, 798, marker_y + 407, "1", .1),
+                      cell(1579, marker_y + 433, 1743, marker_y + 590, "1I", .21),
+                      cell(1645, footer_y + 169, 1838, footer_y + 250, "가상도장", .33),
+                      cell(1648, footer_y + 284, 1842, footer_y + 361, "가상도장", .35)])
+    return cells, (2480, max(3505, footer_y + 650))
