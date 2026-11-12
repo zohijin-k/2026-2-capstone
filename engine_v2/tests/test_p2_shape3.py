@@ -9,16 +9,17 @@ from engine_v2.tests import p2_shape3_samples as sample
     ("payment", DocType.NHIS_PAYMENT,
      {"payment_group_headers", "payment_component_headers", "payment_columns", "paid_total_matches"}),
     ("qualification", DocType.NHIS_QUALIFICATION,
-     {"nhis_issue_location_unique", "발급일_consistent", "발급일_required"}),
+     set()),
     ("acquisition", DocType.NHIS_ACQUISITION_LOSS,
-     {"발급일_consistent", "nhis_issue_location_unique", "recent_five_years_covered", "발급일_required"}),
+     set()),
 ])
 def test_exact_shape_with_inferred_footer_reproduces_observed_failures(monkeypatch, tmp_path, kind, detected, failures):
     result = sample.read_image(monkeypatch, tmp_path, kind)
     assert result.detected_doc_type == detected
-    assert {value.strip() for value in result.fields.get("판독검증실패", "").split(",")} == failures
-    assert result.fields["양식판독상태"] == "불완전"
-    assert result.confidence == .4
+    assert {value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()} == failures
+    assert result.fields["양식판독상태"] == ("불완전" if failures else "완전")
+    expected_confidence = .9 if kind == "acquisition" else .95
+    assert result.confidence == (.4 if failures else expected_confidence)
     assert result.fields["성명"] == sample.NAME
     assert result.fields["생년월일"] == sample.BIRTH
 

@@ -315,3 +315,9 @@ Code references in this table use `613c639`. Every root-cause attribution involv
 | Acquisition `recent_five_years_covered` | (라), real date sufficiency 추정 | Five history-date words at x1639–2263, y1115–1422. No printed query-period label in the supplied shape. | `nhis_acquisition_loss.py:511` requires an issue date before invoking the existing helper. The authored history has an old loss date before the five-year cutoff and passes once its issue date is available. Original numeric placeholders cannot prove real coverage. Preserve helper semantics at `:398`–`:413`. |
 
 The repeated-label mechanism explains all supplied failures without a numeric correction expansion. It is a falsifiable hypothesis, not a confirmed reconstruction of masked source text. Normal-label controls and exact-shape digests prevent silently claiming otherwise.
+
+### Stage 4 shared issuing-date correction
+
+The shared selector now requires a standalone organization/role anchor below confirmation, distinguishing high-confidence notice prose from issuing text while allowing the observed low-confidence neighboring seals. It assembles full date fragments independently of global prose/stamp line grouping. Separate year/month/day/unit words, two/three lines, the confirmation baseline and a date suffix in the sentence's own token are supported. All fragments must form exactly one valid date. Missing, repeated, malformed or unrelated labeled dates retain review. Required-field checks remain intact.
+
+The qualification and acquisition hypothetical-footer image cases now have no failed checks and contain the issue date. Acquisition's existing confidence is 0.9 and qualification's is 0.95. Existing text-layer/portal and own-OCR regressions passed together with the new fragment cases, 336 tests total after correcting the new assertion to the existing acquisition confidence. The source-glyph trigger remains 추정.

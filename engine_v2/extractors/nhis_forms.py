@@ -22,39 +22,78 @@ def single_page(pages) -> bool:
 
 
 def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word], bool]:
-    """Select a unique date-only line strictly between confirmation and issuer."""
+    """Read one unlabeled date in the observed confirmation/issuing block."""
     lines = common.page_lines(page, result)
-    confirmations = [i for i, row in enumerate(lines) if "확인합니다" in squash(line_text(row))]
+    confirmations = [row for row in lines if "확인합니다" in squash(line_text(row))]
     if len(confirmations) != 1:
         return None, [], False
-    # A seal can obscure the officer's role. The observed organization below
-    # confirmation supplies the closing anchor without completing missing text.
-    issuers = [i for i, row in enumerate(lines)
-               if i > confirmations[0] and "국민건강보험공단" in squash(line_text(row))]
+    hits = label_hits(confirmations, ("확인합니다",))
+    confirmation = hits[0][1] if len(hits) == 1 else []
+    if not confirmation:
+        return None, [], False
+    top = min(word.y0 for word in confirmation)
+    # A notice can mention the organization again. An issuing anchor consists
+    # of the organization and its optional role, separate from notice prose.
+    issuers = []
+    for row in lines:
+        for _, words in label_hits([row], ("국민건강보험공단",)):
+            anchor_text = squash(line_text(words))
+            if min(word.cy for word in words) <= top or not re.fullmatch(
+                    r"국민건강보험공단(?:이사장?)?", anchor_text):
+                continue
+            extra = [word for word in row if all(word is not anchor for anchor in words)]
+            if all(re.fullmatch(r"이사장?", squash(word.text)) or
+                   (word.conf < .8 and not re.search(r"\d", word.text)) for word in extra):
+                issuers.append(words)
     if len(issuers) != 1:
         return None, [], False
-    # Tall issuer lettering can pull a separate nearby date into its grouped
-    # row. Such a date still competes with the primary issuing date.
-    if re.search(r"\d", line_text(lines[issuers[0]])):
-        return None, [], False
-    candidates = []
-    for row in lines[confirmations[0] + 1:issuers[0]]:
-        dates = common.dates_in_line(row)
-        text = common.normalize_format_text(line_text(row))
-        # A malformed second date is still a competing candidate, not blank
-        # space to ignore after finding one valid date.
-        if dates or re.search(r"\d", text):
-            residue = re.sub(r"[\d\s년월일年月日./:\-‐‑‒–—―−﹘﹣－]", "", text)
-            raw_dates = list(common.DATE_RE.finditer(text))
-            if not raw_dates:
-                raw_dates = list(common.COMPACT_DATE_RE.finditer(squash(text)))
-            if len(dates) != 1 or len(raw_dates) != 1 or residue:
+    issuer = issuers[0]
+    bottom = max(word.y1 for word in issuer)
+    issuer_ids = {id(word) for word in issuer}
+    parts = []
+    for row in lines:
+        row_text = squash(line_text(row))
+        if any(label in row_text for label in ("요청일", "유효", "출력", "조회기간")):
+            continue
+        for word in row:
+            if id(word) in issuer_ids or not top <= word.cy <= bottom:
+                continue
+            text = common.normalize_format_text(squash(word.text))
+            if "확인합니다" in text:
+                text = text.partition("확인합니다")[2].lstrip(".")
+            if not text:
+                continue
+            if re.fullmatch(r"[\d년월일年月日./\-]+", text):
+                parts.append((word, text))
+            elif re.search(r"\d", text):
                 return None, [], False
-            candidates.append(dates[0])
-    if len(candidates) != 1:
+    if not parts:
         return None, [], False
-    value, words = candidates[0]
-    return value, words, True
+    # Re-group only date fragments. Tall stamps and confirmation prose must
+    # not determine whether the date's year/month/day share a baseline.
+    text_by_id = {id(word): text for word, text in parts}
+    ordered = [word for row in common.group_lines([word for word, _ in parts]) for word in row]
+    for left, right in zip(ordered, ordered[1:]):
+        height = max(left.px[3] - left.px[1], right.px[3] - right.px[1])
+        horizontal_gap = max(left.px[0] - right.px[2], right.px[0] - left.px[2], 0)
+        vertical_gap = max(left.px[1] - right.px[3], right.px[1] - left.px[3], 0)
+        if horizontal_gap > 3 * height or vertical_gap > 3 * height:
+            return None, [], False
+    text = "".join(text_by_id[id(word)] for word in ordered)
+    matches = list(common.DATE_RE.finditer(text))
+    if not matches:
+        matches = list(common.COMPACT_DATE_RE.finditer(text))
+    if len(matches) != 1:
+        return None, [], False
+    match = matches[0]
+    # Entire fragments must describe exactly one date. A second malformed
+    # date, leftover year/month/day or extra digits invalidate the evidence.
+    if text[:match.start()] or text[match.end():].strip("."):
+        return None, [], False
+    value = common.parse_date(match.group())
+    if value is None:
+        return None, [], False
+    return value, ordered, True
 
 
 def person_table_header(page, result, anchor: str) -> common.PageHeader:
