@@ -24,6 +24,8 @@ import {
   type UploadedDocument,
 } from '../../api.ts'
 import FilePreview from '../../components/FilePreview.tsx'
+import { Skeleton, SkeletonBlock, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import Modal from '../../components/Modal.tsx'
 import PdfPages from '../../components/PdfPages.tsx'
 import StatusBadge from '../../components/StatusBadge.tsx'
@@ -241,6 +243,8 @@ function SlotCard({
   const [interviewFormOpen, setInterviewFormOpen] = useState(false)
   const [interviewPdfReady, setInterviewPdfReady] = useState(false)
   const [interviewHwp, setInterviewHwp] = useState<string | null>(null)
+  const [busyFileName, setBusyFileName] = useState('')
+  const showBusySkeleton = useDelayedFlag(busy)
   const doc = item.documents[0]
   const status = doc?.status ?? null
   // 발급일 직접 입력이 있는 서류는 날짜를 먼저 받아야 업로드 즉시 2차 검증을 할 수 있다.
@@ -284,15 +288,21 @@ function SlotCard({
             </button>
           )}
         </div>
-        {status ? (
-          <StatusBadge status={status} audience="applicant" />
-        ) : (
-          item.issuer_url && (
+        <div className="dslot__head-meta">
+          {status ? (
+            <StatusBadge status={status} audience="applicant" />
+          ) : showBusySkeleton ? (
+            <span className="status-badge status-badge--loading" role="status" aria-live="polite">
+              <span className="dslot__spinner" aria-hidden="true" />
+              읽는 중…
+            </span>
+          ) : null}
+          {!status && item.issuer_url && (
             <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
               {item.issuer}에서 발급받기 ↗
             </a>
-          )
-        )}
+          )}
+        </div>
       </div>
 
       <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
@@ -306,7 +316,7 @@ function SlotCard({
       )}
 
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
-      {!doc && (
+      {!doc && !busy && (
         <div className="dslot__action">
           <input
             ref={input}
@@ -315,7 +325,10 @@ function SlotCard({
             accept={item.accept.map((f) => `.${f}`).join(',')}
             onChange={(e) => {
               const file = e.target.files?.[0]
-              if (file) onPick(file)
+              if (file) {
+                setBusyFileName(file.name)
+                onPick(file)
+              }
               e.target.value = ''
             }}
           />
@@ -326,17 +339,39 @@ function SlotCard({
             </label>
           )}
           {dateWarning && <p className="dslot__date-warning" role="status">{dateWarning}</p>}
+          {!dateReady && (
+            <p className="dslot__gate">{basisLabel}을 입력하면 파일을 올릴 수 있습니다.</p>
+          )}
           <button
             type="button"
             className="btn btn--primary dslot__upload"
-            disabled={busy || !dateReady}
+            disabled={!dateReady}
             onClick={() => input.current?.click()}
           >
-            {busy ? '읽는 중…' : '파일 업로드'}
+            파일 업로드
           </button>
-          {!dateReady && !busy && (
-            <p className="dslot__gate">{basisLabel}을 입력하면 파일을 올릴 수 있습니다.</p>
-          )}
+        </div>
+      )}
+
+      {!doc && busy && showBusySkeleton && (
+        <div className="dresult dresult--loading">
+          <div className="dresult__file">
+            <div className="dresult__kind dresult__kind--loading" aria-hidden="true">
+              <SkeletonBlock className="dresult__thumbnail-shimmer" />
+            </div>
+            <div className="dresult__body dresult__body--loading">
+              {busyFileName ? (
+                <span className="dresult__name dresult__name--loading">{busyFileName}</span>
+              ) : (
+                <SkeletonLine className="dresult__filename-shimmer" />
+              )}
+              <span className="dresult__issue-date"><span>발급일</span><SkeletonLine width="7em" /></span>
+            </div>
+            <div className="dresult__actions">
+              <button type="button" className="btn btn--small" disabled aria-disabled="true">미리보기</button>
+              <button type="button" className="btn btn--small dresult__retry" disabled aria-disabled="true">다시 올리기</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -376,6 +411,7 @@ export default function DocumentUpload({
   const [declared, setDeclared] = useState<Record<string, YMD>>({})
   const [busySlot, setBusySlot] = useState('')
   const [error, setError] = useState('')
+  const showChecklistSkeleton = useDelayedFlag(!checklist && !error)
 
   useEffect(() => {
     fetchChecklist(applicationId)
@@ -444,7 +480,17 @@ export default function DocumentUpload({
   }
 
   if (error && !checklist) return <p className="flow-error">{error}</p>
-  if (!checklist) return <p className="dupload__loading">서류 목록을 불러오는 중…</p>
+  if (!checklist) return showChecklistSkeleton ? (
+    <Skeleton className="dupload__skeleton-list">
+      {Array.from({ length: 5 }, (_, index) => (
+        <SkeletonCard key={index} className="dupload__skeleton-slot">
+          <SkeletonLine width="38%" />
+          <SkeletonLine width="78%" />
+          <SkeletonLine width="54%" />
+        </SkeletonCard>
+      ))}
+    </Skeleton>
+  ) : null
 
   const uploadItems = checklist.items.filter((i) => i.upload)
   const onlineItems = checklist.items.filter((i) => !i.upload)

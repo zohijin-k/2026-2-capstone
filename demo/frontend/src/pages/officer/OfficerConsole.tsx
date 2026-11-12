@@ -22,6 +22,8 @@ import {
 import ApplicationList from './ApplicationList.tsx'
 import ReviewDetail from './ReviewDetail.tsx'
 import CriteriaEditor from '../../components/CriteriaEditor.tsx'
+import { Skeleton, SkeletonBlock, SkeletonLine } from '../../components/Skeleton.tsx'
+import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './officer.css'
 
 const DEFAULT_QUERY: OfficerListQuery = { role: 'province', page: 1, page_size: 20 }
@@ -42,6 +44,7 @@ export default function OfficerConsole() {
   const [mock, setMock] = useState(isOfficerMockActive())
   const [showCriteria, setShowCriteria] = useState(false)
   const [criteriaProgram, setCriteriaProgram] = useState('double_savings')
+  const showListSkeleton = useDelayedFlag(!list && !error && !showCriteria && open === null)
 
   useEffect(() => {
     fetchOfficerRoles()
@@ -172,9 +175,16 @@ export default function OfficerConsole() {
           onBulk={bulk}
           busy={busy}
         />
-      ) : (
-        <p className="officer__loading">접수 목록을 불러오는 중…</p>
-      )}
+      ) : showListSkeleton ? (
+        <Skeleton className="officer__table-skeleton">
+          <div className="filters officer__filters-skeleton">{['사업', '처리상태', 'AI판정', '신청일', '정렬'].map((label) => <label key={label}>{label}<SkeletonBlock className="officer__filter-control" /></label>)}</div>
+          <div className="bulk officer__bulk-skeleton"><span>선택 0건</span><button type="button" className="btn" disabled aria-disabled="true">일괄 처리</button><button type="button" className="btn" disabled aria-disabled="true">일괄 확인</button></div>
+          <div className="grid-scroll"><div className="officer__table-skeleton-grid">
+            <div className="officer__table-skeleton-head">{['순위', '접수번호', '신청자', '지역', '서류', 'AI 판정', '점수', '상태', '접수일', '기타', '기타', '기타'].map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}</div>
+            {Array.from({ length: 8 }, (_, row) => <div className="officer__table-skeleton-row" key={row}>{Array.from({ length: 12 }, (_, col) => <SkeletonLine key={col} width={col === 2 ? '78%' : '64%'} />)}</div>)}
+          </div></div>
+        </Skeleton>
+      ) : null}
     </div>
   )
 }
