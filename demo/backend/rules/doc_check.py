@@ -244,6 +244,24 @@ def _finding(code: str, message: str, req: DocRequirement, **fmt: str) -> CheckF
     )
 
 
+def _insurance_identity_unreadable(req: DocRequirement, ocr: OcrResult) -> CheckFinding | None:
+    name = str(ocr.fields.get("성명") or "").strip()
+    try:
+        birth = date.fromisoformat(str(ocr.fields.get("생년월일") or "")[:10])
+    except ValueError:
+        birth = None
+    missing = (["성명"] if not name else []) + (["생년월일"] if birth is None else [])
+    if not missing:
+        return None
+    field = "·".join(missing)
+    action = "을 모두 읽지 못했습니다" if len(missing) == 2 else "을 읽지 못했습니다"
+    return _finding(
+        CODE_REQUIRED_FIELD_UNREADABLE,
+        f"4대보험 서류의 {field}{action}. 담당자가 원본을 확인합니다.",
+        req, field=field,
+    )
+
+
 def _uncertain(finding: CheckFinding) -> CheckFinding:
     """읽기 불확실성은 확정 위반 문구와 제출 차단을 함께 없앤다."""
     finding.message = "서류의 내용을 확실하게 읽지 못했습니다. 담당자가 원본에서 직접 확인합니다."
@@ -340,6 +358,16 @@ def check_document(
             if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
+
+    if (not ocr.is_encrypted and ocr.tier != "fixture"
+            and ocr.detected_doc_type is DocType.INSURANCE_4
+            and ocr.fields.get("양식판독상태") == "불완전"):
+        finding = _insurance_identity_unreadable(req, ocr) or _finding(
+            CODE_REQUIRED_FIELD_UNREADABLE,
+            "4대보험 서류의 양식 또는 가입 표를 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+            req, field="양식·가입 표",
+        )
+        return CheckResult(status="NEEDS_REVIEW", findings=[finding])
 
     if (not ocr.is_encrypted and ocr.tier != "fixture"
             and (ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS or
@@ -545,17 +573,9 @@ def check_document(
 
     if (not ocr.is_encrypted and ocr.tier != "fixture"
             and ocr.detected_doc_type is DocType.INSURANCE_4):
-        name = str(ocr.fields.get("성명") or "").strip()
-        try:
-            birth = date.fromisoformat(str(ocr.fields.get("생년월일") or "")[:10])
-        except ValueError:
-            birth = None
-        if not name or birth is None:
-            findings.append(_finding(
-                CODE_REQUIRED_FIELD_UNREADABLE,
-                "4대보험 서류의 성명·생년월일을 모두 읽지 못했습니다. 담당자가 원본을 확인합니다.",
-                req, field="성명·생년월일",
-            ))
+        finding = _insurance_identity_unreadable(req, ocr)
+        if finding:
+            findings.append(finding)
 
     # 본인 대조 — 서류 종류가 맞았을 때만 본다 (엉뚱한 서류면 그 사유가 먼저다).
     # 판독이 확실할 때만 '본인 서류가 아님'으로 반려하고, 불확실하면 담당자에게 넘긴다.

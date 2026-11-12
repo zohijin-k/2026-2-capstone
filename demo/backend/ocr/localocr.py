@@ -308,8 +308,22 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
             fields[key] = value
             if row_box is not None:
                 bboxes[key] = row_box
-    fields["판독검증"] = f"{sum(item.passed for item in ex.validations)}/{len(ex.validations)} 통과"
-    failed = [item.name for item in ex.validations if not item.passed]
+    validations = list(ex.validations)
+    structure_complete = getattr(ex, "structure_complete", None)
+    if getattr(ex, "form_kind", None) == "portal":
+        from engine_v2.pipeline.field_safety import remove_header_only_fields
+        from engine_v2.extractors.nhis_common import Validation
+
+        for key in remove_header_only_fields(fields):
+            bboxes.pop(key, None)
+        missing = [label for label in ("성명", "생년월일", "발급일") if not fields.get(label)]
+        validations.extend(Validation(f"{label}_required", False) for label in missing)
+        if missing:
+            structure_complete = False
+    if structure_complete is not None:
+        fields["양식판독상태"] = "완전" if structure_complete else "불완전"
+    fields["판독검증"] = f"{sum(item.passed for item in validations)}/{len(validations)} 통과"
+    failed = [item.name for item in validations if not item.passed]
     if failed:
         fields["판독검증실패"] = ", ".join(failed)
     if ex.warnings:
@@ -317,6 +331,8 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     issue = ex.fields.get("발급일")
     issue_date = date.fromisoformat(str(issue.value)) if issue else None
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    if structure_complete is False:
+        confidence = min(confidence, 0.4)
     detected = DocType.INSURANCE_4 if ex.detected_type.value == "insurance_4" else None
     return OcrResult(
         detected_doc_type=detected,
