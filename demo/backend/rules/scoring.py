@@ -44,7 +44,7 @@ OFFICIAL_NOTICE_MAX_HOUSEHOLD = MAX_SUPPORTED_HOUSEHOLD
 #: 신청 자격 상한. 이 값을 넘으면 점수와 무관하게 부적합이다.
 INCOME_LIMIT_PERCENT = 140.0
 
-#: 공개 기준표의 가입구분. 자동 자격 판정은 직장·지역 상한만 사용한다.
+#: 공개 기준표의 가입구분. 혼합 상한은 초과 확정 경계에만 쓰며 가입구분으로 선택하지 않는다.
 INSURANCE_TYPES = ("직장", "지역", "혼합")
 
 #: 항목 1. 중위소득 — (하한 %, 점수). 위에서부터 먼저 걸리는 구간을 쓴다.
@@ -341,10 +341,21 @@ def score_income(facts: ScoringFacts) -> IncomeScoreResult:
         over = False
         reason = "INCOME_AT_OR_BELOW_BOTH_LIMITS"
         decision = f"직장·지역 두 상한 중 낮은 {minimum:,}원 이하 → 소득 요건 충족"
-    elif premium > maximum:
+    elif premium > max(row.values()):
         over = True
-        reason = "INCOME_ABOVE_BOTH_LIMITS"
-        decision = f"직장·지역 두 상한 중 높은 {maximum:,}원 초과 → 140% 초과 확정"
+        reason = "INCOME_ABOVE_ALL_LIMITS" if "혼합" in row else "INCOME_ABOVE_BOTH_LIMITS"
+        limits_label = "직장·지역·혼합 모든 상한" if "혼합" in row else "직장·지역 두 상한"
+        decision = f"{limits_label} 중 높은 {max(row.values()):,}원 초과 → 140% 초과 확정"
+    elif premium > maximum:
+        item = _missing("income", "중위소득(가구소득)", 40, "혼합 가구 여부와 적용 규칙", source)
+        item.basis = (
+            f"{size}인 가구의 혼합 가구 여부를 확정할 수 없습니다. "
+            f"고지금액 평균 {premium:,}원은 직장·지역 상한 중 높은 {maximum:,}원을 넘지만 "
+            f"혼합 상한 {row['혼합']:,}원 이하입니다. "
+            "혼합 가구 식별과 적용 규칙이 미확정이므로 초과로 확정하지 않고 담당자 재검토가 필요합니다."
+        )
+        return IncomeScoreResult(item, None, False, notes + [item.basis],
+                                 "UNDETERMINED", ["INCOME_MIXED_POSSIBLE"])
     elif category is not None:
         limit = row[category]
         over = premium > limit
@@ -369,7 +380,8 @@ def score_income(facts: ScoringFacts) -> IncomeScoreResult:
             ("직장", "지역"), key=lambda key: row[key])
         notes.append(
             f"{ESTIMATE_LABEL} 가입구분 미확정: 점수 구간만 {reference} 기준표로 임시 환산했습니다. "
-            "소득 요건은 직장·지역 두 상한 비교로 확정했습니다."
+            + ("소득 요건은 직장·지역·혼합 모든 상한 비교로 확정했습니다."
+               if over and "혼합" in row else "소득 요건은 직장·지역 두 상한 비교로 확정했습니다.")
         )
     percent, base_100, note = income_percent(size, premium, reference)
     score, band = next((score, band) for lower, score, band in INCOME_BANDS if percent >= lower)
