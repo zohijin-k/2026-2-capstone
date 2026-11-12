@@ -187,7 +187,8 @@ def _portal_table_layout(lines):
     category_words = categories[0][1]
     cy = sum(w.cy for w in category_words) / len(category_words)
     height = max(w.y1 - w.y0 for w in category_words)
-    header = [row for row in lines if abs(row[0].cy - cy) <= 2 * height]
+    header = [row for row in lines if abs(row[0].cy - cy) <= 2 * height and
+              "가입내역" not in squash(line_text(row))]
     headers, sources = [], []
     for label in ("내역", "성명", "가입자종별", "사업장관리번호", "사업장명칭", "자격취득일", "신고접수일"):
         # The management label is stacked vertically; legacy label_hits already
@@ -281,9 +282,11 @@ def _portal_page_marker(lines):
     if len(sections) != 1:
         return []
     section = sections[0]
-    labels = [w for w in section if "가입내역" in squash(w.text)]
-    right = max(w.x1 for w in labels)
-    return [w for w in section if w.x0 >= right]
+    hits = forms.label_hits([section], ("가입내역",))
+    if len(hits) != 1:
+        return []
+    right = max(w.x1 for w in hits[0][1])
+    return [w for w in section if w.x0 >= right and re.fullmatch(r"[\d/／\s]+", w.text)]
 
 
 def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str]]:

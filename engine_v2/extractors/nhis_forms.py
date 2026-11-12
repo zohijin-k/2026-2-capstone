@@ -6,7 +6,6 @@ from datetime import date
 
 from . import nhis_common as common
 from ..pipeline.layout import line_text, squash
-from ..pipeline.ocr import OcrResult, OcrWord
 
 
 def single_page(pages) -> bool:
@@ -101,6 +100,7 @@ def person_table_header(page, result, anchor: str) -> common.PageHeader:
         suffix = text.partition(label)[2].lstrip(":：")
         if suffix:
             if label == "성명":
+                suffix = suffix.strip("()（）")
                 value = suffix if common.NAME_RE.fullmatch(suffix) and not common.is_header_only_value(suffix) else None
             else:
                 match = common.MASKED_RRN_RE.fullmatch(suffix) or common.RRN_RE.fullmatch(suffix)

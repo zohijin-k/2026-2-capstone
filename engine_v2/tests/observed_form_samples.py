@@ -17,14 +17,14 @@ def spaced(x, y, text, *, size=12, step=18):
     return [word(x + i * step, y, size, char, size) for i, char in enumerate(text)]
 
 
-def page(cells, *, jitter=0, seed=7, image=False, size=(595, 842)):
+def page(cells, *, jitter=0, seed=7, image=False, size=(595, 842), scale=1):
     rng = random.Random(seed)
     words = []
     for x0, y0, x1, y1, text in cells:
         dx, dy = rng.uniform(-jitter, jitter), rng.uniform(-jitter, jitter)
-        words.append(OcrWord(text, .99, (x0 + dx, y0 + dy, x1 + dx, y1 + dy)))
+        words.append(OcrWord(text, .99, tuple(v * scale for v in (x0 + dx, y0 + dy, x1 + dx, y1 + dy))))
     return (PageImage(0, PageSource.UPLOAD if image else PageSource.TEXT_LAYER,
-                      size, pixel_size=size, dpi=72), OcrResult("synthetic", words))
+                      size, pixel_size=tuple(v * scale for v in size), dpi=72 * scale), OcrResult("synthetic", words))
 
 
 def acquisition(*, name=NAME, count=9, long=False):

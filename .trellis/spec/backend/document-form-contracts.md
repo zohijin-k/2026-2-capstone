@@ -56,3 +56,13 @@ Structural review precedes eligibility rejection based on partial history. A str
 - Correct: delimit the form's value cells, validate the entire value and candidate uniqueness, preserve failed checks after safety filtering, and connect missing/ambiguous evidence to review.
 - Wrong: publish only the household rows that happened to parse or use default coordinates as proof that a table exists.
 - Correct: require observed table structure and all required row evidence before publishing an authoritative list/count.
+
+## 8. Coordinate layout evidence
+
+- Spaced labels are comparison views only. Keep original value tokens/bounds; never merge single-character words into person or workplace values. New-form `nhis_forms.label_hits` checks glyph spacing without changing the legacy common reader.
+- Identity values may start left of their centered header. Scope below the header, require horizontal overlap with that label and unique candidates, and stop before the next section. Side role labels and header-only values are not names.
+- Derive ordered table boundaries from persistent gaps in body word intervals, including marker cells for empty optional columns. Headers identify/order columns; their start positions are not cell edges. Reject missing/ambiguous corridors. Reserve observed date tokens before measuring acquisition-history employer overprints, and preserve the employer continuation completeness check.
+- Reconstruct label comparison order from normalized coordinate lines. `OcrResult.text` has pixel-sized reading-order buckets and can reorder separated glyphs after resolution changes or small vertical perturbations.
+- Portal header/row regions use labels, header height, table end cues and row spacing. Portal numbers are 14 digits; government document-number validation remains separate. Receipt and acquisition dates remain distinct occurrences in the same row band.
+- Resident-document coordinate classification is a fallback after legacy keywords fail. Require a large upper-page `주민등록표` title and adjacent title subtype, ignoring parenthesis damage. Side/lower notices and combined/contradictory subtype evidence cannot resolve a type. Preserve the resident field extractor and existing review behavior after classification.
+- Cover both normalized geometry changes and resolution scaling, plus final adapter/verdict behavior. Coordinate evidence alone is not an end-to-end OCR accuracy claim.

@@ -262,7 +262,16 @@ def _nhis_history(pages):
                     if "확인합니다" in squash(line_text(lines[i])) or
                     "국민건강보험공단" in squash(line_text(lines[i]))), len(lines))
         body = lines[header_index + 1:end]
-        boundaries = nhis_forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in hits], body)
+        # Reserve observed date occurrences before measuring whitespace. A long
+        # employer token can overprint the beginning of a date cell; that token
+        # must not erase a corridor supported by the other rows. Keep it intact
+        # for the established employer continuation check below.
+        geometry = []
+        for row in body:
+            dates = [w for w in row if common.DATE_RE.fullmatch(common.normalize_format_text(w.text))]
+            geometry.append([w for w in row if w in dates or not any(
+                w.x0 < d.x0 < w.x1 for d in dates)])
+        boundaries = nhis_forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in hits], geometry)
         if boundaries is None:
             row_cells_read = False
             continue

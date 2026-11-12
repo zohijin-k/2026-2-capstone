@@ -129,7 +129,9 @@ def _household(lines):
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> QualificationResult:
     del today
-    text = " ".join(result.text for _, result in pages)
+    # OCR text ordering uses pixel buckets; reconstruct comparison text from
+    # normalized lines so separated glyph labels survive resolution/jitter.
+    text = " ".join(line_text(row) for page, ocr in pages for row in common.page_lines(page, ocr))
     flat = squash(text)
     detected = DocType.NHIS_QUALIFICATION if "건강보험자격확인" in flat else DocType.UNKNOWN
     recognized = (is_notification(text) and "통보번호" in flat and "가입자" in flat and
