@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Skeleton, SkeletonCard, SkeletonLine } from './Skeleton.tsx'
+import { Skeleton, SkeletonBlock, SkeletonLine } from './Skeleton.tsx'
 import useDelayedFlag from '../hooks/useDelayedFlag.ts'
 
 import {
@@ -81,9 +81,15 @@ export default function CriteriaEditor({
 
   if (error) return <p role="alert">{error}</p>
   if (!form || !current) return showSkeleton ? (
-    <Skeleton className="criteria-editor__skeleton">
-      <SkeletonLine width="34%" />
-      {[0, 1, 2].map((group) => <SkeletonCard key={group}><SkeletonLine width="28%" />{Array.from({ length: group === 1 ? 5 : 4 }, (_, i) => <div className="criteria-editor__skeleton-field" key={i}><SkeletonLine width="42%" /><SkeletonBlock /></div>)}</SkeletonCard>)}
+    <Skeleton className="criteria-editor criteria-editor__skeleton">
+      <header className="criteria-editor__head"><div><h2>{applicantDemo ? '관리자 설정 — 실서비스에서는 담당자 화면에서만 바뀝니다' : '심사 기준'}</h2><p>현재 적용 기준 <SkeletonLine className="criteria-editor__inline-line" width="42px" /></p></div>{onClose && <button type="button" disabled aria-disabled="true">닫기</button>}</header>
+      <fieldset><legend>공통 기준</legend>{['공고일', '신청 시작일', '신청 종료일'].map((label) => <label key={label}>{label}<SkeletonBlock className="criteria-editor__input-skeleton" /></label>)}</fieldset>
+      <table className="criteria-editor__table"><thead><tr><th>필수 서류</th><th>날짜 종류</th><th>기준</th><th>값</th></tr></thead><tbody>{(DOCS[code] ?? DOCS.double_savings).map((doc) => <tr key={doc.key}><th scope="row">{doc.label}</th><td><SkeletonBlock className="criteria-editor__input-skeleton" /></td><td><SkeletonBlock className="criteria-editor__input-skeleton" /></td><td><SkeletonBlock className="criteria-editor__input-skeleton" /></td></tr>)}</tbody></table>
+      <fieldset><legend>스캔본 제출 허용 서식</legend><p>허용한 서식은 신청자가 온라인 작성 또는 스캔본 제출을 선택할 수 있습니다.</p><table className="criteria-editor__table"><thead><tr><th>서식</th><th>스캔본 제출 허용</th></tr></thead><tbody>{[0, 1, 2].map((row) => <tr key={row}><th scope="row"><SkeletonLine width="58px" /></th><td><SkeletonBlock className="criteria-editor__checkbox-skeleton" /></td></tr>)}</tbody></table></fieldset>
+      {code === 'job_package' && <fieldset><legend>취업패키지 지원 항목 기준</legend><table className="criteria-editor__table"><thead><tr><th>지원 항목·안내</th><th>회당 한도</th><th>지급 방식</th><th>횟수</th><th>횟수 범위</th><th>필요 서류 · 기준 날짜</th></tr></thead><tbody>{[0, 1, 2].map((row) => <tr key={row}>{[0, 1, 2, 3, 4, 5].map((col) => <td key={col}><SkeletonLine width="76%" /></td>)}</tr>)}</tbody></table></fieldset>}
+      <fieldset><legend>서류별 내용 기준</legend><strong>납부확인서 평균 고지월</strong><div className="criteria-editor__skeleton-months">{Array.from({ length: 12 }, (_, i) => <SkeletonBlock key={i} className="criteria-editor__input-skeleton" />)}</div><label>자격득실확인서 변동내역 포함 기간 (년)<SkeletonBlock className="criteria-editor__input-skeleton" /></label></fieldset>
+      <button type="button" disabled aria-disabled="true">기준 저장</button>
+      {!applicantDemo && <table className="criteria-editor__history"><caption>기준 버전 이력</caption><thead><tr><th>버전</th><th>저장 시각</th><th>역할</th></tr></thead><tbody>{[0, 1, 2].map((row) => <tr key={row}>{[0, 1, 2].map((col) => <td key={col}><SkeletonLine width="72%" /></td>)}</tr>)}</tbody></table>}
     </Skeleton>
   ) : null
 

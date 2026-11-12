@@ -5,11 +5,12 @@ type SkeletonProps = {
   children: ReactNode
   className?: string
   label?: string
+  style?: CSSProperties
 }
 
-export function Skeleton({ children, className = '', label = '불러오는 중' }: SkeletonProps) {
+export function Skeleton({ children, className = '', label = '불러오는 중', style }: SkeletonProps) {
   return (
-    <div className={`skeleton ${className}`.trim()} role="status" aria-busy="true">
+    <div className={`skeleton ${className}`.trim()} style={style} role="status" aria-busy="true">
       {children}
       <span className="skeleton__sr-only">{label}</span>
     </div>

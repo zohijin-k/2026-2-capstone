@@ -15,7 +15,7 @@ import { useEffect, useState } from 'react'
 import { fetchStatus, type ApplicationStatus } from '../../api.ts'
 import FileLink from '../../components/FileLink.tsx'
 import StatusBadge from '../../components/StatusBadge.tsx'
-import { Skeleton, SkeletonBlock, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import { Skeleton, SkeletonLine } from '../../components/Skeleton.tsx'
 import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 import './my-page.css'
 
@@ -33,10 +33,17 @@ export default function MyPage({ applicationId }: { applicationId: number }) {
   if (error) return <p className="flow-error">{error}</p>
   if (!data) return showSkeleton ? (
     <Skeleton className="mypage mypage__skeleton">
-      <SkeletonCard className="mypage__skeleton-head"><SkeletonLine width="42%" /><SkeletonLine width="26%" /></SkeletonCard>
-      <SkeletonBlock className="mypage__skeleton-progress" />
-      <SkeletonCard><SkeletonLine width="72%" /></SkeletonCard>
-      {[0, 1, 2].map((item) => <SkeletonCard key={item} className="mypage__skeleton-box"><SkeletonLine width="30%" />{Array.from({ length: 3 }, (_, index) => <SkeletonLine key={index} width={index === 1 ? '82%' : '96%'} />)}</SkeletonCard>)}
+      <section className="mypage__head">
+        <div><SkeletonLine width="240px" /><p>신청번호 <SkeletonLine width="110px" /> · 접수 <SkeletonLine width="140px" /></p></div>
+        <p className="mypage__call">문의 <SkeletonLine width="100px" /></p>
+      </section>
+      <ol className="mypage__progress">
+        {['접수', '서류검토', '자격심사', '선정심사', '결과발표'].map((label, index) => <li className="mpstep" key={label}><span className="mpstep__no">{index + 1}</span><span className="mpstep__label">{label}</span></li>)}
+      </ol>
+      <p className="mypage__notice"><SkeletonLine width="74%" /></p>
+      <section className="mypage__box"><h3>신청한 지원 항목</h3><table className="mypage__docs"><thead><tr><th>항목</th><th>영수증 금액</th><th>지급 예정액</th><th>계산 근거</th></tr></thead><tbody>{[0, 1].map((row) => <tr key={row}>{[0, 1, 2, 3].map((col) => <td key={col}><SkeletonLine width={col === 3 ? '88%' : '64%'} /></td>)}</tr>)}</tbody></table></section>
+      <section className="mypage__box"><h3>제출한 서류</h3><table className="mypage__docs"><thead><tr><th>파일</th><th>판독된 서류</th><th>판정</th><th>내용</th></tr></thead><tbody>{[0, 1, 2].map((row) => <tr key={row}>{[0, 1, 2, 3].map((col) => <td key={col}><SkeletonLine width={col === 3 ? '88%' : '64%'} /></td>)}</tr>)}</tbody></table></section>
+      <section className="mypage__box"><h3>동의 이력</h3><ul className="mypage__consents">{[0, 1, 2].map((row) => <li key={row}><SkeletonLine width="35%" /><SkeletonLine width="20%" /><SkeletonLine width="30%" /></li>)}</ul></section>
     </Skeleton>
   ) : null
 

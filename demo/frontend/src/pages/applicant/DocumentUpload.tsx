@@ -243,6 +243,7 @@ function SlotCard({
   const [interviewFormOpen, setInterviewFormOpen] = useState(false)
   const [interviewPdfReady, setInterviewPdfReady] = useState(false)
   const [interviewHwp, setInterviewHwp] = useState<string | null>(null)
+  const [busyFileName, setBusyFileName] = useState('')
   const showBusySkeleton = useDelayedFlag(busy)
   const doc = item.documents[0]
   const status = doc?.status ?? null
@@ -287,15 +288,21 @@ function SlotCard({
             </button>
           )}
         </div>
-        {status ? (
-          <StatusBadge status={status} audience="applicant" />
-        ) : (
-          item.issuer_url && (
+        <div className="dslot__head-meta">
+          {status ? (
+            <StatusBadge status={status} audience="applicant" />
+          ) : showBusySkeleton ? (
+            <span className="status-badge status-badge--loading" role="status" aria-live="polite">
+              <span className="dslot__spinner" aria-hidden="true" />
+              읽는 중…
+            </span>
+          ) : null}
+          {!status && item.issuer_url && (
             <a className="dslot__issuer" href={item.issuer_url} target="_blank" rel="noreferrer">
               {item.issuer}에서 발급받기 ↗
             </a>
-          )
-        )}
+          )}
+        </div>
       </div>
 
       <p className="dslot__criteria">{item.issue_rule_label}{item.notes.filter((note) => note.startsWith('조회기간에 ') || note.startsWith('최근 ')).map((note) => ` · ${note}`).join('')}</p>
@@ -309,7 +316,7 @@ function SlotCard({
       )}
 
       {/* 올리기 전: 발급일 → 파일 업로드. 올린 뒤에는 결과만 남긴다. */}
-      {!doc && (
+      {!doc && !busy && (
         <div className="dslot__action">
           <input
             ref={input}
@@ -318,7 +325,10 @@ function SlotCard({
             accept={item.accept.map((f) => `.${f}`).join(',')}
             onChange={(e) => {
               const file = e.target.files?.[0]
-              if (file) onPick(file)
+              if (file) {
+                setBusyFileName(file.name)
+                onPick(file)
+              }
               e.target.value = ''
             }}
           />
@@ -329,27 +339,39 @@ function SlotCard({
             </label>
           )}
           {dateWarning && <p className="dslot__date-warning" role="status">{dateWarning}</p>}
-          {showBusySkeleton && (
-            <Skeleton className="dslot__processing" label="서류를 읽는 중">
-              <SkeletonBlock className="dslot__processing-thumb" />
-              <span className="dslot__processing-copy">
-                <span className="dslot__processing-label">서류를 읽는 중</span>
-                <SkeletonLine width="72%" />
-                <SkeletonLine width="48%" />
-              </span>
-            </Skeleton>
+          {!dateReady && (
+            <p className="dslot__gate">{basisLabel}을 입력하면 파일을 올릴 수 있습니다.</p>
           )}
           <button
             type="button"
             className="btn btn--primary dslot__upload"
-            disabled={busy || !dateReady}
+            disabled={!dateReady}
             onClick={() => input.current?.click()}
           >
-            {busy ? '읽는 중…' : '파일 업로드'}
+            파일 업로드
           </button>
-          {!dateReady && !busy && (
-            <p className="dslot__gate">{basisLabel}을 입력하면 파일을 올릴 수 있습니다.</p>
-          )}
+        </div>
+      )}
+
+      {!doc && busy && showBusySkeleton && (
+        <div className="dresult dresult--loading">
+          <div className="dresult__file">
+            <div className="dresult__kind dresult__kind--loading" aria-hidden="true">
+              <SkeletonBlock className="dresult__thumbnail-shimmer" />
+            </div>
+            <div className="dresult__body dresult__body--loading">
+              {busyFileName ? (
+                <span className="dresult__name dresult__name--loading">{busyFileName}</span>
+              ) : (
+                <SkeletonLine className="dresult__filename-shimmer" />
+              )}
+              <span className="dresult__issue-date"><span>발급일</span><SkeletonLine width="96px" /></span>
+            </div>
+            <div className="dresult__actions">
+              <button type="button" className="btn btn--small" disabled aria-disabled="true">미리보기</button>
+              <button type="button" className="btn btn--small dresult__retry" disabled aria-disabled="true">다시 올리기</button>
+            </div>
+          </div>
         </div>
       )}
 

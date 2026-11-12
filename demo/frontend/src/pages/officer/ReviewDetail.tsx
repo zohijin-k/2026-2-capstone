@@ -138,10 +138,13 @@ export default function ReviewDetail({
   if (error) return <p className="officer__error">{error}</p>
   if (!detail || !activeDoc) return showSkeleton ? (
     <Skeleton className="review__skeleton">
-      <div className="review__skeleton-header"><SkeletonLine width="22%" /><SkeletonLine width="34%" /><SkeletonLine width="18%" /></div>
+      <div className="review__head review__skeleton-header">
+        <button type="button" className="review__back" disabled aria-disabled="true">← 접수 목록</button>
+        <span>접수번호 <SkeletonLine width="94px" /></span><span>신청자 <SkeletonLine width="118px" /></span><span>지역 <SkeletonLine width="88px" /></span><span>접수 <SkeletonLine width="124px" /></span>
+      </div>
       <div className="review__skeleton-split">
-        <div className="review__skeleton-left"><div className="review__skeleton-tabs">{Array.from({ length: 5 }, (_, i) => <SkeletonLine key={i} width="68%" />)}</div><SkeletonBlock className="review__skeleton-page" /></div>
-        <div className="review__skeleton-right"><SkeletonLine width="58%" />{Array.from({ length: 9 }, (_, i) => <SkeletonLine key={i} width={i % 3 ? '82%' : '96%'} />)}<SkeletonBlock /></div>
+        <div className="review__left review__skeleton-left"><nav className="review__tabs review__skeleton-tabs">{Array.from({ length: 5 }, (_, i) => <button key={i} type="button" className="review__tab" disabled aria-disabled="true"><SkeletonLine width="68%" /></button>)}</nav><SkeletonBlock className="review__skeleton-page" /></div>
+        <div className="review__right review__skeleton-right">{['최종 판정', '심사표 (서식6)', '자격요건 체크리스트', '제외대상 조회 결과', '판독 결과'].map((title, index) => <section className="panel" key={title}><h3 className="panel__title">{title}</h3><div className="panel__body review__skeleton-panel">{Array.from({ length: index === 1 ? 6 : index === 4 ? 5 : 3 }, (_, i) => <SkeletonLine key={i} width={i % 3 ? '82%' : '96%'} />)}</div></section>)}</div>
       </div>
     </Skeleton>
   ) : null

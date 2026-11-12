@@ -11,7 +11,7 @@
  */
 
 import { useEffect, useState } from 'react'
-import { Skeleton, SkeletonCard, SkeletonLine } from '../../components/Skeleton.tsx'
+import { Skeleton, SkeletonBlock, SkeletonLine } from '../../components/Skeleton.tsx'
 import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
 
 import {
@@ -194,11 +194,15 @@ export default function SubsidyItems({
   if (error && !state) return <p className="flow-error">{error}</p>
   if (!state) return showSkeleton ? (
     <Skeleton className="subsidy subsidy__skeleton">
-      <SkeletonCard><SkeletonLine width="88%" /><SkeletonLine width="66%" /></SkeletonCard>
-      <div className="subsidy__skeleton-grid">
-        {[0, 1, 2, 3].map((item) => <SkeletonCard key={item}><SkeletonLine width="52%" /><SkeletonLine width="80%" /><SkeletonLine width="38%" /></SkeletonCard>)}
-      </div>
-      <SkeletonCard><SkeletonLine width="32%" /><SkeletonLine width="62%" /></SkeletonCard>
+      <section className="subsidy__intro"><h3>지원받을 항목을 고르세요 (복수 선택 가능)</h3><SkeletonLine width="82%" /></section>
+      <ul className="sitems subsidy__skeleton-grid">
+        {[0, 1, 2, 3].map((item) => <li className="sitem" key={item}>
+          <div className="sitem__head"><SkeletonBlock className="subsidy__check" /><SkeletonLine width="42%" /><SkeletonLine width="24%" /></div>
+          <SkeletonLine width="78%" /><SkeletonLine width="92%" />
+          <div className="sitem__body"><span>신청 회차</span><SkeletonBlock className="subsidy__input" /><p className="sitem__docs">추가서류: <SkeletonLine width="48%" /></p></div>
+        </li>)}
+      </ul>
+      <section className="subsidy__sum"><h3>예상 지원금</h3><table className="subsidy__table"><thead><tr><th>항목</th><th>영수증 금액</th><th>지급 예정액</th><th>계산 근거</th></tr></thead><tbody>{[0, 1].map((row) => <tr key={row}>{[0, 1, 2, 3].map((col) => <td key={col}><SkeletonLine width={col === 3 ? '84%' : '62%'} /></td>)}</tr>)}</tbody><tfoot><tr><th colSpan={2}>합계</th><td><SkeletonLine width="64%" /></td><td /></tr></tfoot></table></section>
     </Skeleton>
   ) : null
 

@@ -79,7 +79,14 @@ export default function PdfPages({
   const showLoading = useDelayedFlag(!pdf && !(loaded?.url === url && loaded.error))
   const error = loaded?.url === url ? loaded.error : ''
   if (error) return <p className="pdfpages__error">PDF를 열 수 없습니다.</p>
-  if (!pdf) return showLoading ? <Skeleton className="pdfpages__loading"><SkeletonBlock className="pdfpages__placeholder" /></Skeleton> : null
+  const pageWidth = maxHeight ? Math.min(width, Math.round(maxHeight / 1.414)) : width
+  if (!pdf) return showLoading ? (
+    <div className={className ? `pdfpages ${className}` : 'pdfpages'}>
+      <Skeleton className="pdfpages__loading" style={{ width: pageWidth }}>
+        <SkeletonBlock className="pdfpages__placeholder" />
+      </Skeleton>
+    </div>
+  ) : null
 
   const pages = pageNo === undefined
     ? Array.from({ length: Math.min(pdf.numPages, maxPages ?? pdf.numPages) }, (_, i) => i + 1)

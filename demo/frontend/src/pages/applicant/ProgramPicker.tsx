@@ -473,14 +473,17 @@ export default function ProgramPicker({
   if (error) return <p className="flow-error">{error}</p>
   if (!programs) return showSkeleton ? (
     <div className="ppick ppick__skeleton">
+      <p className="ppick__lead">신청할 사업을 고르세요. 사업마다 자격요건·제출서류·선발 방식이 다르며, 이후 화면은 고른 사업의 기준에 맞춰 자동으로 바뀝니다.</p>
       <Skeleton className="ppick__skeleton-inner">
-        <SkeletonLine width="82%" />
         <div className="ppick__skeleton-grid">
           {[0, 1].map((item) => (
-            <SkeletonCard key={item} className="ppick__skeleton-card">
-              <SkeletonLine width="62%" />
-              <SkeletonLine width="38%" />
-              {Array.from({ length: 7 }, (_, index) => <SkeletonLine key={index} width={index % 2 ? '78%' : '92%'} />)}
+            <SkeletonCard key={item} className="pcard ppick__skeleton-card">
+              <div className="pcard__head"><SkeletonLine width="62%" /><SkeletonLine width="18%" /></div>
+              <section className="pdetail__sec"><h3>지원 개요</h3><p><strong>지원 대상:</strong> <SkeletonLine width="78%" /></p><p><strong>지원 내용:</strong> <SkeletonLine width="68%" /></p></section>
+              <section className="pdetail__sec"><h3>모집 및 신청 일정</h3><p><strong>공고 기간:</strong> <SkeletonLine width="42%" /></p><p><strong>신청 기간:</strong> <SkeletonLine width="42%" /></p><p><strong>신청 방법:</strong> <SkeletonLine width="76%" /></p></section>
+              <section className="pdetail__sec"><h3>신청 시 유의사항</h3><SkeletonLine width="90%" /><SkeletonLine width="82%" /></section>
+              <div className="ppick__skeleton-fill">{Array.from({ length: 5 }, (_, index) => <SkeletonLine key={index} width={index % 2 ? '80%' : '92%'} />)}</div>
+              <button type="button" className="btn btn--primary pcard__go" disabled aria-disabled="true">신청하기</button>
             </SkeletonCard>
           ))}
         </div>

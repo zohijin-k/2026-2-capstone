@@ -5,11 +5,7 @@ export default function useDelayedFlag(active: boolean, delay = 150): boolean {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
-    if (!active) {
-      setVisible(false)
-      return
-    }
-    const timer = window.setTimeout(() => setVisible(true), delay)
+    const timer = window.setTimeout(() => setVisible(active), active ? delay : 0)
     return () => window.clearTimeout(timer)
   }, [active, delay])
 
