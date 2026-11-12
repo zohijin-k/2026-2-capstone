@@ -37,6 +37,8 @@ class PaymentResult:
     validations: list[common.Validation]
     warnings: list[str] = field(default_factory=list)
     diagnostics: dict[str, str] = field(default_factory=dict)
+    form_kind: str | None = None
+    structure_complete: bool | None = None
 
 
 def _money_words(line):
@@ -329,6 +331,10 @@ def _body_issue_date(pages):
 
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> PaymentResult:
+    from . import nhis_payment_gov
+
+    if nhis_payment_gov.recognizes(pages):
+        return nhis_payment_gov.extract(pages, today=today)
     del today
     headers = common.page_headers(pages)
     page_map = {page.page: page for page, _ in pages}

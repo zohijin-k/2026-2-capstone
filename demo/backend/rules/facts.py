@@ -19,6 +19,10 @@ from .scoring import FactSource, ScoringFacts
 #: 업로드 서류 한 건을 채점 입력으로 넘길 때의 최소 형태.
 #: {"document_id": 1, "doc_type": "건강보험료납부확인서", "fields": {...}, "bboxes": {...}}
 DocFact = dict[str, Any]
+PAYMENT_AMOUNT_FIELDS = frozenset({
+    "건강보험료", "월별고지금액", "장기요양보험료", "월별장기요양보험료",
+    "보수외소득월액_건강", "월별보수외소득월액_건강",
+})
 
 
 def parse_ymd(value: Any) -> date | None:
@@ -78,8 +82,19 @@ def _find_any(
     return None
 
 
+def _payment_amounts_trusted(doc: DocFact | None) -> bool:
+    fields = (doc or {}).get("fields") or {}
+    if not doc or doc.get("doc_type") != str(DocType.NHIS_PAYMENT):
+        return True
+    if doc.get("status") in {"NEEDS_REVIEW", "FAIL"}:
+        return False
+    return "양식판독상태" not in fields or fields["양식판독상태"] == "완전"
+
+
 def _field(doc: DocFact | None, key: str) -> str | None:
     if not doc:
+        return None
+    if key in PAYMENT_AMOUNT_FIELDS and not _payment_amounts_trusted(doc):
         return None
     value = (doc.get("fields") or {}).get(key)
     return value if isinstance(value, str) and value else None
@@ -152,6 +167,8 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
     )
 
     income_origin = "건강보험료 납부확인서 고지금액 판독 · 가구원수는 건강보험 자격확인서 판독"
+    if not _payment_amounts_trusted(payment):
+        income_origin += " · 납부확인서 판독 또는 명의 확인이 완료되지 않아 보험료 채점 보류"
     if household_issue:
         income_origin += " · " + household_issue
     if household_form_mismatch:

@@ -202,11 +202,14 @@ def to_engine_documents(rows: list[dict[str, Any]]) -> list:
     documents = []
     for row in rows:
         doc_type = row.get("doc_type") or row.get("expected_doc_type") or ""
+        confidence = float(row.get("confidence") or 0.0)
+        if row.get("status") == "NEEDS_REVIEW" and confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+            confidence = min(confidence, 0.4)
         documents.append(
             engine_models.Document(
                 doc_type=str(doc_type),
                 file_format=row.get("file_format") or "pdf",
-                ocr_confidence=float(row.get("confidence") or 0.0),
+                ocr_confidence=confidence,
                 image_quality_score=float(row.get("image_quality") or 0.0),
                 has_signature=row.get("has_signature"),
                 issue_date=row.get("issue_date"),

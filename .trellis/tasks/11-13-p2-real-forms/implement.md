@@ -6,7 +6,7 @@
 - [x] Implement shared OCR helpers and regressions. Commit stage 3.
 - [x] Implement acquisition-history gaps and variants. Commit stage 4.
 - [x] Implement qualification variants and date scoping. Commit stage 5.
-- [ ] Implement payment OCR variant with arithmetic checks. Commit stage 6.
+- [x] Implement payment OCR variant with arithmetic checks. Commit stage 6.
 - [ ] Implement business-proof extractor, adapter and identity checks. Commit stage 7.
 - [ ] Investigate and correct resident numbering review behavior. Commit stage 8.
 - [ ] Run `.venv/bin/python -m pytest engine_v2/tests`, backend pytest and eighteen scenario modules. Add requested synthetic integration coverage, run full-scope delegated review and record counts. Commit stage 9.
