@@ -34,7 +34,8 @@ from ..models import (
     Review,
     get_session,
 )
-from ..rules.facts import extract_region, extract_town, parse_ymd
+from ..rules.facts import extract_region, extract_town
+from ..rules.age_eligibility import assess_age
 from ..rules.doc_types import DocType
 from ..rules.programs import (
     DOUBLE_SAVINGS,
@@ -693,15 +694,7 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
     program = entry.program
     score = mask_data(entry.review.score_json or {}) if entry.review else {}
     form1 = entry.app.form1_json or {}
-    birth = parse_ymd(form1.get("birth"))
-    low, high = program.birth_range
-
-    #: 점수제 사업은 심사표 근거를, 선착순 사업은 신청서 입력값을 근거로 쓴다.
-    age_basis = items.get("age", {}).get("basis") or (
-        f"생년월일 {birth.isoformat()} · {program.age_basis_date.isoformat()} 기준"
-        if birth
-        else "생년월일을 확인할 수 없습니다."
-    )
+    age = assess_age(program, form1.get("birth"), entry.app.identity_json)
 
     rows: list[dict[str, Any]] = [
         {
@@ -719,8 +712,8 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
         {
             "key": "age",
             "label": f"② 연령 — {program.age_basis_date.isoformat()} 기준 만 18~39세",
-            "ok": bool(birth and low <= birth <= high),
-            "basis": age_basis,
+            "ok": age.status == "PASS",
+            "basis": age.basis,
         },
     ]
     # 근로요건이 있는 사업에서만 근로기간을 본다. 취업패키지의 자격요건은

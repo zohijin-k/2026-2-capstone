@@ -339,7 +339,10 @@ def build_facts(form1: dict[str, Any], documents: list[DocFact], payment_months:
         )
 
     # --- 4. 연령: 신청서 생년월일. 대조 근거는 주민등록초본이다 ---
-    birth = parse_ymd(form1.get("birth"))
+    try:
+        birth = parse_ymd(form1.get("birth"))
+    except OverflowError:
+        birth = None
     age_source = FactSource(
         doc_type=DocType.RESIDENT_ABSTRACT if abstract else None,
         document_id=abstract.get("document_id") if abstract else None,

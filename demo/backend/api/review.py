@@ -41,6 +41,7 @@ from ..models import (
     get_session,
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
+from ..rules.age_eligibility import assess_age
 from ..rules.household import overlap_members, qualification_members
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria, supplement_for_application
@@ -544,8 +545,19 @@ def _run_review(app: Application) -> Review:
             "message": income_item.basis if income_item else "소득 요건 판정 근거를 확인하지 못했습니다.",
             "doc_type": str(DocType.NHIS_PAYMENT),
         })
-    if household_needs_review or income_needs_review:
+    age = assess_age(program, form1.get("birth"), app.identity_json)
+    payload["age_eligibility"] = age.as_dict()
+    if age.reason_code:
+        payload.setdefault("reasons", []).append({
+            "stage": "stage2_eligibility",
+            "code": age.reason_code,
+            "message": age.basis,
+            "doc_type": None,
+        })
+    if household_needs_review or income_needs_review or age.status == "NEEDS_REVIEW":
         final_status = stage2_status = "NEEDS_REVIEW"
+    elif age.status == "FAIL":
+        final_status = stage2_status = "FAIL"
 
     if facts.household_size_form_mismatch:
         form_count, certificate_count = facts.household_size_form_mismatch
