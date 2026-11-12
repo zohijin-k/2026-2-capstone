@@ -88,16 +88,14 @@ def _household(lines):
     index = headers[0]
     header = lines[index]
     labels = ("성명", "주민등록번호", "자격취득일", "자격상실일", "급여정지")
-    anchors = []
-    for label in labels:
-        hits = common.label_hits([header], (label,))
-        anchors.append(min(word.x0 for word in hits[0][1]) if hits else None)
-    if any(value is None for value in anchors) or anchors != sorted(anchors):
-        return [], False, False
+    header_hits = [forms.label_hits([header], (label,)) for label in labels]
     # Confirmation/issuer blocks delimit the table even if its marker is absent.
     end = next((i for i in range(index + 1, len(lines))
                 if "확인합니다" in squash(line_text(lines[i]))), len(lines))
     body = lines[index + 1:end]
+    bounds = forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in header_hits], body)
+    if bounds is None:
+        return [], False, False
     markers = [i for i, row in enumerate(body) if "이하여백" in squash(line_text(row))]
     marker_ok = len(markers) == 1
     marker_index = markers[0] if markers else len(body)
@@ -106,16 +104,16 @@ def _household(lines):
         marker_hits = common.label_hits([marker_row], ("이하여백",))
         marker_words = marker_hits[0][1] if len(marker_hits) == 1 else []
         marker_ok = (bool(marker_words) and squash(line_text(marker_words)) == "이하여백" and
-                     anchors[2] - .5 <= min(word.x0 for word in marker_words) < anchors[3] and
+                     bounds[2] <= min(word.x0 for word in marker_words) < bounds[3] and
                      all(any(word is marker for marker in marker_words) or
                          re.fullmatch(r"[\s\-－—–]+", word.text)
                          for word in marker_row) and
                      not any(re.search(r"[가-힣\d]", line_text(row)) for row in body[marker_index + 1:]))
     rows = []
     for row in body[:marker_index]:
-        cells = [[word for word in row if anchors[i] - .5 <= word.x0 <
-                  (anchors[i + 1] - .5 if i + 1 < len(anchors) else 101)]
-                 for i in range(len(anchors))]
+        cells = forms.column_cells(row, bounds)
+        if cells is None:
+            return rows, False, False
         name = squash(line_text(cells[0]))
         name_ok = bool(common.NAME_RE.fullmatch(name) and not common.is_header_only_value(name))
         rrn = squash(common.normalize_format_text(line_text(cells[1])))
