@@ -46,4 +46,14 @@ Run `.venv/bin/python -m pytest engine_v2/tests -q`, backend equivalent and all 
 
 ## Evidence availability
 
-The supplied /tmp/layout_shape5.txt has nonzero stat size but reads as an empty string in this runtime; initial `wc -l` is zero. Exact coordinate reproduction is pending user-provided readable contents. Do not claim a real-document replay. Synthetic fixtures will use request-described layout and established synthetic form helpers; unverified source equivalence is explicitly 추정.
+Initial read occurred during generation and returned empty; the user regenerated the 899-line masked structure file and it is now readable. Synthetic data follows its row bands, split header/day-list words, two-page insurance copies, mixed attachments, date-empty address rows and tiny damaged title. No source file is copied to the repository. Exact OCR accuracy remains unverified (추정).
+
+## Pre-change synthetic reproduction
+
+- 3a: body classifier returns unknown; no dedicated reader.
+- 3b: portal plus two sparse image pages -> confidence .4, REQUIRED_FIELD_UNREADABLE / NEEDS_REVIEW.
+- 5: date headers present and numbered address rows lack dates -> confidence .4, LOW_OCR_CONFIDENCE / NEEDS_REVIEW, history cannot establish residence.
+- 6: synthetic fragmented unreadable upper title plus number/transfer/head-of-household labels -> unknown. Source case has no reliable 주민등록표/초본 title text, so lower table cues cannot choose abstract versus register; localocr returns None and PdfText image fallback returns type None / confidence 0. This is classification evidence failure, not proof that OCR produced no words (source reports 124).
+- 7: damaged component/month header -> incomplete payment form, no reliable monetary facts, NEEDS_REVIEW. The first variant still produced a partial monthly map (and a review-only MISSING_BILLING_MONTHS); damage to the month header models the no-map variant.
+- 1: actual synthetic encrypted PDF already returns UNREADABLE_FILE FAIL at base, confidence 0. The request's expected pre-change NEEDS_REVIEW was **not reproduced**. Preserve the confirmed path with a regression and an explicit early invariant; do not claim an existing failure.
+- Baseline independently verified before code edits: engine 1172 pass / 3 skip, backend 735 pass; 17 counting scenario modules 1857 pass / 0 fail, P14 exit 0 (18 files total).
