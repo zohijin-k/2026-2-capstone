@@ -299,6 +299,57 @@ def test_acquisition_loss_five_years_not_covered():
     assert "취득일" not in result.fields
 
 
+def _government24_synthetic_pages(*, old_loss: bool = True, period: bool = False):
+    """Synthetic two-page credential history; every identity value is fabricated."""
+    output = []
+    for page_no in range(2):
+        words = [wd(5, 3, "건강보험 자격득실확인서", 35), wd(8, 8, "성명"),
+                 wd(18, 8, "가상인물"), wd(40, 8, "주민등록번호"), wd(62, 8, "010203"),
+                 wd(70, 8, "-"), wd(73, 8, "3"), wd(76, 8, "******"),
+                 wd(8, 11, "발급일"), wd(18, 11, "2027.06.15", 12)]
+        if period:
+            words.extend([wd(8, 14, "조회기간"), wd(20, 14, "2024.01.01"),
+                          wd(35, 14, "~"), wd(40, 14, "2027.06.15")])
+        header_y = 18 if period else 15
+        words.extend([wd(8, header_y, "가입자구분"), wd(31, header_y, "자격취득일"),
+                      wd(54, header_y, "자격상실일"), wd(76, header_y, "사업장명칭")])
+        for local_index in range(11):
+            row_index = page_no * 11 + local_index
+            y = header_y + 3 + local_index * 2.0
+            acquired_year = (2023 + row_index % 3) if not old_loss else 2018 + row_index // 3
+            acquired = f"{acquired_year:04d}-{(row_index % 12) + 1:02d}-01"
+            lost = ""
+            if row_index > 0:
+                lost_year = acquired_year + 1
+                if old_loss and row_index == 1:
+                    lost_year = 2021
+                if not old_loss:
+                    lost_year = 2025
+                lost = f"{lost_year:04d}-{(row_index % 12) + 1:02d}-28"
+            words.extend([wd(8, y, "직장가입자" if row_index % 2 == 0 else "지역가입자"),
+                          wd(31, y, acquired, 12)])
+            if lost:
+                words.append(wd(54, y, lost, 12))
+            words.append(wd(76, y, "가상사업장"))
+        output.append(page(words, page_no))
+    return output
+
+
+def test_government24_synthetic_header_rrn_and_absent_period_fallback():
+    pages = _government24_synthetic_pages()
+    result = nhis_acquisition_loss.extract(pages)
+    assert result.fields["생년월일"].value == "2001-02-03"
+    assert len(result.history) == 22
+    assert result.history[0].lost is None
+    assert result.fields["변동내역"].value == "최근 5년 포함"
+
+    without_old_loss = nhis_acquisition_loss.extract(_government24_synthetic_pages(old_loss=False))
+    assert without_old_loss.fields["변동내역"].value == "최근 5년 미포함"
+
+    with_period = nhis_acquisition_loss.extract(_government24_synthetic_pages(period=True))
+    assert with_period.fields["변동내역"].value == "최근 5년 미포함"
+
+
 def test_acquisition_loss_rejects_reversed_dates_and_page_name_mismatch():
     result = nhis_acquisition_loss.extract(acquisition_pages(name2="이익산", acquired="2025-01-01", lost="2024-01-01"))
     assert not next(v for v in result.validations if v.name == "acquisition_before_loss").passed

@@ -211,9 +211,11 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         cutoff = _five_years_before(issue_date)
         if period:
             spans_five_years = period[0] <= cutoff and period[1] >= issue_date
-        if not spans_five_years:
+        else:
             spans_five_years = any(row.acquired and row.acquired <= cutoff and
                                     (row.lost is None or row.lost >= issue_date) for row in rows)
+            if not spans_five_years:
+                spans_five_years = any(row.lost and row.lost < cutoff for row in rows)
         status = "최근 5년 포함" if spans_five_years else "최근 5년 미포함"
         fields["변동내역"] = common.make_field(status, status, period_words or
             next((row.words for row in rows if row.acquired), []), page_map,

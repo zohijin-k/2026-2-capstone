@@ -17,6 +17,7 @@ from .format_text import normalize_format_text
 DATE_RE = re.compile(r"(?<!\d)(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?(?!\d)")
 COMPACT_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)")
 RRN_RE = re.compile(r"(\d{6})\s*-\s*([1-8])\d{6}")
+MASKED_RRN_RE = re.compile(r"(\d{6})-([1-8])[*＊●•○xX×]{1,7}")
 NAME_RE = re.compile(r"[가-힣]{2,6}")
 
 
@@ -148,7 +149,31 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                     header.name = name.group()
                     header.name_words = [word]
                     break
-        if header.birth is None and ("생년월일" in flat or "주민등록번호" in flat):
+        if header.birth is None and "주민등록번호" in flat:
+            hits = label_hits([line], ("주민등록번호",))
+            label_words = hits[0][1] if hits else []
+            if label_words:
+                x0, x1 = min(w.x0 for w in label_words), max(w.x1 for w in label_words)
+                candidates = [w for w in line if w.x0 >= x1]
+                if not candidates and index + 1 < len(lines):
+                    candidates = [w for w in lines[index + 1]
+                                  if w.x1 >= x0 and w.x0 <= x1]
+            else:
+                candidates = line
+            # OCR may split the label, separator, gender digit, and mask across words.
+            # Remove whitespace only in a parsing copy; never inspect table body rows.
+            rrn_text = re.sub(r"\s+", "", normalize_format_text(" ".join(w.text for w in candidates)))
+            rrn = MASKED_RRN_RE.search(rrn_text) or RRN_RE.search(rrn_text)
+            if rrn:
+                yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
+                gender = rrn.group(2)
+                century = 2000 if gender in "3478" else 1900
+                try:
+                    header.birth = date(century + yy, mm, dd)
+                    header.birth_words = candidates or line
+                except ValueError:
+                    pass
+        elif header.birth is None and "생년월일" in flat:
             birth_match = DATE_RE.search(normalize_format_text(text))
             birth_words = [word for word in line if parse_date(word.text)]
             if not birth_match:
@@ -156,7 +181,7 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
                 if birth_match:
                     birth_words = [word for word in line if parse_date(word.text)]
             if not birth_match:
-                labels = ("생년월일", "주민등록번호")
+                labels = ("생년월일",)
                 hits = label_hits([line], labels)
                 label_words = hits[0][1] if hits else []
                 if label_words:
@@ -172,17 +197,6 @@ def header_for_page(page: PageImage, result: OcrResult) -> PageHeader:
             if birth_match:
                 header.birth = parse_date(birth_match.group())
                 header.birth_words = birth_words or line
-            else:
-                rrn = RRN_RE.search(normalize_format_text(text))
-                if rrn:
-                    yy, mm, dd = int(rrn.group(1)[:2]), int(rrn.group(1)[2:4]), int(rrn.group(1)[4:6])
-                    gender = rrn.group(2)
-                    century = 2000 if gender in "3478" else 1900
-                    try:
-                        header.birth = date(century + yy, mm, dd)
-                        header.birth_words = [word for word in line if RRN_RE.search(normalize_format_text(word.text))] or line
-                    except ValueError:
-                        pass
         if header.issue is None and any(label in flat for label in ("발급일", "발급일자", "발행일", "출력일")):
             header.issue = parse_date(text)
             if header.issue:
