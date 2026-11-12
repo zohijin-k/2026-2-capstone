@@ -148,7 +148,7 @@ def label_hits(lines, aliases, *, x_bounds=None):
     return found
 
 
-def table_columns(headers, body, *, optional_columns=()):
+def table_columns(headers, body, *, optional_columns=(), minimum_gap_ratio=1.0):
     """Map ordered headers to persistent empty vertical corridors in body words.
 
     Header centers only establish column order and which pair a corridor can
@@ -169,6 +169,7 @@ def table_columns(headers, body, *, optional_columns=()):
     if not words:
         return None
     scale = median((w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words)
+    minimum_gap = scale * minimum_gap_ratio
     intervals = []
     for left, right in sorted((w.x0, w.x1) for w in words):
         if intervals and left <= intervals[-1][1]:
@@ -179,7 +180,7 @@ def table_columns(headers, body, *, optional_columns=()):
     boundaries = [float('-inf')]
     for index, (left, right) in enumerate(zip(centers, centers[1:])):
         candidates = sorted(((b - a, a, b) for a, b in gaps
-                             if left < (a + b) / 2 < right and b - a >= scale), reverse=True)
+                             if left < (a + b) / 2 < right and b - a >= minimum_gap), reverse=True)
         if not candidates:
             if index not in optional_columns and index + 1 not in optional_columns:
                 return None
@@ -190,7 +191,7 @@ def table_columns(headers, body, *, optional_columns=()):
             candidates = sorted((min(b, header_right) - max(a, header_left),
                                  max(a, header_left), min(b, header_right))
                                 for a, b in empty
-                                if min(b, header_right) - max(a, header_left) >= scale)
+                                if min(b, header_right) - max(a, header_left) >= minimum_gap)
             candidates.reverse()
             if not candidates:
                 return None

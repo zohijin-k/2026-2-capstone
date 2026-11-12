@@ -7,10 +7,11 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
+from statistics import median
 
 from ..pipeline.layout import line_text, squash
 from ..pipeline.ocr import OcrResult
-from ..pipeline.preprocess import PageImage
+from ..pipeline.preprocess import PageImage, PageSource
 from ..schemas.models import DocType, ExtractedField
 from . import nhis_common as common
 from . import nhis_forms
@@ -262,39 +263,78 @@ def _nhis_history(pages):
                     if "확인합니다" in squash(line_text(lines[i])) or
                     "국민건강보험공단" in squash(line_text(lines[i]))), len(lines))
         body = lines[header_index + 1:end]
+        ocr_page = page.source != PageSource.TEXT_LAYER
+        header_height = median(word.y1 - word.y0 for word in heading)
+        if ocr_page and all(len(hit) == 1 for hit in hits):
+            # Regional rows may have no employer text. Tall low-confidence
+            # overprints in that observed optional region are OCR artifacts.
+            optional_left = max(word.x1 for word in hits[1][0][1])
+            optional_right = min(word.x0 for word in hits[3][0][1])
+            regional = [word for line in body for word in line
+                        if squash(word.text) in {"직장가입자", "지역세대주", "지역세대원", "직장피부양자"}]
+            only_regional = bool(regional) and all(squash(word.text).startswith("지역") for word in regional)
+            body = common.group_lines([word for line in body for word in line
+                if not (only_regional and optional_left <= word.x0 and word.x1 <= optional_right
+                        and nhis_forms.table_noise(word, header_height)
+                        and not re.search(r"[가-힣\d]", word.text))])
+        marker_rows = [index for index, line in enumerate(body)
+                       if "이하여백" in squash(line_text(line))]
+        marker_index = marker_rows[0] if marker_rows else len(body)
+        bounded_body = body[:marker_index + 1]
         # Reserve observed date occurrences before measuring whitespace. A long
         # employer token can overprint the beginning of a date cell; that token
         # must not erase a corridor supported by the other rows. Keep it intact
         # for the established employer continuation check below.
         geometry = []
-        for row in body:
+        for row in bounded_body:
             dates = [w for w in row if common.DATE_RE.fullmatch(common.normalize_format_text(w.text))]
             geometry.append([w for w in row if w in dates or not any(
                 w.x0 < d.x0 < w.x1 for d in dates)])
-        boundaries = nhis_forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in hits], geometry)
+        boundaries = nhis_forms.table_columns(
+            [hit[0][1] if len(hit) == 1 else [] for hit in hits], geometry, optional_columns=(2, 4),
+            minimum_gap_ratio=.5 if ocr_page else 1.0)
         if boundaries is None:
             row_cells_read = False
             continue
         _, category_left, employer_left, date_left, lost_left, _ = boundaries
         categories = {"직장가입자", "지역세대주", "지역세대원", "직장피부양자"}
+        anchor_y = [line[0].cy for line in body[:marker_index]
+                    if any(squash(word.text) in categories for word in line)]
+        pitches = [b - a for a, b in zip(anchor_y, anchor_y[1:]) if b > a]
+        row_pitch = median(pitches) if pitches else 2 * header_height
         marker_seen = False
-        for line in lines[header_index + 1:]:
+        marker_y = None
+        for line in body:
             flat = squash(line_text(line))
             if "확인합니다" in flat or "국민건강보험공단" in flat:
                 break
-            marker_words = [word for word in line if squash(word.text) == "이하여백"]
+            marker_hits = nhis_forms.label_hits([line], ("이하여백",))
+            marker_words = marker_hits[0][1] if len(marker_hits) == 1 else []
             if marker_words:
-                marker_valid = (len(marker_words) == 1 and
-                                employer_left <= marker_words[0].x0 < date_left and
-                                len(line) > 1 and all(
-                                    re.fullmatch(r"[-‐‑‒–—―−﹘﹣－]+", squash(word.text))
-                                    for word in line if word not in marker_words))
+                marker_valid = (employer_left <= min(word.x0 for word in marker_words) and
+                                max(word.x1 for word in marker_words) <= date_left and
+                                re.sub(r"[^가-힣A-Za-z\d]", "", flat) == "이하여백")
                 markers.append(marker_valid)
                 marker_seen = True
+                marker_y = max(word.cy for word in marker_words)
                 continue
             if not line:
                 continue
             if marker_seen:
+                # Empty printed rows can contain distant watermark fragments.
+                # Numbers/categories/dates and nearby text remain row evidence.
+                punctuation = not re.search(r"[가-힣A-Za-z\d]", flat)
+                distant_artifact = (ocr_page and marker_y is not None and
+                    min(word.cy for word in line) > marker_y + 2.5 * row_pitch and
+                    all(word.x0 >= employer_left for word in line) and
+                    not any(squash(word.text) in categories for word in line) and
+                    not common.dates_in_line(line) and
+                    all(re.fullmatch(r"[가-힣]", squash(word.text)) or
+                        not re.search(r"[가-힣A-Za-z\d]", word.text) or
+                        (nhis_forms.table_noise(word, header_height) and
+                         not re.search(r"[가-힣]", word.text)) for word in line))
+                if punctuation or distant_artifact:
+                    continue
                 row_cells_read = False
                 continue
             number_words = [word for word in line if word.x0 < category_left]
@@ -337,7 +377,8 @@ def _nhis_history(pages):
                           [row.number for row in rows] == list(range(1, len(rows) + 1))),
         common.Validation("nhis_current_loss_blank", bool(rows) and rows[0].lost is None),
         common.Validation("nhis_neighbor_dates_continuous", bool(rows) and all(
-            lower.lost == upper.acquired for upper, lower in zip(rows, rows[1:]))),
+            lower.lost is not None and upper.acquired is not None and lower.lost <= upper.acquired
+            for upper, lower in zip(rows, rows[1:]))),
         common.Validation("nhis_blank_marker", markers == [True]),
     ])
     return rows, checks

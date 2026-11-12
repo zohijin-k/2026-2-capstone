@@ -21,7 +21,7 @@ The smallest behavior gaps are unredacted coordinate/text ingestion, OCR tokeniz
 
 ## Failure classification
 
-The following tables record every supplied failure. Category (가) means character recognition, (나) token/line segmentation, (다) a rule rejecting a normal variation, and (라) a propagated or other failure. Exact original glyphs and date values remain inference (추정) because the sources replace them with shape characters.
+Failure-mechanism code locations use base revision `5d0833d`. The following tables record every supplied failure. Category (가) means character recognition, (나) token/line segmentation, (다) a rule rejecting a normal variation, and (라) a propagated or other failure. Exact original glyphs and date values remain inference (추정) because the sources replace them with shape characters.
 
 ### Qualification
 
@@ -137,3 +137,11 @@ All supplied failures are classified individually above. The supported changes f
 Shared NHIS geometry now accepts explicitly optional header-backed empty columns while retaining strict default corridor ambiguity checks (`engine_v2/extractors/nhis_forms.py:151`). Bounded label comparison supports justified glyph labels using observed cell bounds (`:120`). Closing organization scope retains unique date-only evidence even with an obscured officer role (`:24`). Geometry-plus-confidence noise recognition is opt-in for bounded OCR callers (`:205`). Source value words remain intact.
 
 The amount-cell helper `engine_v2/extractors/format_text.py:24` returns normalized integer text or unreadable plus correction categories. It permits only O/o→0, I/l→1 and valid three-digit group punctuation. Unknown A stays unreadable. Numeric correction consumers must enforce arithmetic before completeness. Shared coordinate helpers add 21 tests and numeric helpers add 26 tests. Focused NHIS/portal/backend coverage passed 332 tests in the implementer's run, and the numeric plus format-parser set passed 98 tests.
+
+## Stage 4 outcome
+
+Acquisition history now derives the bounded table through its marker, reads empty employer/current-loss columns from observed headers, and discounts only scoped geometric OCR anomalies (`engine_v2/extractors/nhis_acquisition_loss.py:265`). Marker-only rows and alternate separator punctuation pass. Ordinary row text, numbers, malformed dates or employer fragments after the marker remain incomplete. OCR callers opt into a half-glyph minimum corridor through the shared helper, preserving its default.
+
+The neighboring date rule is lower loss <= upper acquisition (`:379`). An overlap remains incomplete and reaches NEEDS_REVIEW before eligibility. `history_covers_recent_years` retains its existing printed-lookback/old-loss meaning and already permits gaps. Government24 has no matching neighbor-continuity validation, so no additional rule needed adjustment. The old invalid-neighbor test's fake lower loss changed from before the upper acquisition to after it, preserving the test's assertions and invalid-history intent.
+
+Added 84 engine tests and 8 backend tests, including six actual image-PDF uploads. Every row count 1–10, names 2–4 characters, resolution/jitter/skew, empty employers, full/masked birth, gaps, overlaps and hidden fragments are covered. Engine-focused 300 and cross-layer-focused 244 tests passed.

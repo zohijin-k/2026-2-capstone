@@ -4,7 +4,7 @@
 - [x] Implement privacy ingestion and output coverage, upload tests and storage inventory. Commit stage 1.
 - [x] Finish per-check cause classification and shared OCR helper plan. Commit stage 2.
 - [x] Implement shared OCR helpers and regressions. Commit stage 3.
-- [ ] Implement acquisition-history gaps and variants. Commit stage 4.
+- [x] Implement acquisition-history gaps and variants. Commit stage 4.
 - [ ] Implement qualification variants and date scoping. Commit stage 5.
 - [ ] Implement payment OCR variant with arithmetic checks. Commit stage 6.
 - [ ] Implement business-proof extractor, adapter and identity checks. Commit stage 7.

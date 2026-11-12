@@ -57,7 +57,7 @@ def test_nhis_missing_or_inconsistent_structure_never_has_complete_confidence(ki
     elif kind == "sequence":
         cells = [(x, y, "9" if x == 7 and y == 42 else text) for x, y, text in cells]
     elif kind == "neighbor":
-        cells = [(x, y, "2023.01.01" if x == 81 and y == 42 else text) for x, y, text in cells]
+        cells = [(x, y, "2025.01.01" if x == 81 and y == 42 else text) for x, y, text in cells]
     elif kind == "current-loss":
         cells.append((81, 37, "2025.01.01"))
     elif kind == "page-count":
