@@ -42,6 +42,7 @@ from ..models import (
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
 from ..rules.age_eligibility import assess_age
+from ..rules.eligibility_blockers import age_blockers, eligibility_blockers
 from ..rules.work_continuity import assess_work
 from ..rules.household import overlap_members, qualification_members
 from ..rules.doc_types import DocType
@@ -250,6 +251,9 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
             }
         )
 
+    rows = [document_fact(d) for d in documents if d.slot_key != UNASSIGNED_SLOT]
+    items.extend(eligibility_blockers(program, form1, app.identity_json, rows,
+                 (app.doc_context_json or {}).get("work_category"), criteria))
     return items
 
 
@@ -737,9 +741,11 @@ def submit(application_id: int) -> dict[str, Any]:
 
     blockers = _blockers(app)
     if blockers:
+        eligibility_messages = [item["message"] for item in blockers if item["kind"] == "eligibility"]
         raise HTTPException(
             400,
-            f"아직 제출할 수 없습니다. 확인이 필요한 항목이 {len(blockers)}건 있습니다.",
+            f"아직 제출할 수 없습니다. 확인이 필요한 항목이 {len(blockers)}건 있습니다. "
+            + " ".join(eligibility_messages),
         )
 
     review = _run_review(app)
@@ -831,6 +837,7 @@ def status(application_id: int) -> dict[str, Any]:
         "program_code": program.code,
         "program_name": program.name,
         "status": app.status,
+        "eligibility_blockers": age_blockers(program, app.form1_json or {}, app.identity_json),
         "submitted_at": (
             app.submitted_at.isoformat(timespec="seconds") if app.submitted_at else None
         ),

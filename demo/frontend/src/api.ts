@@ -199,6 +199,7 @@ export interface ApplicationRow {
   self_check_json: Record<string, string>
   form5_json: Record<string, unknown>
   identity_json: Partial<Identity> | null
+  eligibility_blockers?: Blocker[]
 }
 
 export interface SelfCheckResult {
@@ -323,7 +324,7 @@ export interface MergedUploadResult {
 
 /** 제출을 막는 항목 하나. `goto`는 "어디로 가면 고칠 수 있는가"다. */
 export interface Blocker {
-  kind: 'form' | 'consent' | 'document' | 'context' | 'subsidy'
+  kind: 'form' | 'consent' | 'document' | 'context' | 'subsidy' | 'eligibility'
   target: string
   label: string
   message: string

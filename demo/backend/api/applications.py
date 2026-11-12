@@ -22,6 +22,7 @@ from ..forms.email import is_valid_email, normalize_email
 from ..rules.criteria import latest as latest_criteria
 from ..rules.programs import get_program
 from ..rules.self_check import evaluate
+from ..rules.eligibility_blockers import age_blockers
 
 router = APIRouter(prefix="/api/applications", tags=["applications"])
 
@@ -215,7 +216,9 @@ def create(body: CreateRequest, response: Response, request: Request) -> dict[st
 
 @router.get("/{application_id}")
 def read(application_id: int) -> dict[str, Any]:
-    return _load(application_id).model_dump(exclude={"applicant_access_hash", "written_forms_archive_path", "written_forms_archive_count"})
+    app = _load(application_id)
+    return {**app.model_dump(exclude={"applicant_access_hash", "written_forms_archive_path", "written_forms_archive_count"}),
+            "eligibility_blockers": age_blockers(get_program(app.program_code), app.form1_json or {}, app.identity_json)}
 
 
 @router.patch("/{application_id}")
@@ -311,7 +314,8 @@ def verify_identity(application_id: int, body: IdentityRequest) -> dict[str, Any
         s.add(app)
         s.commit()
         s.refresh(app)
-        return {"identity": app.identity_json, "form1": app.form1_json}
+        return {"identity": app.identity_json, "form1": app.form1_json,
+                "eligibility_blockers": age_blockers(get_program(app.program_code), app.form1_json or {}, app.identity_json)}
 
 
 @router.post("/{application_id}/self-check")
