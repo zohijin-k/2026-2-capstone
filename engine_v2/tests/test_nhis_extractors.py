@@ -276,6 +276,7 @@ def acquisition_pages(*, name2: str | None = None, acquired="2018.01.01", lost="
 
 def test_acquisition_loss_current_job_and_recent_five_years():
     result = nhis_acquisition_loss.extract(acquisition_pages())
+    assert result.fields["발급일"].value == "2026-11-10"
     assert result.fields["취득일"].value == "2018-01-01"
     assert result.fields["변동내역"].value == "최근 5년 포함"
     assert result.fields["취득일"].bbox is not None
@@ -292,6 +293,13 @@ def test_acquisition_loss_wrapped_column_headings_and_compact_dates():
     assert result.fields["발급일"].value == "2026-11-10"
     assert result.fields["취득일"].value == "2018-01-01"
 
+    split_compact = person_header("건강보험 자격득실확인서")
+    split_compact.extend([wd(10, 30, "가입자구분"), wd(32, 29, "자격취득"),
+                          wd(32, 31, "일"), wd(55, 29, "자격상실"), wd(55, 31, "일"),
+                          wd(10, 35, "직장가입자"), wd(32, 35, "2018"), wd(37, 35, "0101")])
+    split_result = nhis_acquisition_loss.extract([page(split_compact)])
+    assert split_result.fields["취득일"].value == "2018-01-01"
+
 
 def test_acquisition_loss_five_years_not_covered():
     result = nhis_acquisition_loss.extract(acquisition_pages(acquired="2024-02-01", lost="2025-02-01", period=False))
@@ -299,8 +307,143 @@ def test_acquisition_loss_five_years_not_covered():
     assert "취득일" not in result.fields
 
 
+def _government24_synthetic_pages(*, old_loss: bool = True, period: bool = False):
+    """Synthetic two-page credential history; every identity value is fabricated."""
+    output = []
+    for page_no in range(2):
+        words = [wd(5, 3, "건강보험 자격득실확인서", 35), wd(8, 8, "성명"),
+                 wd(18, 8, "가상인물"), wd(40, 8, "주민등록번호"), wd(62, 8, "010203"),
+                 wd(70, 8, "-"), wd(73, 8, "3"), wd(76, 8, "******"),
+                 wd(8, 11, "발급일"), wd(18, 11, "2027.06.15", 12)]
+        if period:
+            words.extend([wd(8, 14, "조회기간"), wd(20, 14, "2024.01.01"),
+                          wd(35, 14, "~"), wd(40, 14, "2027.06.15")])
+        header_y = 18 if period else 15
+        words.extend([wd(8, header_y, "가입자구분"), wd(31, header_y, "자격취득일"),
+                      wd(54, header_y, "자격상실일"), wd(76, header_y, "사업장명칭")])
+        for local_index in range(11):
+            row_index = page_no * 11 + local_index
+            y = header_y + 3 + local_index * 2.0
+            acquired_year = (2023 + row_index % 3) if not old_loss else 2018 + row_index // 3
+            acquired = f"{acquired_year:04d}-{(row_index % 12) + 1:02d}-01"
+            lost = ""
+            if row_index > 0:
+                lost_year = acquired_year + 1
+                if old_loss and row_index == 1:
+                    lost_year = 2021
+                if not old_loss:
+                    lost_year = 2025
+                lost = f"{lost_year:04d}-{(row_index % 12) + 1:02d}-28"
+            words.extend([wd(8, y, "직장가입자" if row_index % 2 == 0 else "지역가입자"),
+                          wd(31, y, acquired, 12)])
+            if lost:
+                words.append(wd(54, y, lost, 12))
+            words.append(wd(76, y, "가상사업장"))
+        output.append(page(words, page_no))
+    return output
+
+
+def test_government24_synthetic_header_rrn_and_absent_period_fallback():
+    pages = _government24_synthetic_pages()
+    result = nhis_acquisition_loss.extract(pages)
+    assert result.fields["생년월일"].value == "2001-02-03"
+    assert len(result.history) == 22
+    assert result.history[0].lost is None
+    assert result.fields["변동내역"].value == "최근 5년 포함"
+
+    without_old_loss = nhis_acquisition_loss.extract(_government24_synthetic_pages(old_loss=False))
+    assert without_old_loss.fields["변동내역"].value == "최근 5년 미포함"
+
+    with_period = nhis_acquisition_loss.extract(_government24_synthetic_pages(period=True))
+    assert with_period.fields["변동내역"].value == "최근 5년 미포함"
+
+
 def test_acquisition_loss_rejects_reversed_dates_and_page_name_mismatch():
     result = nhis_acquisition_loss.extract(acquisition_pages(name2="이익산", acquired="2025-01-01", lost="2024-01-01"))
     assert not next(v for v in result.validations if v.name == "acquisition_before_loss").passed
     assert not next(v for v in result.validations if v.name == "page_names_match").passed
     assert any("순서" in warning for warning in result.warnings)
+
+
+def _label_free_rrn_page(number_tokens: list[str], *, issue_label: bool = False,
+                         split_label: bool = False, no: int = 0):
+    words = [wd(5, 4, "건강보험 자격득실확인서", 35), wd(8, 8, "성명"), wd(18, 8, "가상인물")]
+    if split_label:
+        words.extend([wd(8, 13, "주민"), wd(13, 13, "등록"), wd(18, 13, "번호")])
+    else:
+        words.append(wd(8, 13, "주민 등록 번호", 16))
+    words.append(wd(8, 15, "확인용"))
+    x = 30
+    for token in number_tokens:
+        words.append(wd(x, 17, token, max(3, len(token) * 2)))
+        x += max(4, len(token) * 2 + 1)
+    if issue_label:
+        words.extend([wd(8, 10, "발급일"), wd(18, 10, "2031.04.09", 12)])
+    return page(words, no)
+
+
+def _label_free_closing_page(no: int, *, acquired: str, lost: str = ""):
+    words = [wd(5, 4, "건강보험 자격득실확인서", 35), wd(8, 8, "성명"), wd(18, 8, "가상인물"),
+             wd(8, 13, "주민 등록 번호", 16), wd(8, 15, "확인용"), wd(30, 17, "120604－3●●●●●●", 28),
+             wd(8, 20, "가입자구분"), wd(31, 20, "자격취득일"), wd(54, 20, "자격상실일"),
+             wd(76, 20, "사업장명칭")]
+    if no == 0:
+        words.extend([wd(8, 24, "직장가입자"), wd(31, 24, acquired, 12)])
+        if lost:
+            words.append(wd(54, 24, lost, 12))
+        words.append(wd(76, 24, "가상사업장"))
+    if no == 1:
+        for index in range(7):
+            y = 27 + index * 2.5
+            row_acquired = f"201{index + 1}-01-01"
+            words.extend([wd(8, y, "지역가입자" if index % 2 else "직장가입자"),
+                          wd(31, y, row_acquired, 12), wd(54, y, f"202{index}-02-01", 12),
+                          wd(76, y, "가상사업장")])
+        words.extend([wd(12, 47, "위와 같이 확인합니다", 35),
+                      wd(42, 49, "2032 년 08 월 19 일", 24),
+                      wd(37, 51, "국민건강보험공단 이사장", 30)])
+    return page(words, no)
+
+
+def test_government24_label_free_rrn_variants_and_closing_date_with_continuation_rows():
+    variants = [
+        (["120604", "-", "3", "******"], False),
+        (["120604", " － ", "3", "●●●●●●"], True),
+        (["12", "0604", "–", "3", "○○○○○○"], True),
+        (["12", "0604", "-", "3", "xxxxxx"], False),
+    ]
+    for tokens, split_label in variants:
+        header_page = _label_free_rrn_page(tokens, split_label=split_label)
+        header = nhis_acquisition_loss.extract([header_page])
+        assert header.fields["생년월일"].value == "2012-06-04"
+
+    pages = [_label_free_closing_page(0, acquired="2018-01-01", lost="2022-01-01"),
+             _label_free_closing_page(1, acquired="2019-01-01")]
+    result = nhis_acquisition_loss.extract(pages)
+    assert result.fields["발급일"].value == "2032-08-19"
+    assert result.fields["생년월일"].value == "2012-06-04"
+    assert result.fields["변동내역"].value == "최근 5년 포함"
+    assert len([row for row in result.history if row.page == 1]) == 7
+
+
+def test_government24_label_date_wins_and_conflicting_closing_stamp_date_is_unresolved():
+    labeled = _label_free_closing_page(1, acquired="2018-01-01")
+    page_image, ocr = labeled
+    ocr.words.extend([wd(8, 10, "발급일"), wd(18, 10, "2031.04.09", 12),
+                      wd(42, 48, "2032 년 08 월 20 일", 24)])
+    result = nhis_acquisition_loss.extract([labeled])
+    assert result.fields["발급일"].value == "2031-04-09"
+
+    labeled_first_page = _label_free_rrn_page(["120604", "-", "3", "******"], issue_label=True)
+    closing_continuation = _label_free_closing_page(1, acquired="2018-01-01")
+    page_image, ocr = closing_continuation
+    ocr.words.append(wd(72, 53, "2032-08-20", 12))
+    label_priority = nhis_acquisition_loss.extract([labeled_first_page, closing_continuation])
+    assert label_priority.fields["발급일"].value == "2031-04-09"
+
+    conflicting = _label_free_closing_page(1, acquired="2018-01-01")
+    page_image, ocr = conflicting
+    ocr.words.extend([wd(72, 53, "2032-08-20", 12)])
+    unresolved = nhis_acquisition_loss.extract([conflicting])
+    assert "발급일" not in unresolved.fields
+    assert any("발급일" in warning and "확인" in warning for warning in unresolved.warnings)

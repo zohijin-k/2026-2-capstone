@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -78,13 +79,61 @@ def _query_period(pages):
     return (min(pair[0] for pair in periods), max(pair[1] for pair in periods)), words
 
 
+def _observed_identity_consensus(headers, key: str):
+    """Require identity on page one; compare only values actually read on pages."""
+    first = getattr(headers[0], key, None) if headers else None
+    available = [getattr(header, key) for header in headers
+                 if getattr(header, key, None) is not None]
+    if first is None:
+        return None, [], False
+    words = getattr(headers[0], f"{key}_words") or []
+    return first, words, all(value == first for value in available)
+
+
+def _document_confirmation_numbers(pages):
+    """Read document numbers only in the tightly scoped neighborhood of their label."""
+    values: list[str] = []
+    for page, result in pages:
+        for line in common.page_lines(page, result):
+            hits = common.label_hits([line], ("문서확인번호",))
+            if not hits:
+                continue
+            label_words = hits[0][1]
+            if not label_words:
+                continue
+            label_right = max(word.x1 for word in label_words)
+            candidates = [word.text for word in line if word.x0 >= label_right]
+            # Some OCR engines include the label and value in one token.
+            for word in label_words:
+                suffix = re.sub(r".*?문서확인번호", "", word.text)
+                if suffix and suffix != word.text:
+                    candidates.insert(0, suffix)
+            pieces = []
+            for text in candidates:
+                if re.fullmatch(r"[\d\s\-‐‑‒–—―−﹘﹣－]+", text):
+                    pieces.append(text)
+                elif pieces:
+                    break
+            digits = re.sub(r"\D", "", "".join(pieces))
+            if 12 <= len(digits) <= 20:
+                values.append(digits)
+            break
+    return values
+
+
 def _parse_history(pages):
     rows: list[HistoryRow] = []
     for page, result in pages:
         positions = _header_positions([(page, result)])
         header_y = None
         lines = common.page_lines(page, result)
+        closing_index = next((index for index, line in enumerate(lines)
+                              if "확인합니다" in squash(line_text(line)) or
+                              ("국민건강보험공단" in squash(line_text(line)) and
+                               "이사장" in squash(line_text(line)))), len(lines))
         for index, line in enumerate(lines):
+            if index >= closing_index:
+                continue
             flat = squash(line_text(line))
             header_block = [line]
             if index + 1 < len(lines):
@@ -106,6 +155,11 @@ def _parse_history(pages):
             dates = [(words, value) for value, words in common.dates_in_line(line)]
             if not dates:
                 continue
+            date_word_ids = {id(word) for date_words, _ in dates for word in date_words}
+            # A date by itself can occur in the confirmation footer. Real table
+            # rows carry at least one other cell token (category/workplace/etc.).
+            if not any(id(word) not in date_word_ids for word in line):
+                continue
             acquired = lost = None
             for date_words, value in dates:
                 x = (min(word.x0 for word in date_words) + max(word.x1 for word in date_words)) / 2
@@ -122,7 +176,9 @@ def _parse_history(pages):
             employer = ""
             for word in line:
                 flat = squash(word.text)
-                if "직장" in flat:
+                if "피부양자" in flat:
+                    category = "직장피부양자"
+                elif "직장" in flat:
                     category = "직장"
                 elif "지역" in flat:
                     category = "지역"
@@ -133,11 +189,28 @@ def _parse_history(pages):
     return rows
 
 
-def _five_years_before(day: date) -> date:
+def _five_years_before(day: date, years: int = 5) -> date:
     try:
-        return day.replace(year=day.year - 5)
+        return day.replace(year=day.year - years)
     except ValueError:
-        return day.replace(year=day.year - 5, day=28)
+        return day.replace(year=day.year - years, day=28)
+
+
+def history_covers_recent_years(
+    issue_date: date,
+    period: tuple[date, date] | None,
+    rows: Iterable[tuple[date | None, date | None]],
+    years: int = 5,
+) -> bool:
+    """Apply the NHIS coverage rule to dates from extractor rows or serialized JSON."""
+    cutoff = _five_years_before(issue_date, years)
+    if period:
+        return period[0] <= cutoff and period[1] >= issue_date
+    row_dates = tuple(rows)
+    if any(acquired and acquired <= cutoff and (lost is None or lost >= issue_date)
+           for acquired, lost in row_dates):
+        return True
+    return any(lost and lost < cutoff for _, lost in row_dates)
 
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> AcquisitionLossResult:
@@ -155,7 +228,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     validations.append(common.Validation("document_type", detected == DocType.NHIS_ACQUISITION_LOSS))
 
     for key, label in (("name", "성명"), ("birth", "생년월일"), ("issue", "발급일")):
-        value, words, same = common.consensus(headers, key)
+        if key in ("name", "birth"):
+            value, words, same = _observed_identity_consensus(headers, key)
+        else:
+            value, words, same = common.consensus(headers, key)
         if key == "issue":
             same = bool(value) and all(h.issue in (None, value) for h in headers)
         validations.append(common.Validation(f"{label}_consistent", bool(value) and same))
@@ -167,10 +243,15 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             warnings.append(f"{label}을 찾지 못해 담당자 확인이 필요합니다.")
             diagnostics[label] = f"라벨 '{label}' 또는 값을 찾지 못함"
 
-    name, _, names_same = common.consensus(headers, "name")
+    name, _, names_same = _observed_identity_consensus(headers, "name")
     validations.append(common.Validation("page_names_match", bool(name) and names_same))
-    if not names_same:
+    if not name or not names_same:
         warnings.append("쪽마다 성명이 같지 않거나 일부 쪽에서 찾지 못했습니다.")
+
+    document_numbers = _document_confirmation_numbers(pages)
+    if len(document_numbers) >= 2:
+        validations.append(common.Validation("document_confirmation_number_consistent",
+                                             len(set(document_numbers)) == 1))
 
     rows = _parse_history(pages)
     period, period_words = _query_period(pages)
@@ -206,14 +287,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     issue = fields.get("발급일")
     issue_date = date.fromisoformat(issue.value) if issue else None
     period, period_words = _query_period(pages)
-    spans_five_years = False
+    spans_five_years = bool(issue_date and history_covers_recent_years(
+        issue_date, period, ((row.acquired, row.lost) for row in rows)
+    ))
     if issue_date:
-        cutoff = _five_years_before(issue_date)
-        if period:
-            spans_five_years = period[0] <= cutoff and period[1] >= issue_date
-        if not spans_five_years:
-            spans_five_years = any(row.acquired and row.acquired <= cutoff and
-                                    (row.lost is None or row.lost >= issue_date) for row in rows)
         status = "최근 5년 포함" if spans_five_years else "최근 5년 미포함"
         fields["변동내역"] = common.make_field(status, status, period_words or
             next((row.words for row in rows if row.acquired), []), page_map,

@@ -464,17 +464,22 @@ def check_document(
             issue = ocr.issue_date
             if issue is None:
                 issue = date.fromisoformat(ocr.fields.get("발급일", ""))
-            cutoff = issue.replace(year=issue.year - req.recent_years)
-            if cutoff.month == 2 and cutoff.day == 29:
-                cutoff = cutoff.replace(day=28)
-            period = data.get("period")
-            covered = bool(period and date.fromisoformat(period[0]) <= cutoff and date.fromisoformat(period[1]) >= issue)
-            if not covered:
-                covered = any(
-                    row.get("acquired") and date.fromisoformat(row["acquired"]) <= cutoff and
-                    (not row.get("lost") or date.fromisoformat(row["lost"]) >= issue)
+            covered = data.get("recent_five_years_covered")
+            if type(covered) is not bool:
+                from engine_v2.extractors.nhis_acquisition_loss import history_covers_recent_years
+
+                raw_period = data.get("period")
+                period = None
+                if raw_period:
+                    if not isinstance(raw_period, (list, tuple)) or len(raw_period) != 2:
+                        raise ValueError("invalid period")
+                    period = (date.fromisoformat(raw_period[0]), date.fromisoformat(raw_period[1]))
+                history = [
+                    (date.fromisoformat(row["acquired"]) if row.get("acquired") else None,
+                     date.fromisoformat(row["lost"]) if row.get("lost") else None)
                     for row in data.get("rows", [])
-                )
+                ]
+                covered = history_covers_recent_years(issue, period, history, req.recent_years)
             if not covered:
                 findings.append(_finding(
                     "NHIS_HISTORY_PERIOD_MISSING",
