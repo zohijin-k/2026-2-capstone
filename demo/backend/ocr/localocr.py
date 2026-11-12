@@ -404,7 +404,7 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
     bboxes: dict[str, BBox] = {}
     for key in ("성명", "생년월일", "발급일", "문서확인번호", "발급번호",
                 "가입내역", "보험별가입여부", "보험별가입자종별", "근로관련가입여부",
-                "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록"):
+                "근로관련최초취득일", "근로관련최근취득일", "사업장명칭목록", "추가첨부쪽"):
         extracted = ex.fields.get(key)
         if extracted is None:
             continue
@@ -465,6 +465,16 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
         classification_evidence=classification_evidence,
         classification_confidence=0.97 if detected else 0.0,
     )
+
+
+def _from_supported_form(extractor, pages, v2types, evidence, detected):
+    from engine_v2.extractors.attached_pages import extract_form
+    ex, scoped = extract_form(extractor.extract, pages)
+    result = (_from_insurance4(ex, scoped, evidence) if detected == DocType.INSURANCE_4
+              else _from_nhis(ex, scoped, v2types, evidence, detected))
+    result.page_count = len(pages)
+    result.engine = _pages_engine(scoped)
+    return result
 
 
 #: 취업지원패키지 추가서류 → (engine_v2 추출기 모듈, engine_v2 서류 종류 값)
@@ -645,7 +655,10 @@ class LocalOcr:
                 DocType.BIZ_REG_PROOF: v2types.BIZ_REG_PROOF,
             }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
-            pages = load_pages(input_doc, engine)
+            if detected in {DocType.INSURANCE_4, DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.NHIS_QUALIFICATION}:
+                pages = load_pages(input_doc, engine, allow_page_errors=True)
+            else:
+                pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
             if detected is None:
@@ -667,19 +680,16 @@ class LocalOcr:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
             elif detected == DocType.INSURANCE_4:
-                result = _from_insurance4(
-                    insurance4_extractor.extract(pages), pages, classified.classification_evidence
-                )
+                result = _from_supported_form(insurance4_extractor, pages, v2types,
+                                              classified.classification_evidence, detected)
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
                 if detected == DocType.NHIS_QUALIFICATION:
                     from engine_v2.extractors import nhis_qualification
                     extractor = nhis_qualification
-                result = _from_nhis(
-                    extractor.extract(pages), pages, v2types,
-                    classified.classification_evidence, detected,
-                )
-            result.engine = _pages_engine(pages)
+                result = _from_supported_form(extractor, pages, v2types,
+                                              classified.classification_evidence, detected)
+            result.engine = result.engine or _pages_engine(pages)
             return result
 
         try:
@@ -727,17 +737,17 @@ class LocalOcr:
         if detected == DocType.NHIS_QUALIFICATION:
             from engine_v2.extractors import nhis_qualification
             if nhis_qualification.is_notification(text):
-                result = _from_nhis(nhis_qualification.extract(pages), pages, v2types, evidence, detected)
+                result = _from_supported_form(nhis_qualification, pages, v2types, evidence, detected)
                 if path.suffix.lower() != ".pdf":
                     _merge_image_heuristics(result, path)
                 return result
 
         if detected in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4):
             if detected == DocType.INSURANCE_4:
-                result = _from_insurance4(insurance4_extractor.extract(pages), pages, evidence)
+                result = _from_supported_form(insurance4_extractor, pages, v2types, evidence, detected)
             else:
                 extractor = payment_extractor if detected == DocType.NHIS_PAYMENT else acquisition_extractor
-                result = _from_nhis(extractor.extract(pages), pages, v2types, evidence, detected)
+                result = _from_supported_form(extractor, pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result

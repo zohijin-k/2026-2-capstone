@@ -89,7 +89,8 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
                               type_confidence=0.0, verdict=Verdict.NEEDS_REVIEW,
                               review_reasons=["이 서류 종류의 판독 부품이 아직 없음 (수동 심사)"])
 
-    ex: _Extraction = extractor_result if extractor_result is not None else extractor(pages, today=today)
+    from .extractors.attached_pages import extract_form
+    ex: _Extraction = extractor_result if extractor_result is not None else extract_form(extractor, pages, today=today)[0]
     remove_header_only_fields(ex.fields)
     ctx = RuleContext(
         reference_date=app.announcement_date, applicant=app.applicant,
@@ -168,7 +169,7 @@ def evaluate_document(doc: DocumentInput, pages: list[tuple[PageImage, OcrResult
                           verdict=verdict, review_reasons=review)
 
 
-def _load_pages(doc: DocumentInput, ocr_engine: str) -> list[tuple[PageImage, OcrResult]] | str:
+def _load_pages(doc: DocumentInput, ocr_engine: str, *, allow_page_errors: bool = False) -> list[tuple[PageImage, OcrResult]] | str:
     try:
         pages = []
         pdf = None
@@ -190,8 +191,13 @@ def _load_pages(doc: DocumentInput, ocr_engine: str) -> list[tuple[PageImage, Oc
                                 (x0 * scale, y0 * scale, x1 * scale, y1 * scale)))
                     pages.append((p, OcrResult("text_layer", words)))
                     continue
-                r = run_ocr(ocr_engine, p.png, p.pixel_size)
-                if r.error:
+                try:
+                    r = run_ocr(ocr_engine, p.png, p.pixel_size)
+                except ValueError:
+                    if not allow_page_errors:
+                        raise
+                    r = OcrResult(ocr_engine, error="추가 쪽 자동 판독 불가")
+                if r.error and not allow_page_errors:
                     return f"OCR 실패: {r.error}"
                 pages.append((p, r))
             return pages
