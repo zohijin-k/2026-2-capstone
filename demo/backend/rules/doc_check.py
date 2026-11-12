@@ -87,7 +87,8 @@ HOW_TO_FIX: dict[str, str] = {
     CODE_PAGES_UNREADABLE: "서류 전체가 선명하게 보이게 다시 촬영해 주세요. " + RETAKE_GUIDANCE,
     CODE_PAGES_INCOMPLETE: "빠진 쪽까지 모두 올려 주세요.",
     CODE_PAGES_DUPLICATED: "중복된 쪽을 확인하고 서로 다른 모든 쪽을 올려 주세요.",
-    "NHIS_HISTORY_PERIOD_UNREADABLE": RETAKE_GUIDANCE,
+    "NHIS_HISTORY_PERIOD_UNREADABLE": "최근 변동내역의 범위는 담당자가 원본에서 확인합니다. " + RETAKE_GUIDANCE,
+    "NHIS_HISTORY_PERIOD_MISSING": "조회기간에 최근 {years}년 전체가 포함되도록 다시 발급받아 올려 주세요.",
 }
 
 _DOC_TYPE_DISPLAY = {
@@ -268,6 +269,55 @@ def _uncertain(finding: CheckFinding) -> CheckFinding:
     finding.how_to_fix = RETAKE_GUIDANCE
     finding.severity = "NEEDS_REVIEW"
     return finding
+
+
+def _nhis_history_coverage(data, issue: date, years: int, structure_complete: bool):
+    """Read new evidence conservatively while retaining legacy positive results."""
+    from engine_v2.extractors.nhis_acquisition_loss import history_covers_recent_years
+
+    if not isinstance(data, dict):
+        raise ValueError("invalid history")
+    covered = data.get("recent_five_years_covered")
+    has_basis = "coverage_basis" in data
+    basis = data.get("coverage_basis")
+    # Markerless legacy true booleans were already accepted without parsing.
+    if not has_basis and covered is True:
+        return True, False
+    if has_basis:
+        if basis == "undetermined" or covered is None:
+            return None, False
+        if type(covered) is not bool or basis not in {"query_period", "full_history", "history_rows"}:
+            raise ValueError("invalid coverage evidence")
+        if basis == "full_history":
+            if (covered and structure_complete and data.get("period") is None
+                    and data.get("period_label_present") is False):
+                return True, False
+            return None, False
+    raw_period = data.get("period")
+    period = None
+    if raw_period is not None:
+        if not isinstance(raw_period, (list, tuple)) or len(raw_period) != 2:
+            raise ValueError("invalid period")
+        period = (date.fromisoformat(raw_period[0]), date.fromisoformat(raw_period[1]))
+        if period[0] > period[1]:
+            raise ValueError("reversed period")
+    if has_basis and (basis == "query_period") != (period is not None):
+        raise ValueError("conflicting coverage evidence")
+    if period is not None:
+        return history_covers_recent_years(issue, period, (), years), True
+    if has_basis and data.get("period_label_present") is not False:
+        return None, False
+    if not has_basis and covered is False:
+        return False, False
+    raw_rows = data.get("rows", [])
+    if not isinstance(raw_rows, list) or any(not isinstance(row, dict) for row in raw_rows):
+        raise ValueError("invalid rows")
+    history = [(date.fromisoformat(row["acquired"]) if row.get("acquired") else None,
+                date.fromisoformat(row["lost"]) if row.get("lost") else None) for row in raw_rows]
+    covered = history_covers_recent_years(issue, None, history, years)
+    # A new insufficient row range is unknown; legacy negatives retain their
+    # finding code, but the caller downgrades them to review without reissuance.
+    return (covered if covered or not has_basis else None), False
 
 
 def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFinding]:
@@ -549,28 +599,20 @@ def _check_document(
             issue = ocr.issue_date
             if issue is None:
                 issue = date.fromisoformat(ocr.fields.get("발급일", ""))
-            covered = data.get("recent_five_years_covered")
-            if type(covered) is not bool:
-                from engine_v2.extractors.nhis_acquisition_loss import history_covers_recent_years
-
-                raw_period = data.get("period")
-                period = None
-                if raw_period:
-                    if not isinstance(raw_period, (list, tuple)) or len(raw_period) != 2:
-                        raise ValueError("invalid period")
-                    period = (date.fromisoformat(raw_period[0]), date.fromisoformat(raw_period[1]))
-                history = [
-                    (date.fromisoformat(row["acquired"]) if row.get("acquired") else None,
-                     date.fromisoformat(row["lost"]) if row.get("lost") else None)
-                    for row in data.get("rows", [])
-                ]
-                covered = history_covers_recent_years(issue, period, history, req.recent_years)
-            if not covered:
-                findings.append(_finding(
+            covered, explicit_period = _nhis_history_coverage(
+                data, issue, req.recent_years, ocr.fields.get("양식판독상태") == "완전")
+            if covered is None:
+                raise ValueError("undetermined coverage")
+            if covered is False:
+                finding = _finding(
                     "NHIS_HISTORY_PERIOD_MISSING",
                     f"자격득실확인서에 최근 {req.recent_years}년 변동내역이 포함되지 않았습니다.",
-                    req,
-                ))
+                    req, years=str(req.recent_years),
+                )
+                if (not explicit_period or ocr.confidence < engine_config.OCR_CONFIDENCE_THRESHOLD
+                        or ocr.image_quality < engine_config.IMAGE_QUALITY_THRESHOLD):
+                    _uncertain(finding)
+                findings.append(finding)
         except (ValueError, TypeError, KeyError):
             findings.append(_finding(
                 "NHIS_HISTORY_PERIOD_UNREADABLE",
