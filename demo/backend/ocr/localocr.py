@@ -88,7 +88,10 @@ def _import_v2():
 
 def _quality(pages) -> float:
     """해상도로 화질을 근사한다 (엔진 IMAGE_QUALITY_THRESHOLD 0.6과 비교)."""
-    dpis = [p.dpi for p in pages if p.dpi]
+    raster = [p for p in pages if getattr(p, "source", None) != "text_layer"]
+    if not raster:
+        return 1.0  # Scalable text has no raster DPI, even in synthetic adapters.
+    dpis = [p.dpi for p in raster if p.dpi]
     if not dpis:
         return 0.75  # 사진 업로드: 물리 크기를 몰라 중간값
     low = min(dpis)

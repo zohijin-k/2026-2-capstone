@@ -14,6 +14,8 @@ from engine_v2.tests.nhis_form_samples import text_pdf
 @pytest.mark.parametrize('text_layer', [False, True])
 def test_coordinate_fallback_reaches_resident_extraction(tmp_path, monkeypatch, kind, expected, text_layer):
     page, words = s.page(s.resident(kind=kind), size=(2065, 2923), image=not text_layer)
+    if not text_layer:
+        page = replace(page, dpi=None)  # Match real UPLOAD preprocessing; pixels have no physical DPI.
     assert pdftext.classify(words.text) is None
     original = list(localocr._import_v2())
     if text_layer:

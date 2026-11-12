@@ -145,7 +145,7 @@ def test_receipt_amounts(client) -> None:
 
     no_ocr_app = client.post("/api/applications", json={"program_code": "job_package"}).json()["id"]
     _set_item(client, no_ocr_app, "photo", 1, receipts=[18000])
-    unavailable = OcrResult(detected_doc_type=None, confidence=0.0, image_quality=0.5, fields={}, tier="none")
+    unavailable = OcrResult(detected_doc_type=None, confidence=0.0, image_quality=1.0, fields={}, tier="none")
     with patch("demo.backend.api.documents.read_document", return_value=unavailable):
         no_ocr = p5._upload(client, no_ocr_app, "photo_1_receipt", "S10_결제영수증_사진18000.pdf", "2026-03-25")
     check("OCR 엔진 결과가 없으면 담당자 확인", no_ocr["status"], "NEEDS_REVIEW")

@@ -141,3 +141,10 @@ def test_actual_synthetic_image_upload_and_final_check_show_both_failures(client
     submitted = client.post(f"/api/applications/{aid}/submit")
     assert submitted.status_code == 400
     assert all(f["message"] in submitted.json()["detail"] for f in failures)
+
+
+def test_direct_text_layer_adapter_never_uses_synthetic_raster_dpi():
+    from demo.backend.ocr.localocr import _quality
+    from engine_v2.pipeline.preprocess import PageImage, PageSource
+    page = PageImage(0, PageSource.TEXT_LAYER, (595,842), pixel_size=(595,842), dpi=72)
+    assert _quality([page]) == 1
