@@ -71,6 +71,8 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
   const [pledge, setPledge] = useState(false)
   const [signMode, setSignMode] = useState<SignMode>('직접 서명')
   const [drawn, setDrawn] = useState('')
+  const signBody = useRef<HTMLDivElement>(null)
+  const [signWidth, setSignWidth] = useState(320)
   const [file, setFile] = useState<SignFile | null>(null)
   const [fileKey, setFileKey] = useState(0)
   const [viewing, setViewing] = useState(false)
@@ -91,6 +93,16 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
     if (!file) return undefined
     return () => URL.revokeObjectURL(file.previewUrl)
   }, [file])
+
+  useLayoutEffect(() => {
+    const body = signBody.current
+    if (!body) return undefined
+    const updateWidth = () => setSignWidth(Math.min(420, Math.max(1, body.clientWidth - 32)))
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(body)
+    return () => observer.disconnect()
+  }, [identity])
 
   if (identity) {
     return (
@@ -284,61 +296,53 @@ export default function IdentityCheck({ appId, identity, onVerified, onNext }: P
                       setError('')
                     }}
                   />
-                  <span>{m}</span>
+                  <span>{m === '직접 서명' ? '그리기' : '서명 파일 업로드'}</span>
                 </label>
               ))}
             </div>
-            {signMode === '직접 서명' ? (
-              <SignaturePad value={drawn} onChange={setDrawn} width={320} height={120} />
-            ) : (
-              <div className="idcheck__file">
-                {!file && (
-                  <>
-                    <input
-                      key={fileKey}
-                      type="file"
-                      accept={SIGN_FILE_ACCEPT}
-                      aria-label="서명 파일"
-                      onChange={(e) => pickFile(e.target.files?.[0])}
-                    />
-                    <p className="idcheck__hint">PNG·JPG·PDF, 5MB 이하</p>
-                  </>
-                )}
-                {file && (
-                  <figure className="idcheck__previewbox">
-                    <button
-                      type="button"
-                      className="idcheck__preview"
-                      onClick={() => setViewing(true)}
-                      aria-label="올린 서명 크게 보기"
-                    >
+            <div className="idcheck__signature-body" ref={signBody}>
+              {signMode === '직접 서명' ? (
+                <SignaturePad key={drawn ? `signed-${signWidth}` : `empty-${signWidth}`} value={drawn} onChange={setDrawn} width={signWidth} height={210} />
+              ) : (
+                <div className="idcheck__file">
+                  {file && (
+                    <button type="button" className="idcheck__preview" onClick={() => setViewing(true)} aria-label="올린 서명 크게 보기">
                       {file.type === 'application/pdf' ? (
-                        <PdfPages url={file.previewUrl} width={318} maxHeight={138} maxPages={1} />
+                        <PdfPages url={file.previewUrl} width={Math.min(signWidth, 318)} maxHeight={138} maxPages={1} />
                       ) : (
                         <img src={file.previewUrl} alt="올린 서명 미리보기" />
                       )}
-                      <span className="idcheck__zoomhint" aria-hidden="true">
-                        크게 보기
-                      </span>
+                      <span className="idcheck__zoomhint" aria-hidden="true">크게 보기</span>
                     </button>
-                    <figcaption>
-                      <span className="idcheck__filename">{file.name}</span>
-                      <button type="button" className="btn btn--small" onClick={clearFile}>
-                        다시 선택
-                      </button>
-                    </figcaption>
-                    {viewing && (
-                      <FilePreview
-                        url={file.previewUrl}
-                        name={file.name}
-                        kind={file.type === 'application/pdf' ? 'pdf' : 'image'}
-                        onClose={() => setViewing(false)}
-                      />
-                    )}
-                  </figure>
-                )}
-              </div>
+                  )}
+                  {!file && <span>PNG·JPG·PDF 서명 파일을 올려 주세요. (5MB 이하)</span>}
+                  <label className="btn" htmlFor="identity-sign-file">{file ? '다른 파일 선택' : '파일 선택'}</label>
+                  <input
+                    key={fileKey}
+                    id="identity-sign-file"
+                    type="file"
+                    accept={SIGN_FILE_ACCEPT}
+                    aria-label="서명 파일"
+                    onChange={(e) => pickFile(e.target.files?.[0])}
+                  />
+                </div>
+              )}
+            </div>
+            {file && viewing && (
+              <FilePreview
+                url={file.previewUrl}
+                name={file.name}
+                kind={file.type === 'application/pdf' ? 'pdf' : 'image'}
+                onClose={() => setViewing(false)}
+              />
             )}
+            <div className="idcheck__signature-foot">
+              {signMode === '서명 파일 올리기' && file && <span className="idcheck__filename">{file.name}</span>}
+              <button type="button" className="btn idcheck__clear" disabled={signMode === '직접 서명' ? !drawn : !file} onClick={() => signMode === '직접 서명' ? setDrawn('') : clearFile()}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6" /></svg>
+                지우기
+              </button>
+            </div>
           </div>
         </div>
       </div>
