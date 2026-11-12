@@ -61,15 +61,24 @@ type Stage =
   | 'complete'
   | 'mypage'
 
+const ACTIVE_APPLICATION_KEY = 'applicant.activeApplicationId'
+
 function savedPage(): { appId: number; stage: Stage; previous: Stage } | null {
   const params = currentParams()
-  const route = /^\/apply\/([1-9]\d*)\/([a-z]+)\/?$/.exec(window.location.pathname)
-  const appId = Number(route?.[1] ?? params.get('application'))
-  const stage = (route?.[2] ?? params.get('stage')) as Stage
-  const previous = (params.get('from') ?? params.get('previous')) as Stage
+  const route = /^\/apply\/([a-z]+)\/?$/.exec(window.location.pathname)
+  const stage = route?.[1] as Stage
+  const previous = params.get('from') as Stage
   const stages: Stage[] = ['identity', 'forms', 'subsidy', 'upload', 'final', 'complete', 'mypage']
-  if (!Number.isSafeInteger(appId) || appId <= 0 || !stages.includes(stage)) return null
-  return { appId, stage, previous: stages.includes(previous) ? previous : 'identity' }
+  if (!stages.includes(stage)) return null
+  try {
+    const savedId = window.sessionStorage.getItem(ACTIVE_APPLICATION_KEY)
+    if (!savedId || !/^[1-9]\d*$/.test(savedId)) return null
+    const appId = Number(savedId)
+    if (!Number.isSafeInteger(appId)) return null
+    return { appId, stage, previous: stages.includes(previous) ? previous : 'identity' }
+  } catch {
+    return null
+  }
 }
 
 type Step = { key: 'identity' | 'forms' | 'upload' | 'final'; label: string }
@@ -187,6 +196,11 @@ export default function ApplyFlow() {
         setStageBeforeMypage(initialPage.previous)
       } catch {
         if (!active) return
+        try {
+          window.sessionStorage.removeItem(ACTIVE_APPLICATION_KEY)
+        } catch {
+          // Storage may be disabled; the failed restore still returns to program selection.
+        }
         if (currentMode() === 'applicant') routeUrl('/', {}, true)
       } finally {
         if (active) setRestoring(false)
@@ -198,10 +212,15 @@ export default function ApplyFlow() {
 
   useEffect(() => {
     if (restoring || currentMode() !== 'applicant') return
+    try {
+      if (appId !== null) window.sessionStorage.setItem(ACTIVE_APPLICATION_KEY, String(appId))
+    } catch {
+      // Continue in memory when tab storage is unavailable; refresh returns to program selection.
+    }
     if (appId === null || stage === 'program') {
       routeUrl('/', {}, true)
     } else {
-      routeUrl(`/apply/${appId}/${stage}`, stage === 'mypage' ? { from: stageBeforeMypage } : {}, initialUrlWrite.current)
+      routeUrl(`/apply/${stage}`, stage === 'mypage' ? { from: stageBeforeMypage } : {}, initialUrlWrite.current)
     }
     initialUrlWrite.current = false
   }, [appId, stage, stageBeforeMypage, restoring])
