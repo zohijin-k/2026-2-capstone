@@ -365,7 +365,7 @@ function SlotCard({
               ) : (
                 <SkeletonLine className="dresult__filename-shimmer" />
               )}
-              <span className="dresult__issue-date"><span>발급일</span><SkeletonLine width="96px" /></span>
+              <span className="dresult__issue-date"><span>발급일</span><SkeletonLine width="7em" /></span>
             </div>
             <div className="dresult__actions">
               <button type="button" className="btn btn--small" disabled aria-disabled="true">미리보기</button>
