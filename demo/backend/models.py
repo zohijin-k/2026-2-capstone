@@ -5,6 +5,8 @@
 값만 P3에서 별도 컬럼으로 승격한다.
 """
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -14,6 +16,7 @@ from sqlmodel import Field, Session, SQLModel, create_engine
 
 DB_PATH = Path(__file__).resolve().parents[1] / "demo.db"
 engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+_session_bind = ContextVar("demo_session_bind", default=None)
 
 
 class Application(SQLModel, table=True):
@@ -212,4 +215,26 @@ def _add_missing_columns() -> None:
 
 
 def get_session() -> Session:
+    connection = _session_bind.get()
+    if connection is not None:
+        # Handler commits flush into the caller's transaction, never commit it.
+        return Session(connection, join_transaction_mode="rollback_only")
     return Session(engine)
+
+
+@contextmanager
+def session_transaction():
+    """Atomically compose existing service handlers without changing their API.
+
+    A context-local connection keeps unrelated sessions on their normal engine.
+    No SAVEPOINT is used: SQLite must retain the real outer transaction until
+    all handler calls have succeeded.
+    """
+    if _session_bind.get() is not None:
+        raise RuntimeError("Nested service transactions are unsupported")
+    with engine.begin() as connection:
+        token = _session_bind.set(connection)
+        try:
+            yield connection
+        finally:
+            _session_bind.reset(token)

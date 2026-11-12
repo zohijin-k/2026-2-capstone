@@ -1,0 +1,56 @@
+{
+  "id": "seed-application",
+  "name": "seed-application",
+  "title": "Seed application stage two for demo testing",
+  "description": "Fill stage-two forms, consents and subsidy selections for an identity-verified demo application, with scoped cleanup and privacy-safe output.",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "backend",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feat/seed-application",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "demo/backend/tools/seed_application.py",
+    "demo/backend/tests/test_seed_application.py",
+    "demo/backend/models.py",
+    "demo/README.md",
+    ".trellis/spec/backend/seed-application.md",
+    ".trellis/spec/backend/index.md"
+  ],
+  "notes": "User approved implementation commit and pre-commit audit. Marker-free PATCH loses ownership and cleanup skips it; exact README warning added. Four handlers/callees have no get_session bypass. Fresh PNG rollback cases pass. models.py frozen; docs/audit excluded; no archive/push/merge.",
+  "meta": {
+    "validation": {
+      "engine_passed": 1264,
+      "engine_skipped": 3,
+      "backend_passed": 1107,
+      "new_acceptance_passed": 50,
+      "scenario_passed": 1885,
+      "scenario_failed": 0,
+      "scenario_modules": 18,
+      "all_scenario_exit_zero": true,
+      "diff_check": "passed",
+      "ast_check": "passed",
+      "independent_review": "passed"
+    },
+    "precommit_audit": {
+      "marker_free_patch": "marker_lost_cleanup_skips_both_programs",
+      "session_bypasses": 0,
+      "placeholder_residual_files": 0,
+      "focused_passed": 50,
+      "models_sha256": "6d5c33d3ffc1f1dbcae529f80cf85fa5ae71d1e8928e726d624850858bd21c72",
+      "commit_approved": true,
+      "backend_passed": 1107
+    }
+  }
+}
