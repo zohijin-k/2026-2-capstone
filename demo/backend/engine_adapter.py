@@ -29,6 +29,7 @@ from engine.pipeline import run_pipeline as _run_pipeline  # noqa: E402
 from engine.stage1_document_check import (  # noqa: E402
     check_single_document as engine_check_single_document,
 )
+from engine_v2.extractors.nhis_payment import has_failed_payment_validation  # noqa: E402
 
 from .rules.doc_types import CONFUSION_GROUPS, DocType  # noqa: E402
 from .rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, PROGRAMS, ProgramConfig  # noqa: E402
@@ -203,7 +204,9 @@ def to_engine_documents(rows: list[dict[str, Any]]) -> list:
     for row in rows:
         doc_type = row.get("doc_type") or row.get("expected_doc_type") or ""
         confidence = float(row.get("confidence") or 0.0)
-        if row.get("status") == "NEEDS_REVIEW" and confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+        payment_failed = (doc_type == str(DocType.NHIS_PAYMENT) and
+                          has_failed_payment_validation(row.get("fields") or {}))
+        if payment_failed or (row.get("status") == "NEEDS_REVIEW" and confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD):
             confidence = min(confidence, 0.4)
         documents.append(
             engine_models.Document(

@@ -229,7 +229,7 @@ def parse_otsl_tables(content: str) -> list[JBAITable]:
             previous, occupancy = occupancy, {}
             continue
         end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
-        value = mask_rrn(re.sub(r"\s+", " ", content[match.end():end]).strip())
+        value = re.sub(r"\s+", " ", content[match.end():end]).strip()
         if token in {"fcel", "ecel"}:
             anchor = _OTSLAnchor(value if token == "fcel" else "", row, col)
             anchors.append(anchor)
@@ -269,7 +269,7 @@ def parse_otsl_tables(content: str) -> list[JBAITable]:
     rows: list[list[JBAITableCell]] = [[] for _ in range(max_row + 1)]
     for anchor in sorted(anchors, key=lambda cell: (cell.row, cell.col)):
         rows[anchor.row].append(JBAITableCell(
-            text=anchor.text, rowspan=anchor.rowspan, colspan=anchor.colspan,
+            text=mask_rrn(anchor.text), rowspan=anchor.rowspan, colspan=anchor.colspan,
             header=anchor.row < 2,
         ))
     rows = [cells for cells in rows if cells]

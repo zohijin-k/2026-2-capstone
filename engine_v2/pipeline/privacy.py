@@ -8,13 +8,17 @@ from typing import Any
 
 
 _RRN = re.compile(
-    r"(?<![\dA-Za-z])(\d{6})([ \t\r\n]*(?:[-‐‑‒–—―−﹘﹣－~][ \t\r\n]*)?)([1-8])"
-    r"((?:[ \t]*\d){6})(?!\d)"
+    r"(?<!\d)(\d{6})([ \t\r\n]*(?:[-‐‑‒–—―−﹘﹣－~][ \t\r\n]*)?)([1-8])"
+    r"((?:[ \t\r\n]*\d){6})(?!\d)"
 )
+_G_NUMBER = re.compile(r"(?<![A-Za-z\d])G(?:[ \t\r\n]*\d){18}(?!\d)")
 
 
 def _suffix_spans(text: str):
+    document_numbers = [match.span() for match in _G_NUMBER.finditer(text)]
     for match in _RRN.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in document_numbers):
+            continue
         birth, sex = match.group(1), int(match.group(3))
         century = 2000 if sex in {3, 4, 7, 8} else 1900
         try:
@@ -68,11 +72,17 @@ def mask_markup_rrn(text: str) -> str:
             positions.append(token.span() if decoded != raw else (token.start() + index, token.start() + index + 1))
     redactions = set()
     value = "".join(visible)
+    protected_digits = {positions[index] for match in _G_NUMBER.finditer(value)
+                        for index in range(match.start(), match.end()) if value[index].isdigit()}
     for start, end in _suffix_spans(value):
         redactions.update(positions[index] for index in range(start, end) if value[index].isdigit())
+    for start, end in _suffix_spans(text):
+        digits = {(index, index + 1) for index in range(start, end) if text[index].isdigit()}
+        if not digits.issubset(protected_digits):
+            redactions.update(digits)
     for start, end in sorted(redactions, reverse=True):
         text = text[:start] + "*" + text[end:]
-    return mask_rrn(text)
+    return text
 
 
 def mask_words(words):
@@ -84,7 +94,6 @@ def mask_words(words):
     """
     lines = []
     for word in sorted(words, key=lambda item: (item.bbox_px[1] + item.bbox_px[3]) / 2):
-        word.text = mask_rrn(word.text)
         x0, y0, x1, y1 = word.bbox_px
         center = (y0 + y1) / 2
         height = max(y1 - y0, 1)

@@ -41,7 +41,7 @@ APPLICANT_DATE = re.compile(
     r"(\d{4}\s*[-./]\s*\d{1,2}\s*[-./]\s*\d{1,2}|"
     r"\d{4}\s*년\s*\d{1,2}\s*월\s*\d{1,2}\s*일|\d{8})"
 )
-RRN = re.compile(r"(\d{6})\s*-\s*([0-9])")
+RRN = re.compile(r"(?<!\d)(\d{6})\s*(?:-\s*|(?=[0-9](?:\s*[\d*]){6}(?![\d*])))([0-9])")
 DOC_NO = re.compile(r"\d{4}-\d{4}-\d{4}-\d{4,5}")
 PAGE_NO = re.compile(r"^\s*(\d{1,2})\s*/\s*(\d{1,2})\s*$")
 ISSUER = re.compile(r"(시장|군수|구청장)")

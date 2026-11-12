@@ -186,17 +186,21 @@ def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
     """Keep supported NHIS forms complete after final header-value safety."""
     if (result.tier == "fixture" or not (
             result.detected_doc_type == DocType.NHIS_ACQUISITION_LOSS or
-            (result.detected_doc_type == DocType.NHIS_QUALIFICATION and "양식판독상태" in result.fields))):
+            (result.detected_doc_type in {DocType.NHIS_QUALIFICATION, DocType.NHIS_PAYMENT} and
+             "양식판독상태" in result.fields))):
         return result
     from engine_v2.pipeline.field_safety import remove_header_only_fields
 
     for key in remove_header_only_fields(result.fields):
         result.bboxes.pop(key, None)
     missing = []
-    for label in ("성명", "생년월일", "발급일"):
+    required = ("성명", "생년월일", "발급일")
+    if result.detected_doc_type == DocType.NHIS_PAYMENT:
+        required += ("사업장명칭", "납부자번호", "문서확인번호", "조회기간", "납부총액", "용도구분")
+    for label in required:
         value = str(result.fields.get(label) or "").strip()
-        valid = bool(value)
-        if label != "성명":
+        valid = label in result.fields if label == "사업장명칭" else bool(value)
+        if label in {"생년월일", "발급일"}:
             try:
                 date.fromisoformat(value[:10])
             except ValueError:
@@ -212,6 +216,8 @@ def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
     result.fields["판독검증"] = f"{passed}/{total + len(added)} 통과"
     result.fields["판독검증실패"] = ", ".join([*failed, *added])
     result.confidence = min(result.confidence, 0.4)
+    if "양식판독상태" in result.fields:
+        result.fields["양식판독상태"] = "불완전"
     if "발급일" in missing:
         result.issue_date = None
     return result
@@ -339,6 +345,11 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
+    if detected == DocType.NHIS_PAYMENT:
+        from engine_v2.extractors.nhis_payment import has_failed_payment_validation
+
+        if has_failed_payment_validation(fields):
+            confidence = min(confidence, .4)
     if (detected == DocType.NHIS_ACQUISITION_LOSS and
             any(v.name == "document_confirmation_number_consistent" and not v.passed
                 for v in validations)):

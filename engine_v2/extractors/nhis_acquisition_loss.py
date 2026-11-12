@@ -357,7 +357,11 @@ def _nhis_history(pages):
             acquired, lost = cell_date(acquired_words), cell_date(lost_words)
             date_ids = {id(word) for word in date_words}
             employer_words = []
-            employer_complete = True
+            # A failed date-shaped cell cannot become employer continuation,
+            # even when a long workplace token overprints the date columns.
+            employer_complete = not any(word.x0 >= date_left and id(word) not in date_ids and
+                re.fullmatch(r"(?:[0-9OoIl]{4}[./년-][0-9OoIl]{1,2}[./월-][0-9OoIl]{1,2}일?|[OoIl]{4}[./년-]?)",
+                             squash(common.normalize_format_text(word.text))) for word in line)
             for word in line:
                 if word.x0 < employer_left or id(word) in date_ids:
                     continue

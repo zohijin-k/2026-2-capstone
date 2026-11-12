@@ -2,46 +2,47 @@
 
 ## Implemented contract
 
-`engine_v2/pipeline/privacy.py:10` recognizes six date-valid birth digits followed by sex digit 1–8 and six trailing digits. The suffix alone is replaced, preserving the birth digits, sex digit, whitespace and geometry. ASCII-letter-prefixed numeric runs are excluded, preserving split G-prefixed document identifiers. Compact, spaced, Unicode-dash and split-word cases are covered.
+`engine_v2/pipeline/privacy.py:10` recognizes six date-valid birth digits followed by sex digit 1–8 and six trailing digits. The suffix alone is replaced, preserving birth, sex digit, whitespace and geometry. Merged ASCII labels do not exempt a resident shape. Explicit G-plus-eighteen-digit spans are protected at line 14, including whitespace and same-line word splits. Compact, spaced, Unicode-dash and suffix-line-break cases are covered.
 
-`mask_words` at `engine_v2/pipeline/privacy.py:78` groups by relative word heights and horizontal proximity. A non-whitespace barrier protects distant numeric columns. Unequal token heights and tilt retain coverage. `mask_markup_rrn` at line 50 maps inline HTML/entity characters back to source spans. Table/block boundaries prevent concatenation of unrelated identifiers.
+`mask_words` at `engine_v2/pipeline/privacy.py:88` groups by relative word heights and horizontal proximity. A NUL barrier protects distant numeric columns. Unequal token heights and tilt retain coverage. `mask_markup_rrn` at line 54 maps inline HTML/entity characters back to source spans, preserves glyph-mapped G-number context and masks raw attribute values. Table/block boundaries prevent concatenation of unrelated identifiers.
+
+Complete adapter word batches are the earliest context that distinguishes a split resident number from a G-prefixed issue number split after thirteen digits. `OcrWord` is now a transient internal representation. All real adapter returns and `OcrResult` construction sanitize the entire word batch before exposing it. No hidden raw suffix or restoration state is stored. HTML and OTSL cells are likewise sanitized after inline/continuation fragments have formed the complete cell. The original format-parser and P18 resident-number fixture selectors were restored to their main-branch wording.
 
 ## Applied boundaries
 
-There are 29 explicitly sanitized function boundaries. Several routes share constructors, so this count measures function sites rather than independent implementations.
+There are 28 explicitly sanitized function boundaries. Several routes share constructors, so this count measures function sites rather than independent implementations. Stage 9 removed the premature per-word constructor boundary and retained every complete ingestion/return boundary.
 
 | # | Boundary | Evidence |
 | --- | --- | --- |
-| 1 | Every complete coordinate word, including text-layer words | `engine_v2/pipeline/ocr/__init__.py:30` |
-| 2 | Coordinate OCR result, split words and error text | `engine_v2/pipeline/ocr/__init__.py:41` |
-| 3–5 | Apple Vision, EasyOCR and Paddle direct adapter returns | `engine_v2/pipeline/ocr/__init__.py:82`, `:99`, `:141` |
-| 6 | Own OCR direct recognition return | `engine_v2/pipeline/ocr/own.py:136` |
-| 7 | PDF text before retention in PageImage.text | `engine_v2/pipeline/preprocess.py:89` |
-| 8–10 | PdfText pure parser, PDF raw read and merged-page reader | `demo/backend/ocr/pdftext.py:235`, `:344`, `:438` |
-| 11–12 | LocalOcr text-layer existence and notification-routing reads | `demo/backend/ocr/localocr.py:470`, `:511` |
-| 13–15 | External OCR response plus HTML-cell and OTSL-value parsing | `engine_v2/pipeline/jbai_ocr.py:549`, `:178`, `:232` |
-| 16–17 | Demo result construction and fallback exceptions | `demo/backend/ocr/base.py:80`, `:97` |
-| 18 | Common OCR-chain return after field/filter mutations | `demo/backend/ocr/__init__.py:84` |
-| 19–21 | OCR JSON serialization, initial findings persistence and NHIS recheck findings persistence | `demo/backend/api/documents.py:197`, `:241`, `:306` |
-| 22–24 | Applicant JSON, engine fact projection and officer OCR projection, including legacy rows | `demo/backend/api/common.py:184`, `:234`, `demo/backend/api/officer.py:657` |
-| 25–26 | Review score/tiebreak/payload persistence and recomputed household review payload | `demo/backend/api/review.py:578`, `:627` |
-| 27–29 | Officer eligibility, exclusions and detail projections of historical score/payload JSON | `demo/backend/api/officer.py:694`, `:787`, `:854` |
+| 1 | Complete coordinate OCR result, split words and error text | `engine_v2/pipeline/ocr/__init__.py:38` |
+| 2–4 | Apple Vision, EasyOCR and Paddle direct adapter returns | `engine_v2/pipeline/ocr/__init__.py:78`, `:95`, `:137` |
+| 5 | Own OCR direct recognition return | `engine_v2/pipeline/ocr/own.py:136` |
+| 6 | PDF text before retention in PageImage.text | `engine_v2/pipeline/preprocess.py:89` |
+| 7–9 | PdfText pure parser, PDF raw read and merged-page reader | `demo/backend/ocr/pdftext.py:235`, `:344`, `:438` |
+| 10–11 | LocalOcr text-layer existence and notification-routing reads | `demo/backend/ocr/localocr.py:578`, `:619` |
+| 12–14 | External OCR response, complete HTML cells and complete merged OTSL cells | `engine_v2/pipeline/jbai_ocr.py:549`, `:178`, `:272` |
+| 15–16 | Demo result construction and fallback exceptions | `demo/backend/ocr/base.py:80`, `:97` |
+| 17 | Common OCR-chain return after field/filter mutations | `demo/backend/ocr/__init__.py:85` |
+| 18–20 | OCR JSON serialization, initial findings persistence and NHIS recheck findings persistence | `demo/backend/api/documents.py:197`, `:241`, `:306` |
+| 21–23 | Applicant JSON, engine fact projection and officer OCR projection, including legacy rows | `demo/backend/api/common.py:205`, `:236`, `demo/backend/api/officer.py:658` |
+| 24–25 | Review score/tiebreak/payload persistence and recomputed household review payload | `demo/backend/api/review.py:578`, `:627` |
+| 26–28 | Officer eligibility, exclusions and detail projections of historical score/payload JSON | `demo/backend/api/officer.py:694`, `:787`, `:854` |
 
-`engine_v2/engine.py:184` creates OcrWord objects for text-layer values and then OcrResult at line 189, thereby applying boundaries 1–2 before extraction. Existing job and insurance scrubbing accepts the earlier masked prefix, preserving birth fallback and complete source-token disposal at `engine_v2/extractors/job_common.py:35` and `engine_v2/extractors/insurance_4.py:25`. NHIS masked-prefix parsing also accepts compact/spaced forms at `engine_v2/extractors/nhis_common.py:21`.
+`engine_v2/engine.py:189` creates transient OcrWord objects for text-layer values and then constructs OcrResult at line 191, applying boundary 1 to the complete batch before extraction. Existing job and insurance scrubbing accepts the earlier masked prefix, preserving birth fallback and complete source-token disposal at `engine_v2/extractors/job_common.py:35` and `engine_v2/extractors/insurance_4.py:25`. NHIS masked-prefix parsing accepts compact/spaced forms at `engine_v2/extractors/nhis_common.py:21`. The resident header now accepts a complete compact/spaced masked shape while retaining legacy dashed sex-digit century handling at `engine_v2/extractors/resident_abstract.py:44`.
 
 ## Sink inventory
 
 | Sink | Stored or emitted material | Redaction coverage |
 | --- | --- | --- |
-| OCR words/result repr and dataclass serialization | Word text, error, confidence and geometry | Boundaries 1–6, asserted by new tests |
-| PDF PageImage.text | Raw textual page body retained in memory | Boundary 7, asserted before `_load_pages` |
+| OCR words/result repr and dataclass serialization | Word text, error, confidence and geometry | Boundaries 1–5, asserted at complete public ingestion/return boundaries |
+| PDF PageImage.text | Raw textual page body retained in memory | Boundary 6, asserted before `_load_pages` |
 | ExtractedField.value/raw_text, validation detail, warning and rule evidence | Derived from OCR/PdfText/JBAI inputs | Inherits sanitized ingestion. Acquisition extraction repr is asserted |
-| External JBAI page objects/cache | text_lines, HTML/OTSL cells, raw_content, table_content | Boundaries 13–15 precede JBAIPageResult and cache retention. Inline tags/entities have regressions |
-| Demo Document.ocr_json | Fields, classification evidence, fallback reasons and quality notes | Boundaries 16, 18 and 19 |
-| Demo Document.findings_json | Initial and recomputed findings | Boundaries 20–21 |
-| Review.review_payload_json, score_json and tiebreak_json | OCR-derived rule evidence and review/score notes | Boundaries 25–26, sourced from sanitized `common.document_fact`; historical payload/score response protection at boundaries 27–29. `demo/backend/models.py:158` defines the persisted payload |
-| Applicant and officer responses | Visible fields, findings, internal OCR metadata | Boundaries 22–24 also protect historical rows when read |
-| LocalOcr warning log | Engine availability reason | Fixed operational reason at `demo/backend/ocr/localocr.py:482`, no OCR body |
+| External JBAI page objects/cache | text_lines, HTML/OTSL cells, raw_content, table_content | Boundaries 12–14 precede JBAIPageResult and cache retention. Inline tags/entities, continuation cells and protected G-number context have regressions |
+| Demo Document.ocr_json | Fields, classification evidence, fallback reasons and quality notes | Boundaries 15, 17 and 18 |
+| Demo Document.findings_json | Initial and recomputed findings | Boundaries 19–20 |
+| Review.review_payload_json, score_json and tiebreak_json | OCR-derived rule evidence and review/score notes | Boundaries 24–25, sourced from sanitized `common.document_fact`; historical payload/score response protection at boundaries 26–28. `demo/backend/models.py:158` defines the persisted payload |
+| Applicant and officer responses | Visible fields, findings, internal OCR metadata | Boundaries 21–23 also protect historical rows when read |
+| LocalOcr warning log | Engine availability reason | Fixed operational reason at `demo/backend/ocr/localocr.py:590`, no OCR body |
 | JBAI logs | Engine, status, page count and elapsed milliseconds | Fixed allowlist at `demo/backend/ocr/jbai.py:248`, `:260`, `:270`, `:273`, `:280` |
 | run_engine JSON/output | Applicant view, warnings, full model result JSON | Sanitized ingestion and retained source fields at `engine_v2/tools/run_engine.py:54`, `:62`, `:67` |
 | inspect_pdf output and word JSON | Full-value masking, metadata counts and geometry | Existing `mask_text` masks every value in `engine_v2/tools/inspect_pdf.py:125`, `:137`, `:139`, with no raw OCR dump |
@@ -58,7 +59,8 @@ Existing uploads and database locations are documented by metadata-only research
 - Four actual TestClient uploads cover image/text-layer and full/split forms using isolated temporary SQLite/storage. Birth remains correct and response, saved OCR data, all row projections, explicit JSON output, logs and OCR object repr exclude the fictitious suffix.
 - Latest targeted privacy plus format-parser and portal-upload suite passed 188 tests. Earlier comprehensive targeted privacy/NHIS/insurance/JBAI suite passed 162 tests.
 - P9 identity scenarios passed 96 checks. P18 applicant precheck scenarios passed 156 checks.
-- Two existing test preparations assumed raw RRN text remained available after OcrWord construction. `engine_v2/tests/test_format_parsing.py:22` and `demo/backend/tests/run_p18_applicant_precheck_scenarios.py:56` now locate either the raw or already-masked fictitious identifier. All existing assertions are preserved.
+- Stage 9 adds complete-batch, merged-ASCII-label, split G-number, HTML/OTSL continuation, suffix-line-break and resident birth regressions. The focused privacy collection now has 146 tests. Eight actual uploads cover the original full/split image/text combinations plus ASCII-prefixed notes, and preserve birth while keeping outputs/logs clean.
+- `engine_v2/tests/test_format_parsing.py:22` and the P18 RRN selector at `demo/backend/tests/run_p18_applicant_precheck_scenarios.py:56` use their original main-branch raw synthetic selectors again. Complete-batch sanitization preserves that test preparation.
 - Python compileall passed for changed ingestion/API modules. Full integration regression remains the parent task's final gate.
 
 ## Limits and inference

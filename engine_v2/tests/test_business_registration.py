@@ -33,6 +33,55 @@ def test_observed_own_form_reads_all_thirteen_fields():
     assert "654321" not in repr(result)
 
 
+def test_last_category_continuation_is_read_until_joint_header_boundary():
+    cells, _ = sample.business(noise=False)
+    cells.append(sample.cell(633, 1560, 1380, 1600, "|추가누락가상품목", .99))
+    result = extract(cells)
+    assert result.structure_complete
+    assert result.fields["종목"].value[-1] == "추가누락가상품목"
+    assert result.warnings == []
+
+
+@pytest.mark.parametrize("top,bottom", [(1590, 1630), (1605, 1645)])
+def test_grid_value_crossing_joint_header_is_incomplete(top, bottom):
+    cells, _ = sample.business(noise=False)
+    cells.append(sample.cell(633, top, 1380, bottom, "|경계확인품목", .99))
+    result = extract(cells)
+    assert not result.structure_complete
+    assert not next(check.passed for check in result.validations if check.name == "business_label_grid")
+
+
+def test_competing_left_column_grid_content_requires_review():
+    cells, _ = sample.business(noise=False)
+    cells.append(sample.cell(260, 1550, 500, 1590, "가상추가표제", .99))
+    result = extract(cells)
+    assert not result.structure_complete
+    assert not next(check.passed for check in result.validations if check.name == "business_label_grid")
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_joint_name_left_of_centered_header_is_accounted_for(partial):
+    cells, _ = sample.business(noise=False, joint_count=0 if partial else 1)
+    cells = [cell for cell in cells if cell[4] != "이합성"]
+    cells.append(sample.cell(650, 1690, 730, 1735, "이합성", .99))
+    result = extract(cells)
+    assert result.structure_complete is (not partial)
+    if not partial:
+        assert result.fields["공동사업자유무"].value is True
+    else:
+        assert not next(check.passed for check in result.validations if check.name == "business_joint_section_read")
+
+
+@pytest.mark.parametrize("left,right", [(500, 620), (1100, 1400)])
+def test_joint_word_crossing_observed_cell_boundary_requires_review(left, right):
+    cells, _ = sample.business(noise=False, joint_count=1)
+    cells = [(left, cell[1], right, cell[3], cell[4], cell[5]) if cell[4] == "이합성" else cell
+             for cell in cells]
+    result = extract(cells)
+    assert not result.structure_complete
+    assert not next(check.passed for check in result.validations if check.name == "business_joint_section_read")
+
+
 @pytest.mark.parametrize("name", ["가상", "김가상", "가상합성"])
 @pytest.mark.parametrize("scale,jitter,skew", [(1, 0, 0), (.6, 3, 8), (1.4, 4, -10)])
 @pytest.mark.parametrize("blank_rows", [False, True])

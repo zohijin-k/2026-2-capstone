@@ -11,6 +11,8 @@
 from datetime import date
 import json
 from typing import Any
+from engine import config as engine_config
+from engine_v2.extractors.nhis_payment import has_failed_payment_validation
 
 from .doc_types import DocType
 from .household import parse_household_members
@@ -86,8 +88,16 @@ def _payment_amounts_trusted(doc: DocFact | None) -> bool:
     fields = (doc or {}).get("fields") or {}
     if not doc or doc.get("doc_type") != str(DocType.NHIS_PAYMENT):
         return True
+    if has_failed_payment_validation(fields):
+        return False
     if doc.get("status") in {"NEEDS_REVIEW", "FAIL"}:
         return False
+    if "confidence" in doc:
+        try:
+            if not float(doc["confidence"]) >= engine_config.OCR_CONFIDENCE_THRESHOLD:
+                return False
+        except (TypeError, ValueError):
+            return False
     return "양식판독상태" not in fields or fields["양식판독상태"] == "완전"
 
 

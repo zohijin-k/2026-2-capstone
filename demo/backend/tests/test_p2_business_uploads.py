@@ -206,3 +206,61 @@ def test_dense_joint_rows_survive_column_skew_in_actual_upload(client, tmp_path,
     assert response["status"] == "PASS"
     assert response["findings"] == []
     assert saved["fields"]["공동사업자유무"] == "있음"
+
+
+def test_last_category_continuation_is_retained_in_actual_upload(client, tmp_path, monkeypatch):
+    cells, size = sample.business(noise=False)
+    cells.append(sample.cell(633, 1560, 1380, 1600, "|추가누락가상품목", .99))
+    use_own_words(monkeypatch, cells, size)
+    path = image_pdf(tmp_path / "FAKE-last-category.pdf", size)
+    response, saved = upload(client, business_app(client), path, "work_proof")
+    assert response["status"] == "PASS"
+    assert response["findings"] == []
+    assert json.loads(saved["fields"]["종목"])[-1] == "추가누락가상품목"
+
+
+@pytest.mark.parametrize("defect", ["crossing-inside", "crossing-outside", "left-column"])
+def test_unreadable_grid_boundary_reaches_actual_upload_review(client, tmp_path, monkeypatch, defect):
+    cells, size = sample.business(noise=False)
+    if defect == "left-column":
+        extra = sample.cell(260, 1550, 500, 1590, "가상추가표제", .99)
+    else:
+        top = 1590 if defect == "crossing-inside" else 1605
+        extra = sample.cell(633, top, 1380, top + 40, "|경계확인품목", .99)
+    cells.append(extra)
+    use_own_words(monkeypatch, cells, size)
+    path = image_pdf(tmp_path / "FAKE-grid-boundary.pdf", size)
+    response, saved = upload(client, business_app(client), path, "work_proof")
+    assert response["status"] == "NEEDS_REVIEW"
+    assert all(finding["severity"] != "FAIL" for finding in response["findings"])
+    assert saved["confidence"] <= .4
+    assert saved["fields"]["양식판독상태"] == "불완전"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_joint_name_left_of_centered_header_reaches_correct_upload_verdict(client, tmp_path, monkeypatch, partial):
+    cells, size = sample.business(noise=False, joint_count=0 if partial else 1)
+    cells = [cell for cell in cells if cell[4] != "이합성"]
+    cells.append(sample.cell(650, 1690, 730, 1735, "이합성", .99))
+    use_own_words(monkeypatch, cells, size)
+    path = image_pdf(tmp_path / "FAKE-left-joint-name.pdf", size)
+    response, saved = upload(client, business_app(client), path, "work_proof")
+    assert response["status"] == ("NEEDS_REVIEW" if partial else "PASS")
+    if partial:
+        assert all(finding["severity"] != "FAIL" for finding in response["findings"])
+        assert saved["confidence"] <= .4
+    else:
+        assert response["findings"] == []
+        assert saved["fields"]["공동사업자유무"] == "있음"
+
+
+@pytest.mark.parametrize("left,right", [(500, 620), (1100, 1400)])
+def test_joint_word_crossing_side_or_number_cell_stays_reviewed(client, tmp_path, monkeypatch, left, right):
+    cells, size = sample.business(noise=False, joint_count=1)
+    cells = [(left, cell[1], right, cell[3], cell[4], cell[5]) if cell[4] == "이합성" else cell for cell in cells]
+    use_own_words(monkeypatch, cells, size)
+    path = image_pdf(tmp_path / "FAKE-joint-cell-boundary.pdf", size)
+    response, saved = upload(client, business_app(client), path, "work_proof")
+    assert response["status"] == "NEEDS_REVIEW"
+    assert all(finding["severity"] != "FAIL" for finding in response["findings"])
+    assert saved["fields"]["양식판독상태"] == "불완전"

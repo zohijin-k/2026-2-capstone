@@ -114,7 +114,6 @@ def _grid(lines, title, joint_headers):
     label_right = max(word.x1 for words in labels.values() for word in words)
     step = median(b - a for a, b in zip(centers, centers[1:]))
     top = min(word.y0 for word in labels["상호"]) - step / 2
-    bottom = (centers[-1] + bottom) / 2
     values = [word for row in lines for word in row
               if top < word.cy < bottom and word.x0 > label_right]
     if not values:
@@ -125,12 +124,15 @@ def _grid(lines, title, joint_headers):
     boundary = (label_right + value_left) / 2
     bounds = [top, *[(a + b) / 2 for a, b in zip(centers, centers[1:])], bottom]
     cells = {}
-    complete = True
+    complete = not any(word.y0 < bottom < word.y1 and word.x1 > boundary
+                       for row in lines for word in row)
     label_ids = {id(word) for words in labels.values() for word in words}
     for index, key in enumerate(labels):
         band = [word for row in lines for word in row if bounds[index] < word.cy < bounds[index + 1]
                 and id(word) not in label_ids]
         complete &= not any(word.x0 < boundary < word.x1 for word in band)
+        complete &= not any(word.x1 > left and word.x0 < boundary and
+                            re.search(r"[가-힣A-Za-z0-9*]", word.text) for word in band)
         cells[key] = [word for word in band if word.x0 >= boundary]
     return cells, complete
 
@@ -147,7 +149,9 @@ def _joint_business(lines, confirmation):
     boundary = (max(word.x1 for word in name_header) + min(word.x0 for word in number_header)) / 2
     glyph = median((word.x1 - word.x0) / max(len(squash(word.text)), 1) for word in headers)
     height = median(word.y1 - word.y0 for word in headers)
-    left = min(word.x0 for word in name_header) - 4 * glyph
+    left = max(word.x1 for word in label)
+    if left >= min(word.x0 for word in name_header):
+        return None, headers, []
     body = [word for row in lines for word in row if top < word.cy < bottom and word.x1 > left
             and all(word is not heading for heading in label)]
     absent = []
@@ -158,7 +162,7 @@ def _joint_business(lines, confirmation):
             absent.append(row)
         else:
             remaining.extend(word for word in row if re.search(r"[가-힣A-Za-z0-9*]", word.text))
-    partial = any(word.x0 < boundary < word.x1 for word in remaining)
+    partial = any(word.x0 < boundary < word.x1 or word.x0 < left < word.x1 for word in remaining)
     name_rows = []
     number_rows = []
     fragments = False

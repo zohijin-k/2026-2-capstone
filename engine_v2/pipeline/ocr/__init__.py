@@ -27,10 +27,6 @@ class OcrWord:
     confidence: float                          # 0~1
     bbox_px: tuple[float, float, float, float]  # 좌상단 원점 픽셀 (x0, y0, x1, y1)
 
-    def __post_init__(self):
-        self.text = mask_rrn(self.text)
-
-
 @dataclass
 class OcrResult:
     engine: str

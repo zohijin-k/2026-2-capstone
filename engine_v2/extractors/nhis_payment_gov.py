@@ -56,6 +56,10 @@ def _value_cells(lines, left_label, right_label):
     right_edge = max(word.x1 for word in right)
     first = [word for word in selected if left_edge < word.x0 and word.x1 < right_start]
     second = [word for word in selected if word.x0 > right_edge]
+    accounted = {id(word) for word in first + second}
+    label_start = min(word.x0 for word in left)
+    if any(word.x1 > label_start and id(word) not in accounted for word in selected):
+        return None
     return first, second
 
 
@@ -211,21 +215,39 @@ def extract(pages, today=None):
 
     middle = _value_cells(lines, "사업장명칭", "납부자번호")
     payer = squash(_text(middle[1])) if middle else ""
-    checks.append(common.Validation("payment_information_cells", middle is not None and bool(re.fullmatch(r"\d{11}", payer))))
+    workplace_ok = middle is not None and not common.is_header_only_value(_text(middle[0]))
+    checks.append(common.Validation("payment_information_cells", workplace_ok and bool(re.fullmatch(r"\d{11}", payer))))
     if middle is not None:
         put("사업장명칭", _text(middle[0]), middle[0])
     if re.fullmatch(r"\d{11}", payer):
         put("납부자번호", payer, middle[1])
 
-    number_rows = [row for row in lines if "문서확인번호" in squash(line_text(row))]
-    numbers = [match.group() for row in number_rows
-               for match in DOCUMENT_NUMBER.finditer(normalize_format_text(line_text(row)))]
-    checks.append(common.Validation("document_number_format", len(numbers) == 1))
-    if len(numbers) == 1:
-        put("문서확인번호", numbers[0], number_rows[0])
+    number_label = _unique_label(lines, "문서확인번호")
+    number_words = []
+    if number_label:
+        label_ids = {id(word) for word in number_label}
+        left = min(word.x0 for word in number_label)
+        number_words = [word for row in lines if any(id(word) in label_ids for word in row)
+                        for word in row if word.x0 >= left]
+    number_text = normalize_format_text(squash(_text(number_words))).partition("문서확인번호")[2].lstrip(":：")
+    number_ok = bool(number_label and DOCUMENT_NUMBER.fullmatch(number_text))
+    checks.append(common.Validation("document_number_format", number_ok))
+    if number_ok:
+        put("문서확인번호", number_text, number_words)
 
-    periods = [(match, row) for row in lines
-               if (match := PERIOD.fullmatch(normalize_format_text(squash(line_text(row)))))]
+    group_labels = [word for label in ("고지금액", "납부금액") for word in _unique_label(lines, label)]
+    table_top = min((word.y0 for word in group_labels), default=float('inf'))
+    period_rows = [row for row in lines if min(word.y0 for word in row) < table_top and
+                   ("납부내역" in squash(line_text(row)) or re.search(
+                       r"20\d{2}년\d{1,2}월[~～-]", normalize_format_text(squash(line_text(row)))))]
+    periods = []
+    if len(period_rows) == 1:
+        row = period_rows[0]
+        text = normalize_format_text(squash(line_text(row)))
+        matches = list(PERIOD.finditer(text))
+        residue = PERIOD.sub("", text)
+        if len(matches) == 1 and re.fullmatch(r"(?:[（(]?단위[:：]?원[)）]?)?", residue):
+            periods = [(matches[0], row)]
     period_ok = len(periods) == 1 and periods[0][0][1] == periods[0][0][3] and int(periods[0][0][2]) <= int(periods[0][0][4])
     checks.append(common.Validation("payment_query_period", period_ok))
     year = int(periods[0][0][1]) if period_ok else None
@@ -240,8 +262,9 @@ def extract(pages, today=None):
     grand_total, total_ok = _money_cell(bottom[0], allow_correction=allow_correction,
                                        row="납부총액", column="total", corrections=corrections) if bottom else (None, False)
     purpose = squash(_text(bottom[1])) if bottom else ""
-    checks.append(common.Validation("payment_purpose", bool(purpose)))
-    if purpose:
+    purpose_ok = bool(purpose) and not common.is_header_only_value(purpose)
+    checks.append(common.Validation("payment_purpose", purpose_ok))
+    if purpose_ok:
         put("용도구분", purpose, bottom[1])
     if total_ok and grand_total is not None:
         put("납부총액", str(grand_total), bottom[0])
