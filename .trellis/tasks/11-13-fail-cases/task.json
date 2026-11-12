@@ -33,7 +33,7 @@
     "research/tiny-baseline-replay.md",
     "verify-upload.md"
   ],
-  "notes": "Implementation and complete verification finished; awaiting user verification. No push/PR/archive. Baseline cdcf68d; code verified at 4536155; preexisting untracked docs/audit excluded. Upload-verification follow-up completed with 44 synthetic tests and full baseline comparison; existing image-title classification limitation reported without changing rules. Awaiting user verification.",
+  "notes": "Implementation and complete verification finished; awaiting user verification. No push/PR/archive. Baseline cdcf68d; code verified at 4536155; preexisting untracked docs/audit excluded. Upload-verification follow-up completed with 44 synthetic tests and full baseline comparison; existing image-title classification limitation reported without changing rules. Awaiting user verification. Follow-up 2: supported daily CLI candidate identity and positional blank-date proof implemented and fully tested at 0142b7d; actual daily .40 structural symptom remains unreplicated/unresolved. See design.md final limits. Awaiting user verification; no archive/push/PR.",
   "meta": {
     "implementation_complete": true,
     "code_review_complete": true,
@@ -68,6 +68,31 @@
       "p14_exit_code": 0,
       "existing_image_title_limitation_reported": true,
       "real_document_execution": false
+    },
+    "daily_address_followup2": {
+      "supported_fixes_implemented": true,
+      "code_review_complete": true,
+      "awaiting_user_verification": true,
+      "plan_commit": "12fbbcb",
+      "reproduction_commit": "5961fe0",
+      "daily_commit": "f22635d",
+      "address_commit": "79588bb",
+      "acceptance_commit": "b12adc2",
+      "source_commit": "0142b7d",
+      "engine_passed": 1264,
+      "engine_skipped": 3,
+      "backend_passed": 956,
+      "scenario_passed": 1885,
+      "scenario_failed": 0,
+      "scenario_modules": 18,
+      "p14_exit_code": 0,
+      "new_synthetic_tests": 55,
+      "real_document_execution": false,
+      "actual_daily_structure_failure_reproduced": false,
+      "actual_daily_unreadable_required_field_identified": false,
+      "actual_daily_structure_failure_resolved": false,
+      "positional_date_proof_requires_observed_standalone_blank_marker": true,
+      "baseline_expectation_changes": 1
     }
   }
 }

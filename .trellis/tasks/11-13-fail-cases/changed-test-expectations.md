@@ -19,3 +19,6 @@ No existing assertions have been removed or weakened.
 - Stage-2 daily reproduction assertions are retained: without a program, self identity remains unresolved; observed short-year geometry alone remains complete and does not reproduce the user's .40 structural failure. Stage 3 adds the uniquely bounded program-reference acceptance and nine conservative negative controls. No other baseline test expectation changes in this stage.
 
 - Stage-2 NEW `test_followup_address_reproduction.py::test_sparse_header_reproduces_review_without_date_omission` becomes `test_sparse_header_proves_date_omission_despite_quality_review`: NEEDS_REVIEW/no omission becomes FAIL/MISSING_ADDRESS_DATES because the newly supported observed date columns are blank and >=2 distinct address rows exist. Its low-confidence and low-image-quality checks remain. This test was introduced in this follow-up, not part of baseline 79406ed. Existing address-test reason/status expectations are unchanged.
+
+
+Final follow-up 2 audit against 79406ed: the `[True]` short-year CLI branch above is the only baseline expectation change. All other baseline assertions remain. New tests account for +28 engine and +27 backend passes; scenario counts/expectations are unchanged. The stage-2 sparse-header reproduction transition is an authored follow-up test, not a baseline regression relaxation.
