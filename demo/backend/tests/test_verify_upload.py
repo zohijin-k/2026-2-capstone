@@ -151,7 +151,7 @@ def test_failure_case_cli(case, slot, category, status, code, grade, attachments
 
 
 @pytest.mark.parametrize("identity_option", [False, True])
-def test_identity_missing_does_not_guess_century(identity_option, tmp_path, monkeypatch, capfd, no_db):
+def test_short_birth_reference_requires_self_identity_and_unique_program_range(identity_option, tmp_path, monkeypatch, capfd, no_db):
     pages = cases.daily()
     for _, recognized in pages:
         for word in recognized.words:
@@ -164,10 +164,16 @@ def test_identity_missing_does_not_guess_century(identity_option, tmp_path, monk
         args.append("--self-identity")
     assert tool.main(args) == 0
     output = capfd.readouterr().out
-    assert "identity: 본인정보 없음\n" in output
-    assert "work_status: UNDETERMINED\n" in output
-    assert "WORK_IDENTITY_UNCONFIRMED" in output
-    assert "blockers: X\n" in output
+    if identity_option:
+        assert "identity: O\n" in output
+        assert "work_status: NOT_MET\n" in output
+        assert "work_reason: WORK_CONTINUITY_NOT_MET\n" in output
+        assert "blockers: O\n" in output
+    else:
+        assert "identity: 본인정보 없음\n" in output
+        assert "work_status: UNDETERMINED\n" in output
+        assert "WORK_IDENTITY_UNCONFIRMED" in output
+        assert "blockers: X\n" in output
     assert_safe(output)
 
 

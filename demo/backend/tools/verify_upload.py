@@ -108,11 +108,40 @@ def _redact(text):
     return re.sub(r"\d{4,}", "X", text)
 
 
-def _identity_from_ocr(ocr):
+def _identity_from_ocr(ocr, program=None):
+    from ..rules.doc_types import DocType
     from ..rules.identity import identity_of
     name, birth = ocr.fields.get("성명"), ocr.fields.get("생년월일")
-    if (not isinstance(name, str) or not name.strip() or not isinstance(birth, str)
-            or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", birth)):
+    if not isinstance(name, str) or not name.strip():
+        return None
+    if not birth and ocr.detected_doc_type == DocType.DAILY_WORK_RECORD and program is not None:
+        printed = ocr.fields.get("생년월일표기")
+        if not isinstance(printed, str) or not re.fullmatch(r"[0-9]{2}-[0-9]{2}-[0-9]{2}", printed):
+            return None
+        yy, mm, dd = (int(part) for part in printed.split("-"))
+        expected = []
+        for century in (1900, 2000):
+            try:
+                expected.append(date(century + yy, mm, dd).isoformat())
+            except ValueError:
+                pass
+        try:
+            candidates = json.loads(ocr.fields.get("생년월일후보", "null"))
+        except (ValueError, TypeError):
+            return None
+        # Accept the extractor's complete candidate set only. The program may
+        # select a temporary CLI reference; the OCR fields remain unresolved.
+        if (not expected or not isinstance(candidates, list)
+                or len(candidates) != len(expected)
+                or any(not isinstance(value, str) for value in candidates)
+                or set(candidates) != set(expected)):
+            return None
+        lower, upper = program.birth_range
+        in_range = [value for value in candidates if lower <= date.fromisoformat(value) <= upper]
+        if len(in_range) != 1:
+            return None
+        birth = in_range[0]
+    if not isinstance(birth, str) or not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", birth):
         return None
     identity = {"name": name, "birth": birth}
     return identity if identity_of(identity) is not None else None
@@ -205,7 +234,7 @@ def _document(args, program, category, criteria, checklist):
 
     def own_identity(ocr):
         nonlocal identity
-        identity = _identity_from_ocr(ocr)
+        identity = _identity_from_ocr(ocr, program)
         return identity_of(identity)
 
     ocr, result = assess_upload(
@@ -266,7 +295,7 @@ def _income(args, program, category, criteria, checklist):
 
         def own_identity(ocr):
             nonlocal identity
-            identity = _identity_from_ocr(ocr)
+            identity = _identity_from_ocr(ocr, program)
             return identity_of(identity)
 
         ocr, result = assess_upload(
