@@ -220,9 +220,11 @@ def _document(args, program, category, criteria, checklist):
     blocked = any(item["target"] == req.slot_key for item in document_blockers(checklist, [row]))
     eligibility = eligibility_blockers(program, {}, identity, rows, category, criteria)
     work = None
-    if req.slot_key.startswith("work_proof") and program.has_work_requirement:
+    blocked |= any(item["target"] == "work" for item in eligibility)
+    work_types = {DocType.INSURANCE_4, DocType.DAILY_WORK_RECORD,
+                  DocType.NHIS_ACQUISITION_LOSS, DocType.BIZ_REG_PROOF}
+    if program.has_work_requirement and (req.slot_key.startswith("work_proof") or ocr.detected_doc_type in work_types):
         work = assess_work(program, date.fromisoformat(criteria["announcement_date"]), category, rows, identity)
-        blocked |= any(item["target"] == "work" for item in eligibility)
     lines = [
         f"tier: {_enum(ocr.tier, {'fixture', 'localocr', 'pdftext', 'jbai', 'upstage', 'none'})}",
         f"detected_type: {_enum(ocr.detected_doc_type, {str(kind) for kind in DocType})}",
