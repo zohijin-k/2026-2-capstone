@@ -135,7 +135,12 @@ def document_blockers(
                 )
             continue
         if doc.stage1_status == "FAIL":
-            reason = (doc.findings_json or [{}])[0].get("message", "부적합 판정입니다.")
+            reasons = list(dict.fromkeys(
+                finding["message"] for finding in (doc.findings_json or [])
+                if finding.get("severity", "FAIL") == "FAIL"
+                and isinstance(finding.get("message"), str) and finding["message"].strip()
+            ))
+            reason = "\n".join(reasons) or "부적합 판정입니다."
             items.append(
                 {
                     "kind": "document",

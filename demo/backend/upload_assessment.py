@@ -91,15 +91,19 @@ def assess_upload(
             if result.status == "PASS":
                 result.status = "NEEDS_REVIEW"
     if req.slot_key.endswith("_receipt") and ocr.tier == "none" and not ocr.is_encrypted:
-        # 판독 계층이 하나도 결과를 내지 못했을 때 낮은 기본 화질 점수로
-        # 실비 영수증을 자동 부적합 처리하지 않고 담당자 확인으로 보낸다.
-        result.findings[:] = [CheckFinding(
+        # Recognition absence stays review; separately measured quality defects
+        # and accompanying certain file findings must survive this fallback.
+        quality_failed = any(f.severity == "FAIL" and f.code in {
+            "LOW_IMAGE_QUALITY", "IMAGE_RESOLUTION_TOO_LOW",
+        } for f in result.findings)
+        preserved = [f for f in result.findings if f.severity == "FAIL"] if quality_failed else []
+        result.findings[:] = preserved + [CheckFinding(
             code="RECEIPT_OCR_UNAVAILABLE",
             message="영수증을 자동 판독하지 못했습니다. 담당자가 원본을 확인합니다.",
             how_to_fix="영수증 원본을 확인할 수 있도록 담당자에게 제출해 주세요.",
             severity="NEEDS_REVIEW",
         )]
-        result.status = "NEEDS_REVIEW"
+        result.status = "FAIL" if preserved else "NEEDS_REVIEW"
     if req.slot_key.endswith("_receipt") and req.accepts(ocr.detected_doc_type):
         if receipt_amount_loader is not None:
             receipt_amount = receipt_amount_loader()

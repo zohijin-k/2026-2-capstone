@@ -65,6 +65,12 @@ PHOTO_RETAKE_GUIDANCE = (
 )
 RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 확인합니다."
 
+QUALITY_REUPLOAD_GUIDANCE = (
+    "이미지가 흐리거나 작아 읽을 수 없습니다. "
+    "발급처에서 PDF로 받아 그대로 올리는 것이 가장 확실합니다. "
+    "사진은 서류 전체가 똑바로, 밝고 선명하게 나오게 다시 찍어 올려 주세요."
+)
+
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
 HOW_TO_FIX: dict[str, str] = {
@@ -77,7 +83,7 @@ HOW_TO_FIX: dict[str, str] = {
     CODE_MISSING_BILLING_MONTHS: "조회기간에 {months}이 포함되도록 다시 발급해 주세요.",
     "DECLARED_DATE_UNCERTAIN": "발급일을 서류에 찍힌 대로 입력하셨다면 그대로 두셔도 됩니다. 담당자가 원본에서 직접 확인합니다. " + RETAKE_GUIDANCE,
     "UNREADABLE_FILE": "PDF 암호를 해제한 뒤 다시 올려 주세요. 발급처에서 '암호 설정 안 함'으로 재발급받는 것이 가장 확실합니다.",
-    "LOW_IMAGE_QUALITY": RETAKE_GUIDANCE,
+    "LOW_IMAGE_QUALITY": QUALITY_REUPLOAD_GUIDANCE,
     "LOW_OCR_CONFIDENCE": RETAKE_GUIDANCE,
     "MISSING_SIGNATURE": "서명란에 서명한 뒤 다시 올려 주세요.",
     CODE_SCREEN_CAPTURE: "모니터 화면을 캡처한 이미지는 인정되지 않습니다. 발급처에서 내려받은 pdf 원본이나 스캔본으로 올려 주세요.",
@@ -137,7 +143,6 @@ def _has_final_consonant(value: str) -> bool:
 #: 화면캡처는 오탐 시 신청자가 억울해지므로 자동 반려하지 않는다.
 REVIEW_ONLY_CODES = {
     "LOW_OCR_CONFIDENCE",
-    "LOW_IMAGE_QUALITY",
     "NHIS_HISTORY_PERIOD_UNREADABLE",
     CODE_RESIDENT_APPLICANT_UNREADABLE,
     CODE_PAGES_UNREADABLE,
@@ -917,9 +922,19 @@ def check_document(
     related_nhis_docs: list[tuple[str, dict[str, str]]] | None = None,
     suggested_slot_label: str | None = None,
 ) -> CheckResult:
-    """Check one upload and adapt only photo-specific guidance to its format."""
+    """Keep objective file quality independent of reading/identity uncertainty."""
     result = _check_document(req, ocr, declared_issue_date, file_format, identity,
                              related_nhis_docs, suggested_slot_label)
+    if not ocr.is_encrypted:
+        # The reader measures original source resolution independently of OCR.
+        # Apply this after all early returns and identity-related downgrades.
+        result.findings[:] = [f for f in result.findings if f.code != "LOW_IMAGE_QUALITY"]
+        specific_resolution = any(f.code == CODE_IMAGE_RESOLUTION_TOO_LOW for f in result.findings)
+        if ocr.image_quality < engine_config.IMAGE_QUALITY_THRESHOLD and not specific_resolution:
+            result.findings.append(_finding("LOW_IMAGE_QUALITY",
+                "이미지가 흐리거나 작아 읽을 수 없습니다.", req))
+        result.status = ("FAIL" if any(f.severity == "FAIL" for f in result.findings) else
+                         "NEEDS_REVIEW" if any(f.severity == "NEEDS_REVIEW" for f in result.findings) else "PASS")
     if file_format.lower() == "pdf":
         for finding in result.findings:
             finding.message = finding.message.replace(PHOTO_RETAKE_GUIDANCE, "")
