@@ -14,13 +14,16 @@ from demo.backend.tests.test_income_facts import documents
 @pytest.mark.parametrize("size", range(1, 11))
 @pytest.mark.parametrize("category", ["직장", "지역"])
 @pytest.mark.parametrize("offset", [0, 1])
-def test_each_official_threshold_is_inclusive_with_exact_plus_one_rejection(size, category, offset):
+def test_each_official_threshold_is_inclusive_with_exact_plus_one_outcome(size, category, offset):
     limit = MEDIAN_INCOME_140[size][category]
     result = score_income(ScoringFacts(household_size=size, monthly_premium=limit + offset, insurance_type=category))
-    assert result.status == ("MET" if offset == 0 else "OVER_LIMIT")
-    assert result.over_limit is (offset == 1)
-    assert result.percent == 140.0  # display rounding must never determine eligibility
-    assert not result.item.incomplete
+    mixed_possible = size >= 2 and category == "직장" and offset == 1
+    assert result.status == ("UNDETERMINED" if mixed_possible else "MET" if offset == 0 else "OVER_LIMIT")
+    assert result.over_limit is (offset == 1 and not mixed_possible)
+    assert result.percent == (None if mixed_possible else 140.0)
+    assert result.item.incomplete is mixed_possible
+    if mixed_possible:
+        assert result.reason_codes == ["INCOME_MIXED_POSSIBLE"]
     assert "담당자 확인" not in result.item.basis
     assert result.reason_codes
 
@@ -66,11 +69,19 @@ def test_unknown_and_mixed_membership_never_select_the_mixed_limit_in_middle_ban
 def test_unconfirmed_category_has_disclosed_demo_score_reference_without_becoming_membership_fact(premium):
     facts = ScoringFacts(household_size=2, monthly_premium=premium)
     result = score_income(facts)
-    assert result.status == ("OVER_LIMIT" if premium > MEDIAN_INCOME_140[2]["직장"] else "MET")
+    mixed_possible = premium > MEDIAN_INCOME_140[2]["직장"]
+    assert result.status == ("UNDETERMINED" if mixed_possible else "MET")
     assert facts.insurance_type == "모름"
-    assert "가입구분 미확정" in result.item.basis
     assert "모름가입자" not in result.item.basis
-    assert any("가입구분 미확정" in note and ESTIMATE_LABEL in note for note in result.notes)
+    if mixed_possible:
+        assert result.percent is None
+        assert not result.over_limit
+        assert result.item.incomplete
+        assert result.reason_codes == ["INCOME_MIXED_POSSIBLE"]
+        assert "혼합 가구 여부를 확정할 수 없습니다" in result.item.basis
+    else:
+        assert "가입구분 미확정" in result.item.basis
+        assert any("가입구분 미확정" in note and ESTIMATE_LABEL in note for note in result.notes)
 
 
 @pytest.mark.parametrize("size", [None, 0, -1, 11, 99, True, "1"])
@@ -122,7 +133,12 @@ def test_table_helpers_preserve_informational_mixed_values_without_automatic_sel
         assert premium_limit_140(size, "혼합") == (MEDIAN_INCOME_140[size]["혼합"], "")
         result = score_income(ScoringFacts(household_size=size, monthly_premium=MEDIAN_INCOME_140[size]["혼합"],
                                           insurance_type="혼합"))
-        assert result.status == "OVER_LIMIT"  # exceeds both actual eligible category limits
+        assert result.status == "UNDETERMINED"
+        assert result.reason_codes == ["INCOME_MIXED_POSSIBLE"]
+        assert not result.over_limit
+        assert result.percent is None
+        assert result.item.incomplete
+        assert "혼합가입자" not in result.item.basis
 
 
 def test_named_result_retains_four_value_unpacking_indexing_and_serializes_authoritative_state():

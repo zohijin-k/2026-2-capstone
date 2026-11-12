@@ -108,10 +108,11 @@ def test_income_table() -> None:
                 age_basis_date=PROGRAM.age_basis_date,
             )
             if insurance_type == "혼합":
-                check(f"{household_size}인 혼합 표 값도 직장·지역 두 상한 초과", under.income_over_limit, True)
-                check(f"{household_size}인 혼합 표 값의 판정", under.income_status, "OVER_LIMIT")
+                check(f"{household_size}인 혼합 상한에서는 초과 확정 안 함", under.income_over_limit, False)
+                check(f"{household_size}인 혼합 표 값의 판정", under.income_status, "UNDETERMINED")
+                check(f"{household_size}인 혼합 가능 세부 사유", under.income_reason_codes, ["INCOME_MIXED_POSSIBLE"])
                 check_true(f"{household_size}인 혼합 가입구분 자동 선택 없음",
-                           "혼합가입자" not in under.items[0].basis and "가입구분 미확정" in under.items[0].basis)
+                           "혼합가입자" not in under.items[0].basis and "혼합 가구 여부를 확정할 수 없습니다" in under.items[0].basis)
                 middle = score_application(
                     ScoringFacts(household_size=household_size, monthly_premium=limits["지역"] + 1, insurance_type="혼합"),
                     announcement_date=PROGRAM.announcement_date,
@@ -121,8 +122,12 @@ def test_income_table() -> None:
             else:
                 check(f"{household_size}인 {insurance_type} 상한 이하 통과", under.income_over_limit, False)
                 check(f"{household_size}인 {insurance_type} 상한 포함 판정", under.income_status, "MET")
-            check(f"{household_size}인 {insurance_type} 상한 초과 부적합", over_limit.income_over_limit, True)
-            check(f"{household_size}인 {insurance_type} 상한+1 정수 판정", over_limit.income_status, "OVER_LIMIT")
+            mixed_possible = insurance_type == "직장"
+            check(f"{household_size}인 {insurance_type} 상한+1 초과 확정 여부", over_limit.income_over_limit, not mixed_possible)
+            check(f"{household_size}인 {insurance_type} 상한+1 정수 판정", over_limit.income_status,
+                  "UNDETERMINED" if mixed_possible else "OVER_LIMIT")
+            if mixed_possible:
+                check(f"{household_size}인 직장 상한+1 혼합 가능 사유", over_limit.income_reason_codes, ["INCOME_MIXED_POSSIBLE"])
 
     unsupported = score_application(
         ScoringFacts(household_size=11, monthly_premium=500_000, insurance_type="직장"),

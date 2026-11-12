@@ -78,13 +78,13 @@ def test_existing_birth_formats_and_missing_legacy_identity_remain_supported(for
 
 
 @pytest.mark.parametrize("income,age,expected,age_code", [
-    ("unknown", "outside", "NEEDS_REVIEW", "AGE_OUT_OF_RANGE"),
-    ("over", "missing", "NEEDS_REVIEW", "AGE_UNDETERMINED"),
-    ("over", "mismatch", "NEEDS_REVIEW", "AGE_IDENTITY_MISMATCH"),
+    ("unknown", "outside", "FAIL", "AGE_OUT_OF_RANGE"),
+    ("over", "missing", "FAIL", "AGE_UNDETERMINED"),
+    ("over", "mismatch", "FAIL", "AGE_IDENTITY_MISMATCH"),
     ("met", "outside", "FAIL", "AGE_OUT_OF_RANGE"),
     ("over", "outside", "FAIL", "AGE_OUT_OF_RANGE"),
 ])
-def test_uncertainty_precedes_definite_failure_without_discarding_reason_details(
+def test_definite_failure_precedes_uncertainty_without_discarding_reason_details(
         isolated_db, income, age, expected, age_code):
     a = b = "못 읽음" if income == "unknown" else "확실한 공란"
     premium = None if income == "unknown" else 999999999 if income == "over" else 0
