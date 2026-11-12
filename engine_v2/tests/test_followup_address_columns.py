@@ -30,6 +30,8 @@ def test_blank_observed_columns_ignore_global_quality_and_coordinate_scale(sourc
     ("FAKE0", (700, 475, 720, 495)),
     ("????0", (520, 475, 535, 495)),
     ("0000-00-00", (735, 475, 900, 495)),
+    ("0", (550, 440, 564, 460)),
+    ("0", (550, 795, 564, 815)),
 ])
 def test_any_digit_word_in_or_overlapping_either_date_column_vetoes_failure(text, box):
     pages = sparse_dates()
@@ -67,6 +69,22 @@ def test_unbounded_footer_notes_cannot_establish_address_rows():
                          OcrWord("가짜 안내 문장", 1, (124,1000,400,1020)),
                          OcrWord("2", 1, (80,1050,96,1070)),
                          OcrWord("다른 가짜 안내 문장", 1, (124,1050,400,1070))]
+    assert assess(pages, type_confidence=.95)["status"] == "UNDETERMINED"
+
+
+@pytest.mark.parametrize("text", ["가짜시 이하여백로 0", "※가짜 주소 주석", "수수료가짜로 0"])
+def test_address_text_cannot_truncate_table_before_later_digit(text):
+    pages = sparse_dates()
+    words = pages[0][1].words
+    next(w for w in words if 550 < w.bbox_px[1] < 580 and "가짜시" in w.text).text = text
+    words.append(OcrWord("0", .1, (550,575,570,595)))
+    assert assess(pages, type_confidence=.95)["status"] == "UNDETERMINED"
+
+
+def test_in_table_margin_note_is_not_a_footer_boundary():
+    pages = sparse_dates()
+    pages[0][1].words += [OcrWord("※가짜 주소 이력 주의사항", 1, (80,547,500,555)),
+                         OcrWord("0", .1, (550,575,620,595))]
     assert assess(pages, type_confidence=.95)["status"] == "UNDETERMINED"
 
 

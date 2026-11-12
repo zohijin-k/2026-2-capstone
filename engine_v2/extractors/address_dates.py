@@ -43,10 +43,14 @@ def _positional_page(page, result):
             (first[0] + first[1]) / 2 < (second[0] + second[1]) / 2):
         return unknown
     top = max(number.y1, *(box[3] for box in columns))
-    ends = [min(w.y0 for w in row) for row in lines if row[0].cy > top
-            and ("이하여백" in squash(line_text(row)) or
-                 ("병역" in squash(line_text(row)) and row[0].x0 < 12) or
-                 squash(line_text(row)).startswith(("※", "수수료")))]
+    ends = []
+    for row in lines:
+        if row[0].cy <= top or any(w.conf < .85 for w in row):
+            continue
+        text = squash(line_text(row))
+        blank_marker = re.fullmatch(r"[=＝*＊·.()（）\-–—]*이하여백[=＝*＊·.()（）\-–—]*", text)
+        if blank_marker:
+            ends.append(min(w.y0 for w in row))
     if not ends:
         return unknown  # Without a table end, numbered footer notes are not rows.
     end = min(ends)
@@ -55,7 +59,7 @@ def _positional_page(page, result):
     # omission. Never use a center-only test that drops a boundary-crossing date.
     digits = any(re.search(r"\d", normalize_format_text(w.text)) and
                  any(w.x0 < right and w.x1 > left for left, right, _, _ in columns)
-                 for w in body)
+                 for row in lines for w in row if w.y1 > top and w.y0 < end)
     if digits:
         return {"status": "UNDETERMINED", "digits": True}
     ordinals = sorted([w for w in body if number.x0 <= (w.x0+w.x1)/2 <= number.x1
