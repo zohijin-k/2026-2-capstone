@@ -3,7 +3,7 @@
   "name": "income-eligibility",
   "title": "Income and age eligibility evidence",
   "description": "Tri-state NHIS evidence, exact income eligibility, final review status and inclusive program age requirements",
-  "status": "planning",
+  "status": "review",
   "dev_type": null,
   "scope": "document-ai",
   "package": null,
@@ -15,7 +15,7 @@
   "branch": "feat/income-eligibility",
   "base_branch": "feat/p2-real-forms",
   "worktree_path": null,
-  "commit": null,
+  "commit": "af5bc57",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -23,8 +23,13 @@
   "relatedFiles": [
     "prd.md",
     "design.md",
-    "implement.md"
+    "implement.md",
+    "changed-test-expectations.md"
   ],
-  "notes": "",
-  "meta": {}
+  "notes": "2026-11-13 소득·연령 판정 보강 9단계 로컬 구현·검증 완료. 엔진1172통과/3건너뜀(+43), 백엔드604통과(+259), 17개 계수 시나리오1851통과/실패0(+27), P14 8종 정상. 기존 시험 삭제·약화 없음; 기대 변경은 changed-test-expectations.md. 소득 불확실·연령 누락/인증불일치 재검토, 확정 초과·연령 범위 밖 실패. engine/무수정. 사용자 확인 대기. push/PR/아카이브 없음.",
+  "meta": {
+    "awaiting_user_confirmation": true,
+    "tested_implementation_head": "af5bc57",
+    "baseline_head": "e10438a"
+  }
 }
