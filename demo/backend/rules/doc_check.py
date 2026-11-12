@@ -516,6 +516,22 @@ def _check_document(
         except (ValueError, TypeError, KeyError):
             pass
 
+    if ocr.detected_doc_type is DocType.DAILY_WORK_RECORD and ocr.tier != "fixture":
+        if ocr.fields.get("양식판독상태") != "완전":
+            return CheckResult("NEEDS_REVIEW", [_finding(CODE_REQUIRED_FIELD_UNREADABLE,
+                "일용근로·노무제공내역서의 표·조회기간·확인 내용을 완전히 읽지 못했습니다. 담당자가 확인합니다.",
+                req, field="표·조회기간")])
+        if identity is not None and not ocr.fields.get("생년월일"):
+            try:
+                candidates = json.loads(ocr.fields.get("생년월일후보", "[]"))
+                matched = (ocr.fields.get("성명", "").replace(" ", "") == identity.name and
+                           identity.birth.isoformat() in candidates)
+            except (ValueError, TypeError):
+                matched = False
+            if not matched:
+                return CheckResult("NEEDS_REVIEW", [_finding(CODE_IDENTITY_UNCERTAIN,
+                    "일용근로 서류의 신청인 성명·생년월일을 본인인증 정보와 확인해야 합니다.", req)])
+
     if (not ocr.is_encrypted and ocr.tier != "fixture" and ocr.detected_doc_type is DocType.BIZ_REG_PROOF):
         from ..ocr.localocr import ensure_business_required_fields
 

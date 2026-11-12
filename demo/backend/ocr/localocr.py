@@ -628,7 +628,7 @@ class LocalOcr:
             if classified is None:
                 return None
             detected = classified.detected_doc_type
-            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4, DocType.BIZ_REG_PROOF)
+            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4, DocType.BIZ_REG_PROOF, DocType.DAILY_WORK_RECORD)
                     and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION and detected is not None):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
             if detected == DocType.NHIS_QUALIFICATION:
@@ -653,6 +653,7 @@ class LocalOcr:
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
                 DocType.BIZ_REG_PROOF: v2types.BIZ_REG_PROOF,
+                DocType.DAILY_WORK_RECORD: v2types.DAILY_WORK_RECORD,
             }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             if detected in {DocType.INSURANCE_4, DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.NHIS_QUALIFICATION}:
@@ -663,6 +664,11 @@ class LocalOcr:
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
             if detected is None:
                 detected, evidence = pdftext.classify_pages_with_evidence(pages)
+                if detected == DocType.DAILY_WORK_RECORD:
+                    from engine_v2.extractors import daily_work_record
+                    result = _from_nhis(daily_work_record.extract(pages), pages, v2types, evidence, detected)
+                    result.engine = _pages_engine(pages)
+                    return result
                 if detected not in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
                     return None
                 # Coordinate fallback changes classification only. Fields still
@@ -676,6 +682,10 @@ class LocalOcr:
             if detected == DocType.BIZ_REG_PROOF:
                 from engine_v2.extractors import business_registration
                 result = _from_business_proof(business_registration.extract(pages), pages, classified.classification_evidence)
+            elif detected == DocType.DAILY_WORK_RECORD:
+                from engine_v2.extractors import daily_work_record
+                result = _from_nhis(daily_work_record.extract(pages), pages, v2types,
+                                    classified.classification_evidence, detected)
             elif detected in _JOB_DOCS:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
@@ -724,6 +734,13 @@ class LocalOcr:
         if detected == DocType.BIZ_REG_PROOF:
             from engine_v2.extractors import business_registration
             result = _from_business_proof(business_registration.extract(pages), pages, evidence)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
+
+        if detected == DocType.DAILY_WORK_RECORD:
+            from engine_v2.extractors import daily_work_record
+            result = _from_nhis(daily_work_record.extract(pages), pages, v2types, evidence, detected)
             if path.suffix.lower() != ".pdf":
                 _merge_image_heuristics(result, path)
             return result

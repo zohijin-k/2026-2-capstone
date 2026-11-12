@@ -33,6 +33,7 @@ class DocType(str, Enum):
     NHIS_PAYMENT = "nhis_payment"                  # 건강보험료 납부확인서
     NHIS_QUALIFICATION = "nhis_qualification"     # 건강보험 자격확인 통보서
     NHIS_ACQUISITION_LOSS = "nhis_acquisition_loss"  # 건강보험 자격득실확인서
+    DAILY_WORK_RECORD = "daily_work_record"        # 일용근로·노무제공내역서
     INSURANCE_4 = "insurance_4"                    # 4대 사회보험 가입내역 확인서
     BIZ_REG_PROOF = "biz_reg_proof"                # 사업자등록증명
     HEALTH_INSURANCE = "health_insurance"        # 건강보험 자격득실확인서

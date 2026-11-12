@@ -18,7 +18,7 @@ import yaml
 
 from .extractors import nhis_acquisition_loss, nhis_payment, resident_abstract, insurance_4
 from .extractors import exam_docs, interview_confirmation, receipt, nhis_qualification
-from .extractors import business_registration
+from .extractors import business_registration, daily_work_record
 from .extractors import jbai_text
 from .extractors.resident_abstract import kst_today
 from .pipeline.ocr import OcrResult, OcrWord, run_ocr
@@ -42,6 +42,7 @@ EXTRACTORS: dict[DocType, Callable] = {
     DocType.NHIS_QUALIFICATION: nhis_qualification.extract,
     DocType.NHIS_ACQUISITION_LOSS: nhis_acquisition_loss.extract,
     DocType.INSURANCE_4: insurance_4.extract,
+    DocType.DAILY_WORK_RECORD: daily_work_record.extract,
     DocType.BIZ_REG_PROOF: business_registration.extract,
     # 취업지원패키지 추가서류
     DocType.RECEIPT: receipt.extract,
