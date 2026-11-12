@@ -259,3 +259,29 @@ The backend executable contract now covers the complete ingestion lifecycle, opt
 | 8 resident history | `dbe70bd` |
 | 9 regression/review repairs | `951dec9` |
 | 10 specification and review handoff | This documentation commit |
+
+## 후속: 실서류 재현
+
+### Purpose and boundaries
+
+Reproduce the three remaining own-OCR form failures from the exact word geometry in `/tmp/layout_shape3.txt`, then repair demonstrated reader assumptions. Keep this task in user-review status. The user authorizes implementation and a fresh local commit for each ordered stage. Preserve the current branch and all existing expectations. The existing untracked audit directory is excluded.
+
+Read the supplied shape files only. Do not copy their contents into the repository. Author obviously fictitious values with valid dates, matching identities and balanced payment arithmetic, retaining every source box, word boundary, order, confidence, literal bracket label and page size. Route injected own-OCR words through LocalOcr's image path, classification, extraction and validation. Source placeholders cannot establish original dates or original misrecognized letters. Mark those conclusions as 추정.
+
+### Ordered stages
+
+1. Commit this plan before implementation.
+2. Author exact-shape synthetic samples and a LocalOcr image-path helper. Verify the original structural failures and record any arithmetic difference. Commit.
+3. Classify each failed validation as (가) OCR glyph error, (나) segmentation/geometry assumption, (다) rejected normal variation or (라) propagated/other. Record source coordinate ranges and code references. Commit.
+4. Repair the common NHIS confirmation/issuer issue-date selection, including split words/lines, retaining strict uniqueness and request/validity/output-date exclusion. Verify existing text-layer fixtures. Commit.
+5. Investigate recent-five-year coverage against query-period and gap semantics. Fix a demonstrated reader/rule defect only. Otherwise record the unsupported conclusion and retain review. Commit.
+6. Recognize fragmented government-payment group/component headers with observed eight-column order, strict cells and arithmetic. Preserve empty workplace and result contracts. Commit.
+7. Restore both identical-page P18 cases with their original FAIL codes, retain distinct-body variants under separate names, and repair the paging cause if necessary. Commit.
+8. Promote the exact-shape tests to complete/readable expectations except explicitly documented unresolved evidence. Add duplicate/missing issue-date, missing/split headers and one-digit arithmetic-error variants. Commit.
+9. Run the full established engine/backend/scenario/P14 commands, compare counts, review all changes and record outcomes, remaining inference and out-of-scope findings. Commit and leave awaiting user confirmation.
+
+### Verification plan
+
+Baseline revision `f929da5` has engine 1,049 passed / 3 skipped, backend 289 passed, eighteen scenario modules with 1,796 checks / zero failures, and P14's separate eight-form verification. Inspect collection guards before full execution. Use synthetic images/PDFs and isolated temporary storage. Never execute original-document commands. No changes to income, age, residence, subscriber-category rules, resident-number handling or the audit walkthrough are authorized.
+
+Structural reproduction must cover payment group/component/column failures and both NHIS issue-location failures. Balanced synthetic amounts may eliminate `paid_total_matches`; classify that difference from shape evidence without guessing original glyphs. Candidate count zero or multiple, incomplete headers and unreadable/arithmetic-inconsistent money must remain NEEDS_REVIEW. Keep existing numeric correction scope and all required/column/order/sum validations.
