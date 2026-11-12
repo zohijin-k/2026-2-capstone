@@ -407,7 +407,8 @@ def test_image_portal_title_interleaving_retains_existing_uncertainty(tmp_path, 
     assert tool.main(["--slot", "work_proof", "--work-category", "직장가입자",
                       "--self-identity", str(path)]) == 0
     output = capfd.readouterr().out
-    assert "document_status: NEEDS_REVIEW\n" in output
+    assert "document_status: FAIL\n" in output
     assert "reason: UNKNOWN_DOCUMENT_TYPE NEEDS_REVIEW\n" in output
-    assert "blockers: X\n" in output
+    assert "reason: LOW_IMAGE_QUALITY FAIL\n" in output
+    assert "blockers: O\n" in output
     assert_safe(output)

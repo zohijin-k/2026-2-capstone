@@ -443,6 +443,7 @@ def extract(pages, today=None) -> DailyWorkResult:
     selections = [record["selection"] for record in records]
     selection = _selection_summary(selections)
     checks.append(common.Validation("daily_selection_copies_consistent", selection != "CONFLICT"))
+    checks.append(common.Validation("daily_selection_readable", selection in {"ABSENT", "COMPLETE", "PARTIAL"}))
     if selection in {"UNREADABLE", "CONFLICT"}:
         warnings.append("전체 이력 선택 여부를 확실히 읽지 못해 근로 내역의 완전성을 확인해야 합니다.")
     complete = bool(checks) and all(check.passed for check in checks)

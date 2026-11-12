@@ -757,11 +757,11 @@ def submit(application_id: int) -> dict[str, Any]:
 
     blockers = _blockers(app)
     if blockers:
-        eligibility_messages = [item["message"] for item in blockers if item["kind"] == "eligibility"]
+        rejection_messages = [item["message"] for item in blockers if item["kind"] in {"eligibility", "document"}]
         raise HTTPException(
             400,
             f"아직 제출할 수 없습니다. 확인이 필요한 항목이 {len(blockers)}건 있습니다. "
-            + " ".join(eligibility_messages),
+            + " ".join(rejection_messages),
         )
 
     review = _run_review(app)

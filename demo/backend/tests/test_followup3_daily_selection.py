@@ -68,7 +68,9 @@ def test_unreadable_or_conflicting_counts_never_establish_partial_fail(defect):
                 word.text = "(조회기간 총 10개 이력 중 8개 이력 선택 발급 요청)"
     ex, read, result, work = assess(pages)
     assert selection_status(read.fields) in {"UNREADABLE", "CONFLICT"}
-    assert result.status != "FAIL" and "DAILY_RECORDS_PARTIALLY_SELECTED" not in result.codes
+    assert result.status == "NEEDS_REVIEW" and "DAILY_RECORDS_PARTIALLY_SELECTED" not in result.codes
+    assert ex.structure_complete is False
+    assert "REQUIRED_FIELD_UNREADABLE" in result.codes
     assert work.status == "UNDETERMINED" and "WORK_DAILY_SELECTION_UNCONFIRMED" in work.detail_codes
 
 

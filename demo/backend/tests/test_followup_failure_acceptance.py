@@ -85,11 +85,12 @@ def test_sparse_address_document_and_actual_blocker_agree(variant, tmp_path):
     read = convert(pages)
     result = check_document(req(), read, file_format="jpg")
     assert read.image_quality < .6 and read.confidence == .4
-    assert result.status == ("FAIL" if variant == "blank" else "NEEDS_REVIEW")
+    assert result.status == "FAIL"
+    assert next(f.severity for f in result.findings if f.code == "LOW_IMAGE_QUALITY") == "FAIL"
     assert ("MISSING_ADDRESS_DATES" in result.codes) == (variant == "blank")
     row = tool._row(req(), tmp_path / "FAKE.jpg", read, result)
     blockers = document_blockers([req()], [row])
-    assert bool(blockers) == (variant == "blank")
+    assert bool(blockers) is True
 
 
 def test_sparse_address_actual_image_cli_blocks_without_value_output(tmp_path, monkeypatch, capfd, no_db):
