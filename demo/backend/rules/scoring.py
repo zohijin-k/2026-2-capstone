@@ -122,7 +122,16 @@ class ScoringFacts:
     household_size: int | None = None
     #: '25.10~12월 **고지금액** 평균. 실납부액이 아니다 (R5.2).
     monthly_premium: int | None = None
-    insurance_type: str = "직장"
+    insurance_type: str = "모름"
+    #: None supports callers supplying already established pure facts directly.
+    premium_determinable: bool | None = None
+    premium_issue: str | None = None
+    premium_reason_code: str | None = None
+    insurance_evidence: dict[str, dict[str, object]] = field(default_factory=dict)
+    insurance_issue: str | None = None
+    insurance_reason_codes: list[str] = field(default_factory=list)
+    insurance_conflict: bool = False
+    insurance_explicit_conflict: bool = False
     transfer_in_date: date | None = None
     employment_date: date | None = None
     birth_date: date | None = None
