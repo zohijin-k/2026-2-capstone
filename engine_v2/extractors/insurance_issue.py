@@ -57,9 +57,9 @@ def date_shape_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-def select_issue_date(words: list[Word]) -> IssueSelection:
+def select_issue_date(words: list[Word], *, scoped: bool = False) -> IssueSelection:
     selections = []
-    header = [w for w in words if HEADER_TOP <= w.cy <= HEADER_BOTTOM and w.x0 >= LABEL_MIN_X]
+    header = words if scoped else [w for w in words if HEADER_TOP <= w.cy <= HEADER_BOTTOM and w.x0 >= LABEL_MIN_X]
     for anchor in header:
         row = sorted((w for w in header if w.x0 >= anchor.x0 and _same_row(anchor, w)), key=lambda w: w.x0)
         flat = "".join(squash(w.text) for w in row)

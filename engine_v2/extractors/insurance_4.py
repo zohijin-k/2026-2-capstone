@@ -14,7 +14,7 @@ from ..pipeline.layout import Word, line_text, normalize, squash
 from ..pipeline.ocr import OcrResult
 from ..pipeline.preprocess import PageImage
 from ..schemas.models import BBox, DocType, ExtractedField
-from . import nhis_common as common
+from . import nhis_common as common, nhis_forms as forms
 from .resident_abstract import kst_today
 from .format_text import normalize_format_text
 from .insurance_issue import select_issue_date
@@ -115,19 +115,29 @@ def _form_kind(pages) -> str:
     lines = [row for page, result in pages for row in common.page_lines(page, result)]
     if any(common.label_hits([row], ("문서확인번호",)) for row in lines):
         return "government24"
-    output = any(row[0].cy <= 9 and "출력일시" in squash(line_text(row)) for row in lines)
-    purpose = any(row[0].cy <= 18 and any(squash(word.text) == "확인용" for word in row) for row in lines)
-    header = [row for row in lines if 18 <= row[0].cy <= 28]
-    grid = any(common.label_hits([row], ("발급번호",)) and
-               common.label_hits([row], ("발급일시",)) for row in header)
-    identity = any("등록번호" in _identity_label_text(line_text(row)) and
-                   common.label_hits([row], ("성명",)) for row in header)
-    return "portal" if _looks_like_insurance4(pages) and output and purpose and grid and identity else "unknown"
+    grid_rows = _portal_grid_rows(lines)
+    identity_rows = _portal_identity_rows(lines)
+    if len(grid_rows) != 1 or not identity_rows:
+        return "unknown"
+    grid_y = grid_rows[0][0].cy
+    output = any(row[0].cy < grid_y and "출력일시" in squash(line_text(row)) for row in lines)
+    purpose = any(row[0].cy < grid_y and any(squash(w.text) == "확인용" for w in row) for row in lines)
+    return "portal" if _looks_like_insurance4(pages) and output and purpose else "unknown"
+
+
+def _portal_grid_rows(lines):
+    return [row for row in lines if forms.label_hits([row], ("발급번호",)) and
+            forms.label_hits([row], ("발급일시",))]
+
+
+def _portal_identity_rows(lines):
+    return [row for row in lines if "등록번호" in _identity_label_text(line_text(row)) and
+            forms.label_hits([row], ("성명",))]
 
 
 def _portal_identity(words):
     """Read only the right cells of the header's resident-number/name row."""
-    rows = [row for row in common.group_lines(words) if 18 <= row[0].cy <= 28]
+    rows = _portal_identity_rows(common.group_lines(words))
     candidates = []
     for row in rows:
         normalized = [replace(word, text=_identity_label_text(word.text)) for word in row]
@@ -157,10 +167,8 @@ def _portal_identity(words):
 
 def _portal_issue_number(lines):
     candidates = []
-    for row in lines:
-        if not 18 <= row[0].cy <= 28:
-            continue
-        hits = common.label_hits([row], ("발급번호",))
+    for row in _portal_grid_rows(lines):
+        hits = forms.label_hits([row], ("발급번호",))
         end_hits = common.label_hits([row], ("발급일시",))
         if not hits or not end_hits:
             continue
@@ -173,28 +181,44 @@ def _portal_issue_number(lines):
 
 
 def _portal_table_layout(lines):
-    header = [row for row in lines if 28 <= row[0].cy <= 35 and
-              "가입내역" not in squash(line_text(row))]
-    anchors, sources = {}, []
-    for key, label in (("insurance", "내역"), ("name", "성명"), ("category", "가입자종별"),
-                       ("management", "사업장관리번호"), ("workplace", "사업장명칭"),
-                       ("date", "자격취득일"), ("receipt", "신고접수일")):
+    categories = forms.label_hits(lines, ("가입자종별",))
+    if len(categories) != 1:
+        return None
+    category_words = categories[0][1]
+    cy = sum(w.cy for w in category_words) / len(category_words)
+    height = max(w.y1 - w.y0 for w in category_words)
+    header = [row for row in lines if abs(row[0].cy - cy) <= 2 * height]
+    headers, sources = [], []
+    for label in ("내역", "성명", "가입자종별", "사업장관리번호", "사업장명칭", "자격취득일", "신고접수일"):
+        # The management label is stacked vertically; legacy label_hits already
+        # requires overlapping x intervals for that two-word case.
         hits = common.label_hits(header, (label,))
         if len(hits) != 1:
             return None
-        words = hits[0][1]
-        anchors[key] = min(word.x0 for word in words)
-        sources.extend(words)
-    if not (anchors["insurance"] < anchors["name"] < anchors["category"] <
-            anchors["management"] < anchors["workplace"] < anchors["date"]):
+        headers.append(hits[0][1])
+        sources.extend(hits[0][1])
+    header_bottom = max(w.cy for w in sources)
+    body = _portal_body(lines, header_bottom)
+    bounds = forms.table_columns(headers[:6], body)
+    if bounds is None:
         return None
-    if abs(anchors["receipt"] - anchors["date"]) > 5:
+    date_left, date_right = bounds[5:7]
+    if not all(date_left <= w.x0 and w.x1 <= date_right for w in headers[6]):
         return None
-    return max(word.cy for word in sources), anchors
+    # Existing row adapters take left boundaries. Source boundaries are now
+    # observed corridors, including date cells printed above the row label.
+    anchors = dict(zip(("insurance", "name", "category", "management", "workplace", "date"), bounds[:-1]))
+    return header_bottom, anchors
+
+
+def _portal_body(lines, header_bottom):
+    end = min((min(w.cy for w in row) for row in lines
+               if row[0].cy > header_bottom and any(w.text.startswith("▷") for w in row)), default=float('inf'))
+    return [row for row in lines if header_bottom < row[0].cy < end]
 
 
 def _portal_row_cells(words, anchors):
-    bounds = [("name", anchors["name"] - 3, anchors["category"]),
+    bounds = [("name", anchors["name"], anchors["category"]),
               ("category", anchors["category"], anchors["management"]),
               ("management", anchors["management"], anchors["workplace"]),
               ("workplace", anchors["workplace"], anchors["date"])]
@@ -251,6 +275,17 @@ def _page_marker_candidates(lines: list[list[Word]]) -> list[Word]:
                   key=lambda word: (word.cy, word.x0))
 
 
+def _portal_page_marker(lines):
+    sections = [row for row in lines if "가입내역" in squash(line_text(row)) and
+                any("■" in w.text or "발급일자현재기준" in squash(w.text) for w in row)]
+    if len(sections) != 1:
+        return []
+    section = sections[0]
+    labels = [w for w in section if "가입내역" in squash(w.text)]
+    right = max(w.x1 for w in labels)
+    return [w for w in section if w.x0 >= right]
+
+
 def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str]]:
     starts = []
     for index, line in enumerate(lines):
@@ -265,7 +300,7 @@ def _row_starts(lines: list[list[Word]], header_y: float) -> list[tuple[int, str
 
 
 def _row_chunks(lines: list[list[Word]], header_bottom: float,
-                starts: list[tuple[int, str]]) -> list[tuple[str, list[list[Word]]]]:
+                starts: list[tuple[int, str]], *, portal=False) -> list[tuple[str, list[list[Word]]]]:
     """Group full row bands, including date cells printed above the insurance label.
 
     The first band's upper edge is the bottom of the two-line table header. Later
@@ -278,7 +313,7 @@ def _row_chunks(lines: list[list[Word]], header_bottom: float,
     chunks = []
     for i, (_, insurance) in enumerate(starts):
         top = header_bottom if i == 0 else (centers[i - 1] + centers[i]) / 2
-        bottom = (centers[i] + centers[i + 1]) / 2 if i + 1 < len(starts) else 51.5
+        bottom = (centers[i] + centers[i + 1]) / 2 if i + 1 < len(starts) else (float('inf') if portal else 51.5)
         chunk = [line for line in lines if top < line[0].cy <= bottom]
         chunks.append((insurance, chunk))
     return chunks
@@ -322,12 +357,12 @@ def _parse_row(insurance: str, lines: list[list[Word]], anchors: dict[str, float
     if inactive:
         row.status = "미가입"
         if portal:
-            dates = squash(line_text([word for word in words if word.x0 >= anchors["date"] - 3]))
+            dates = squash(line_text([word for word in words if word.x0 >= anchors["date"] - (0 if portal else 3)]))
             row.cells_complete = (all(value in {"", "미가입"} for value in cells.values()) and
                                   dates in {"", "-", "(-)", "미가입"})
         return row
     row.status = "가입"
-    row.date_column_words = [word for word in words if word.x0 >= anchors["date"] - 3]
+    row.date_column_words = [word for word in words if word.x0 >= anchors["date"] - (0 if portal else 3)]
     for word in words:
         text = squash(word.text.strip("()（）"))
         if text in CATEGORY_NAMES:
@@ -415,7 +450,8 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             if not normalized_word.text and any(char.isdigit() for char in source_word.text):
                 source_word.text = ""
         lines = common.group_lines(words)
-        selected_issue = select_issue_date(words)
+        issue_scope = [w for row in _portal_grid_rows(lines) for w in row] if form_kind == "portal" else words
+        selected_issue = select_issue_date(issue_scope, scoped=form_kind == "portal")
         issue = selected_issue.value
         doc_no = issue_number = name = None
         if form_kind == "portal":
@@ -460,7 +496,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     validations.append(common.Validation("page_complete", len(pages) == 1 and bool(all_words)))
     marker_ok = len(headers) == 1 and _page_marker(headers[0]["lines"])
     if form_kind == "portal" and len(headers) == 1:
-        marker = squash("".join(word.text for word in _page_marker_candidates(headers[0]["lines"])))
+        marker = squash("".join(word.text for word in _portal_page_marker(headers[0]["lines"])))
         marker_ok = bool(re.fullmatch(r"1[/／]1", marker))
     validations.append(common.Validation("page_marker_1_of_1", marker_ok))
     if form_kind == "unknown":
@@ -499,8 +535,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             if layout is None:
                 continue
             header_y, anchors = layout
-            starts = _row_starts(lines, header_y)
-            row_chunks = _row_chunks(lines, header_y, starts)
+            body = _portal_body(lines, header_y)
+            starts = [(i, squash(w.text)) for i, row in enumerate(body) for w in row
+                      if squash(w.text) in INSURANCE_NAMES]
+            row_chunks = _row_chunks(body, header_y, starts, portal=True)
         else:
             header_y = _table_header_y(lines)
             starts = _row_starts(lines, header_y if header_y is not None else 33.5)
