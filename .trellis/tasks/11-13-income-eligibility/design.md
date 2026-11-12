@@ -73,3 +73,26 @@ The final engine suite emits two additional dependency deprecation warnings beca
 
 ## Stage commits and handoff
 1 plan58d8ad1;2 A7a83f28;3 B6e61166;4 facts15ecb8d;5 scoringae09ec8;6 finale0f7a1c;7 age636562e;8 regressionsaf5bc57. Stage9 commits this verification/spec/handoff record; tested implementation HEAD is af5bc57. Task status review, awaiting user confirmation; no archive or remote operation.
+
+## 후속: 상태 우선순위·혼합 구간
+
+### Confirmed decisions and plan (before implementation)
+The user's follow-up authorizes implementation and five local commits on the current branch. Keep task status `review` and `awaiting_user_confirmation=true`; no activation/archive, push, PR or audit-document edits. The decisions here supersede the earlier uncertainty-first matrix and workplace/regional-only high bound above. Use synthetic facts and public table limits only; no real-document execution or private-data access.
+
+All status writes in review.py at baseline 69cb07c:
+- :511 and :522 initialize the PASS fallback payload's final status/action from the engine.
+- :526–527 initialize local final/stage2 from engine final/stage2 respectively.
+- :557–560 overwrite both for household/income/age uncertainty or age FAIL: confirmed loss of engine/age FAIL.
+- :577–580 synchronize payload final/action; :591–593 persist final/stage1/stage2 in the new Review.
+- :641–645 in `_append_household_link` overwrite payload final/action and existing Review final/stage2: confirmed loss of either application's FAIL.
+- :702–703 in `_link_overlapping_households` overwrite the current Review again after linking both applications: confirmed redundant downgrade.
+- :724–725 submit uses new review then household linking; :740–745 replaces any old review on submission. Existing overlap updates occur at :689–699, with officer-decision reset retained. No additional status assignment exists in this file.
+- Officer list :444 and detail :882 both use `Entry.ai_status` (:190–192), sourced from Review.final_status. Detail :885–886 reads stored stage2 and payload action. Verify both endpoints after persistence.
+
+1. Commit this plan before source edits.
+2. Introduce one pure status-merge helper in review.py, with FAIL > NEEDS_REVIEW > PASS and absent stage2 treated as no contribution. Merge engine final with household/income/age results; separately merge engine stage2 with the same additional results. Never feed engine final/stage1 into stage2. Use the same helper when appending overlap to both current and previous Review. Remove redundant last-loop assignments. Keep all reasons, overlap links and officer reset; synchronize payload final/action with resolved status. Run existing focused regressions and commit implementation.
+3. In scoring.py use max(workplace, regional, mixed if available) for certain high excess. Above both ordinary bounds but at/below the mixed bound return UNDETERMINED / INCOME_MIXED_POSSIBLE, no percent or certain excess, and explain undefined household mixed rules to the officer. Do not select mixed membership or change the existing middle/low-band logic. Checklist ④ already reads authoritative income_status and the same basis (officer.py:730–737); verify rather than change its policy. Commit implementation.
+4. Add stored-review regressions for age/engine FAIL combined with uncertainty, separate stage1/stage2, uncertainty alone, age alone/all pass, overlap current/previous FAIL and PASS, officer list/detail/payload/action consistency, two/ten-person mixed boundaries, and one-person regional excess. Preserve existing coverage; change only policy-obsolete assertions and record each in changed-test-expectations.md. Commit tests.
+5. Run full engine/backend pytest and every scenario module, compare with 1172 passed/3 skipped, 604 passed, 1851 scenario assertions (17 modules)/0 failures and separate normal P14. Review full diff, update design/changed expectations and backend contract spec; commit verification. Keep unrelated untracked docs/audit/ excluded.
+
+Out of scope: extractors, membership evidence, premium calculation, age criteria, residence, engine/. No new external facts are needed. Synthetic verification cannot establish real-document OCR accuracy (추정/미확인).
