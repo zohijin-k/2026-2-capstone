@@ -287,7 +287,7 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
         # Duplicated pages can invalidate the combined history and cap document
         # confidence. Their independently read page markers still prove a page
         # defect when type and marker evidence are both reliable.
-        history_limited = (ocr.confidence == .4 and
+        history_limited = (ocr.tier == "localocr" and not ocr.fallback_reason and ocr.confidence == .4 and
                            any(name.startswith(("history", "occurred")) for name in failed) and
                            all(name == "pages_complete" or name.startswith(("history", "occurred"))
                                for name in failed))

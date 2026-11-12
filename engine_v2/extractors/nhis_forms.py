@@ -65,7 +65,8 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
                 continue
             if re.fullmatch(r"[\d년월일年月日./\-]+", text):
                 parts.append((word, text))
-            elif re.search(r"\d", text):
+            elif (re.search(r"\d", text) or
+                  re.fullmatch(r"[A-Za-z]{4}[./-][A-Za-z]{1,2}[./-][A-Za-z]{1,2}\.?", text)):
                 return None, [], False
     if not parts:
         return None, [], False

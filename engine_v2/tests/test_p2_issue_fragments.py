@@ -39,14 +39,14 @@ def test_fragmented_issuing_date_with_repeated_notice_organization_is_unique(mon
 
 
 @pytest.mark.parametrize("kind", ["qualification", "acquisition"])
-@pytest.mark.parametrize("defect", ["none", "duplicate", "invalid-second", "output-only", "request-only", "validity-only"])
+@pytest.mark.parametrize("defect", ["none", "duplicate", "invalid-second", "lookalike-second", "output-only", "request-only", "validity-only"])
 def test_missing_competing_or_labeled_nonissue_dates_remain_reviewed(monkeypatch, tmp_path, kind, defect):
     cells, _ = sample.document(kind)
     y = 2726 if kind == "qualification" else 2585
     if defect in {"none", "output-only", "request-only", "validity-only"}:
         cells = [cell for cell in cells if cell[1] != y]
     if defect not in {"none"}:
-        value = {"duplicate": "2026.03.03", "invalid-second": "2026.99.99",
+        value = {"duplicate": "2026.03.03", "invalid-second": "2026.99.99", "lookalike-second": "OOOO.OO.OO",
                  "output-only": "출력일시 2026.03.03", "request-only": "자격확인요청일 2026.03.03",
                  "validity-only": "2026.03.03 까지 유효합니다."}[defect]
         cells.append((1110, y + 65, 1550, y + 115, value, 1))

@@ -353,3 +353,43 @@ Paging now uses marker plus classification confidence only when the document's e
 All three exact-shape authored image tests now explicitly require no failed validations or warnings, complete structure, a required issue date, matching fictitious identity and PASS through normal demo rules. There is no synthetic exception. The documented original acquisition five-year result remains an evidence limitation, separate from the fully specified fictitious dates.
 
 The full new regression set has 52 passing tests. It includes missing/two/invalid issue candidates, year/month/day/unit splits, same-line/same-token dates, labeled output/request/validity dates alongside a genuine issue date, missing/swapped/extra component headers, horizontal/two-line component and group splits, four-line group glyphs, unsupported amount letters and a one-digit arithmetic error. Every uncertain adverse case additionally asserts final NEEDS_REVIEW with no FAIL finding. All numeric correction categories, required checks and column arithmetic remain unchanged.
+
+### Final cause table
+
+Final code references below supersede the provisional stage 3 references. Shape4 confirms the notice substrings, resolving the earlier inference about those particular triggers.
+
+| Form and failed checks | Final classification | Confirmed evidence and disposition |
+| --- | --- | --- |
+| Payment `payment_group_headers` | (다) | Public notices repeat 납부금액 at x144–1906, y2340–2463. `nhis_payment_gov.py:131` confines groups to the metadata/month/component header band. |
+| Payment `payment_component_headers`, `payment_columns` | (라), with (나) variants now covered | Both cascaded from the discarded group. `nhis_payment_gov.py:85`–`:117` reconstructs split comparisons, retains exactly nine ordered heading clusters and body-derived boundaries. |
+| Payment `paid_total_matches` | (라), original monetary glyph identity still 추정 | A failed header grid returned no totals, so the eight-total requirement failed even with balanced values. All column and grand-total checks still execute on a readable grid. Unknown numeric letters remain reviewable. |
+| Qualification `nhis_issue_location_unique` | (다) | Public notice repeats the organization at x165–2085, y3070–3119. `nhis_forms.py:24` distinguishes its issuing anchor and validates the bounded date sequence. |
+| Qualification `발급일_consistent`, `발급일_required` | (라) | Shared selection failure propagated through extractor and final required-field guard. Exact-shape tests and the user's shape4 run now pass. |
+| Acquisition `nhis_issue_location_unique` | (다) | Same organization repeat at x141–2283, y3016–3078. Fixed by the same shared helper. |
+| Acquisition `발급일_consistent`, `발급일_required` | (라) | Same missing-date cascade. Exact-shape tests and the user's shape4 run now have the issue date and complete structure. |
+| Acquisition `recent_five_years_covered` | (라), actual range/valid-looking date error unresolved | The synthetic failure was a missing-issue cascade. The user's later run still fails this single check with complete structure. `nhis_acquisition_loss.py:398`–`:413` requires a sufficient explicit query period or existing oldest-loss/current-span evidence. Original dates are masked, so the actual cause remains 추정. Preserve the rule and report the remaining item. |
+
+### Stage 9 full-scope review
+
+Collection review found only authored temporary inputs in benchmark-named tests. Scenario API stores and databases use existing temporary isolation. The full engine and backend suites and all eighteen existing scenario modules were executed with their normal entry points. P14 continues to verify eight forms separately.
+
+The first full scenario replay found one P15 quality-review regression caused by the new page-confidence exception accepting external OCR's downstream history failures. Restricted that exception to LocalOcr with no fallback reason. Added eight regressions for external/fallback/unrelated-field/lower-confidence cases, each retaining NEEDS_REVIEW and no FAIL. Added two malformed all-letter date-candidate cases during final review. They reject ambiguity without performing numeric or text correction. All original expectations remain present.
+
+The earlier report's “first applicant payment compatibility unverified” meant that the first applicant's payment layout was absent from the supplied shape files. Only existing synthetic/legacy/text-layer payment coverage could be checked for that form. This follow-up's supplied shape still describes the other payment layout. It does not establish first-applicant original-file compatibility.
+
+Original payment OCR glyphs and date values remain unavailable. A corrected-header real payment re-run has not been supplied. The user's shape4 original acquisition still fails only recent-five-year coverage. No evidence justifies changing the existing coverage meaning. No additional out-of-scope defect was established in this follow-up. Scope review confirms that the requested income/category/scoring/adapter, age/residence and resident-number implementations are outside the patch. The audit walkthrough was excluded throughout.
+
+### Final verification results
+
+| Gate | f929da5 baseline | Final | Difference |
+| --- | --- | --- | --- |
+| Engine pytest | 1,049 passed, 3 skipped | 1,103 passed, 3 skipped | +54 passing tests |
+| Backend pytest | 289 passed | 297 passed | +8 passing tests |
+| Scenario modules | 18 modules, 1,796 passed, 0 failures | 18 modules, 1,816 passed, 0 failures | +20 P18 checks |
+| P14 form verification | 8 forms | 8 forms | Retained |
+
+Final commands were `.venv/bin/python -m pytest engine_v2/tests -q`, `.venv/bin/python -m pytest demo/backend/tests -q`, and `.venv/bin/python -m demo.backend.tests.run_pN_..._scenarios` for all eighteen established modules, including P14. Logs are `/tmp/p2-follow-engine-final.log`, `/tmp/p2-follow-backend-final.log`, `/tmp/p2-follow-scenarios-final.log`, per-module `/tmp/p2-follow-run_*.log`, and `/tmp/p2-follow-scenarios-summary.json`. Final per-module counts are P2 53, P3 150, P4 182, P5 152, P6 249, P7 253, P8 89, P9 96, P11 38, P12 29, P13 26, P14 eight forms, P15 129, P16 96, P17 75, P18 176, P19 16 and P20 7.
+
+The three skips were rechecked with `test_own_format_integration.py -rs` and retain the baseline synthetic-font-absent reason at line 26. Python compilation and `git diff --check` pass. Existing pytest expectations and scenario expectations were retained, including both newly restored original P18 cases. There are 62 additional passing pytest cases overall. No configured Python lint/type-check gate exists in the repository.
+
+Final disposition is user confirmation pending (`status=review`, `meta.awaiting_user_confirmation=true`). The nine requested stages each have a fresh local commit. The existing untracked `docs/audit/` remains the only unrelated worktree entry after staging this task's files.

@@ -13,3 +13,17 @@
 - [x] Update applicable form/privacy specifications, final design outcomes and task review status. Commit stage 10.
 
 All tests must use isolated temporary storage. Never run private benchmark data or enumerate the private-data tree. Existing benchmark tests must skip safely if they would access that tree. Review test collection code before the full suite. Keep stage changes independently reviewable, use fresh commits, and keep push/PR actions outside this task.
+
+## Exact-shape follow-up
+
+- [x] Commit the follow-up design before implementation.
+- [x] Preserve every source word and record baseline reproduction limits.
+- [x] Classify each reported failed validation with source/code evidence.
+- [x] Repair shared issuing-date selection and verify split/missing/competing dates.
+- [x] Investigate recent-five-year coverage and retain existing gap/query-period meaning.
+- [x] Confirm embedded notice labels with supplementary shape4, replay baseline failures and repair bounded payment headers.
+- [x] Restore original identical-content P18 cases and retain distinct-body variants.
+- [x] Require complete final synthetic results and adverse-case NEEDS_REVIEW verdicts.
+- [x] Complete final full-suite replay, record baseline comparison and commit stage 9.
+
+The task stays in review awaiting the user's confirmation. Original date/amount glyph conclusions remain limited to the supplied redacted evidence.
