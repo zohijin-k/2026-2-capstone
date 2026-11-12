@@ -215,3 +215,47 @@ The unchanged recent-five-year helper, eligibility thresholds, employment assess
 There are 700 new passing pytest cases overall. Stage 9 contributes 110, including twenty-seven actual upload cases. A separate parent verification passed 241 privacy/review/business tests. The three existing skips retain their missing synthetic-font reason. Compilation and `git diff --check` pass. The repository defines no Python lint/type-check command.
 
 Full results, per-module counts, synthetic fixture corrections and resolved review findings are recorded in `review/final.md`. Final execution logs are `/tmp/p2-review-engine-tests-final.log`, `/tmp/p2-review-backend-tests-final.log`, `/tmp/p2-final-scenarios-summary.json` and `/tmp/p2-final-run_*.log`. Parent verification is `/tmp/p2-root-final-review.log`.
+
+## Stage 10 outcome and handoff
+
+The backend executable contract now covers the complete ingestion lifecycle, optional-column geometry, conservative corrections/arithmetic, payment financial trust/status propagation, thirteen-field business identity, and resident history uncertainty. The backend index points to the expanded contract. The task is in `review` with `awaiting_user_confirmation=true`.
+
+### Current correction locations
+
+| Area | Final source evidence |
+| --- | --- |
+| Central text and complete-batch privacy | `engine_v2/pipeline/privacy.py:31`, `:88`, `engine_v2/pipeline/ocr/__init__.py:38` |
+| Acquisition empty columns, marker and neighbor order | `engine_v2/extractors/nhis_acquisition_loss.py:245`, `:383` |
+| Qualification one-member table and scoped issue date | `engine_v2/extractors/nhis_qualification.py:83`, `engine_v2/extractors/nhis_forms.py:24` |
+| Government payment table, metadata and arithmetic | `engine_v2/extractors/nhis_payment_gov.py:109`, `:192` |
+| Fresh and historical payment uncertainty | `engine_v2/extractors/nhis_payment.py:36`, `demo/backend/rules/facts.py:87`, `demo/backend/engine_adapter.py:207` |
+| Business proof and final identity/required checks | `engine_v2/extractors/business_registration.py:241`, `demo/backend/ocr/localocr.py:226`, `demo/backend/rules/doc_check.py:362` |
+| Resident annotation association and review | `engine_v2/extractors/resident_abstract.py:269`, `demo/backend/ocr/localocr.py:115` |
+
+### Remaining inference
+
+- The original alphabetic amount glyphs, issuer-role omission and oversized business fragments remain 추정. Masked A placeholders cannot identify the source glyph. Unknown numeric characters require review.
+- The resident note geometry reproduces the false alarm, while original ordinal values and their exact real-file sequence remain 추정. Synthetic source geometry accounts for all twenty-nine observed ordinal shapes.
+- Original-file re-execution and the first applicant's payment-layout compatibility remain unverified because the supplied shape files omit that payment layout. Existing earlier-form/text-layer fixtures and P14 eight-form verification pass.
+
+### Existing scope-external behavior
+
+- Missing insurance category still defaults to 직장 at `demo/backend/rules/facts.py:176`. The dedicated reader preserves the absence of printed category evidence. Existing average aliases use the fixed 2025 October–December months at `engine_v2/extractors/nhis_payment.py:312`. These policy/field-meaning choices remain available for user review.
+- The preexisting fixture tier selects predefined synthetic results by basename at `demo/backend/ocr/fixture.py:378`, before the body-based readers, with its documented synthetic identity exemption at `demo/backend/rules/doc_check.py:601`. Actual reader/upload regressions exercise body/coordinates with filenames outside this mapping.
+- Original PDF/image and split-page artifacts retain printed identifiers. Existing uploads are under `demo/storage/documents/<application_no>/<slot_key>/` and `<application_no>/_merged/`. SQLite `demo/demo.db` retains document OCR/findings and review/score payload rows. Aggregate verification found thirty-one document rows and thirty-one populated OCR JSON rows. Historical responses receive read-time masking. Existing originals and rows await user-controlled cleanup.
+
+### Ordered local commits
+
+| Stage | Commit |
+| --- | --- |
+| Planning | `f183c38` |
+| 1 privacy | `890770d` |
+| 2 classification | `7f02099` |
+| 3 common helpers | `5493e8f` |
+| 4 acquisition | `879a075` |
+| 5 qualification | `6c5946d` |
+| 6 payment | `0f3b652` |
+| 7 business proof | `9c7a16a` |
+| 8 resident history | `dbe70bd` |
+| 9 regression/review repairs | `951dec9` |
+| 10 specification and review handoff | This documentation commit |

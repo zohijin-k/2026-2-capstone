@@ -3,9 +3,9 @@
   "name": "p2-real-forms",
   "title": "Own OCR real-form variants and resident-number redaction",
   "description": "Mask resident-number suffixes before persistence, support four own-OCR form variants, preserve strict review and regressions, commit each stage and await user review.",
-  "status": "in_progress",
+  "status": "review",
   "dev_type": null,
-  "scope": null,
+  "scope": "document-ai",
   "package": null,
   "priority": "P2",
   "creator": "codex",
@@ -15,12 +15,27 @@
   "branch": "feat/p2-real-forms",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "951dec9",
   "pr_url": null,
   "subtasks": [],
   "children": [],
   "parent": null,
-  "relatedFiles": [],
-  "notes": "",
-  "meta": {}
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "research/privacy.md",
+    "research/nhis.md",
+    "research/payment-resident.md",
+    "research/business-storage.md",
+    "research/business-results.md",
+    "review/final.md",
+    "review/stages1-5.md",
+    "review/payment.md",
+    "review/business.md"
+  ],
+  "notes": "2026-11-13 요청한 10단계 구현과 로컬 단계별 커밋 완료. 엔진 1049 통과·3 건너뜀, 백엔드 289 통과, 18개 시나리오 1796 통과와 P14 8종 검증. 새 pytest 700건. 마스킹 함수 경계 28곳. 기존 업로드·DB 31개 문서 행 보존. 남은 추정·기존 정책·시험 자료 변경은 design.md와 review/final.md에 기록. 사용자 확인 대기.",
+  "meta": {
+    "awaiting_user_confirmation": true
+  }
 }
