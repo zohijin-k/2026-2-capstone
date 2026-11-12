@@ -96,6 +96,45 @@ npm run dev
 브라우저에서 <http://localhost:5173> 을 연다. 상단 탭으로 **신청자 / 담당자** 화면을
 오간다. Vite가 `/api` 요청을 8000 포트로 프록시하므로 별도 설정은 없다.
 
+### 서류 업로드 시험용 2단계 자동 입력
+
+화면에서 사람이 **1단계 본인인증까지** 마친 뒤, 저장소 루트에서 실행한다.
+기본 대상은 본인인증을 마친 초안 중 2단계가 미완료인 가장 최근 신청 한 건이다.
+
+시드한 신청은 2단계를 다시 저장하지 말 것.
+
+```bash
+PYTHONPATH=. python -B -m demo.backend.tools.seed_application
+PYTHONPATH=. python -B -m demo.backend.tools.seed_application --application-id 123
+PYTHONPATH=. python -B -m demo.backend.tools.seed_application --address '전북특별자치도 익산시 가짜시험로 0 (SEED 가상주소)' --frontend-url http://localhost:5173
+```
+
+실행 후 출력대로 **1단계를 한 같은 탭 주소창에** `http://localhost:5173/apply/upload`를
+입력한다. 이 화면은 같은 탭의 `sessionStorage` 신청 ID를 복원한다. 새 탭이나 다른
+신청의 탭을 열면 도구가 고른 신청을 자동으로 선택하지 않는다. 화면이 이미 열려
+있다면 주소창에서 새로 이동해야 서버에 채운 값을 다시 읽는다.
+
+본인인증 값은 만들거나 바꾸지 않는다. 서식의 중복 성명·생년월일은 인증 값에서
+옮기고, 연락처·이메일·계좌·서명 등은 시험값을 넣는다. 기본 주소는 사업 설정의
+대상 시군에 속하는 가상 주소다. 주소는 실제 제출 심사의 시군 판정에 쓰이며,
+가짜 전입일·취업일·가구원 수는 배점에도 영향을 줄 수 있다. 이 도구는 시험용이다.
+
+근로유형은 **3단계에서 직접 선택**하므로 `--work-category` 옵션은 없다. 정상 연령의
+두배적금 신청에 기존 업로드가 없으면 실행 직후 최종 확인에는 필수 서류 미업로드와
+근로유형 미선택만 남는다. 기존 연령·서류 부적합 차단은 그대로 유지한다.
+
+```bash
+# 이 도구가 표시한 신청과 관련 행·파일만 삭제 (나중에 올린 서류와 최초 인증 서약도 포함)
+PYTHONPATH=. python -B -m demo.backend.tools.seed_application --clean
+# 표시된 신청 한 건만 삭제
+PYTHONPATH=. python -B -m demo.backend.tools.seed_application --clean --application-id 123
+```
+
+이미 2단계를 마친 신청·미인증 신청은 변경하지 않는다. 이 저장소의 기존
+`demo/demo.db` 외의 DB는 거부하며, 오류 시 고정 코드만 출력한다. 정리 표시는
+`form1_json._seed_application`에 저장된다. 서식 내보내기·담당자 응답·검증 결과에는
+노출되지 않지만, 신청자용 원본 GET/PATCH 저장 응답은 기존 계약대로 JSON 전체를 반환한다.
+
 접수된 신청 건이 하나도 없으면 담당자 화면은 **목업 데이터**로 채워진다(상단에 노란
 배너가 뜬다). `?mock=1`로 강제로 켜고 `?mock=0`으로 끈다 —
 [보관된 담당자 화면 목업 기록](../docs/archive/officer-mock-data.md).
