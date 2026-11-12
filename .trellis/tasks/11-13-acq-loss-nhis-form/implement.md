@@ -24,3 +24,5 @@
 5. Recognize C by relative body labels; keep portal issue-number checks separate and group split date occurrences by row spacing.
 6. Add a shared resident-title coordinate fallback and route both LocalOcr paths through existing resident extraction.
 7. Run all engine/backend/scenario tests, review the complete diff, update task evidence and leave review status pending user verification.
+
+All seven follow-up implementation/verification steps are complete. The final documentation step leaves the task in review, awaiting user verification. Evidence and regression causes are recorded in shape-verification.md; no original document values were used.

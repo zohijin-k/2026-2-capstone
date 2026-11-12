@@ -1,3 +1,5 @@
+> Follow-up result: engine 499 passed / 3 skipped; backend 139 passed; scenarios unchanged at 1,796 reported passes, failure 0. New tests 211. See [shape-verification.md](shape-verification.md) for the current evidence; the report below is the prior implementation baseline.
+
 # 최종 검증 — 2026-11-13
 
 ## 결과

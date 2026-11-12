@@ -47,3 +47,6 @@ R8. B 전용 추출과 기존 가구원/가입자 계약, 내부 번호/유효�
 R9. C 오른쪽 신원 셀·관찰된 표·포털 번호·두 날짜와 정확한 미판독 문구를 지원했다.
 R10. PDF의 지정 사진 안내만 제외하고 jpg/png 및 다른 안내를 보존했다.
 R1~R10을 합성 좌표·글자층 PDF·실제 업로드로 검증했다. 전체 결과는 verification.md에 있으며 최종 실패 0, 신규 167건이다. 공고일 당일 통과, 대체 제출 불허, 세 신규 양식 단쪽 전용을 유지했다.
+
+## Shape-derived follow-up acceptance (2026-11-13)
+The user authorized implementation and per-step commits for observed A/B/C token geometry and resident title classification. All follow-up acceptance cases now pass using fictitious word boxes, including final PASS/review behavior. Full totals: engine 499 passed / 3 skipped, backend 139 passed, 18 scenario modules successful with 1,796 reported passes plus P14's 8-form check. New tests: 211. Actual OCR accuracy remains unverified (추정). Status remains review pending user verification; see shape-verification.md for file:line evidence and boundaries.

@@ -3,7 +3,7 @@
   "name": "acq-loss-nhis-form",
   "title": "자격득실확인서 공단 발급 양식 지원",
   "description": "공단 자격득실·자격확인 통보 및 4대보험 포털 양식 지원, 거짓 PASS 수정과 안내 문구 개선. 사용자 구현 승인, 단계별 커밋.",
-  "status": "in_progress",
+  "status": "review",
   "dev_type": null,
   "scope": "document-ai",
   "package": null,
@@ -15,7 +15,7 @@
   "branch": "feat/acq-loss-nhis-form",
   "base_branch": "main",
   "worktree_path": null,
-  "commit": "d26ccfb",
+  "commit": "a8bac17",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -25,10 +25,11 @@
     "design.md",
     "implement.md",
     "research.md",
-    "verification.md"
+    "verification.md",
+    "shape-verification.md"
   ],
-  "notes": "2026-11-13 A/B/C 및 지정 경고 구현·전체 검증 완료. 사용자 확인 대기(review), 완료/아카이브·푸시·PR 없음. verification.md 참조.",
+  "notes": "2026-11-13 실서류 모양 기반 합성 좌표 보강 완료. 엔진 499 통과·3 건너뜀, 백엔드 139 통과, 시나리오 18모듈·1796 통과, 실패 0. 새 시험 211건. 사용자 확인 대기(review), 푸시·PR·아카이브 없음. shape-verification.md 참조.",
   "meta": {
-    "awaiting_user_confirmation": false
+    "awaiting_user_confirmation": true
   }
 }
