@@ -283,6 +283,16 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
         data = json.loads(ocr.fields["쪽표기자료"])
         markers = data["markers"]
         confidence = min(float(data["confidence"]), ocr.confidence)
+        failed = {name.strip() for name in ocr.fields.get("판독검증실패", "").split(",") if name.strip()}
+        # Duplicated pages can invalidate the combined history and cap document
+        # confidence. Their independently read page markers still prove a page
+        # defect when type and marker evidence are both reliable.
+        history_limited = (ocr.confidence == .4 and
+                           any(name.startswith(("history", "occurred")) for name in failed) and
+                           all(name == "pages_complete" or name.startswith(("history", "occurred"))
+                               for name in failed))
+        if history_limited:
+            confidence = min(float(data["confidence"]), ocr.classification_confidence)
         if (not markers or len(markers) != ocr.page_count
                 or not confidence >= engine_config.OCR_CONFIDENCE_THRESHOLD):
             return [unreadable]

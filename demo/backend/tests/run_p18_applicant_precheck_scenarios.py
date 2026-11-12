@@ -82,8 +82,10 @@ def test_pages(tmp):
         "two": ([resident_words("1/2"), resident_words("2/2", index=1)], "PASS", None),
         "missing": ([resident_words("1/2")], "FAIL", "PAGES_INCOMPLETE"),
         "unread": ([resident_words("읽기불가")], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
-        "duplicate-missing": ([resident_words("1/2"), resident_words("1/2", index=1)], "FAIL", "PAGES_INCOMPLETE"),
-        "duplicate": ([resident_words(), resident_words(index=1)], "FAIL", "PAGES_DUPLICATED"),
+        "duplicate-missing": ([resident_words("1/2"), resident_words("1/2")], "FAIL", "PAGES_INCOMPLETE"),
+        "duplicate-missing-distinct-body": ([resident_words("1/2"), resident_words("1/2", index=1)], "FAIL", "PAGES_INCOMPLETE"),
+        "duplicate": ([resident_words(), resident_words()], "FAIL", "PAGES_DUPLICATED"),
+        "duplicate-distinct-body": ([resident_words(), resident_words(index=1)], "FAIL", "PAGES_DUPLICATED"),
         "totals": ([resident_words("1/2"), resident_words("2/3", index=1)], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
         "partly-unread": ([resident_words("1/2"), resident_words("읽기불가", index=1)], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
         "out-of-range": ([resident_words("2/1")], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
@@ -100,6 +102,14 @@ def test_pages(tmp):
             review(name, result, code)
         if name == "missing":
             check("누락 문구 N/M", "2쪽 중 1쪽" in result.findings[0].message, True)
+    for name in ("duplicate-missing", "duplicate"):
+        original = results[name]
+        low_type = replace(original, classification_confidence=engine_config.OCR_CONFIDENCE_THRESHOLD - .01)
+        review(name + " 낮은 종류 신뢰도", check_document(req, low_type, identity=IDENTITY), "PAGES_UNREADABLE")
+        data = json.loads(original.fields["쪽표기자료"])
+        data["confidence"] = engine_config.OCR_CONFIDENCE_THRESHOLD - .01
+        low_page = replace(original, fields=dict(original.fields, 쪽표기자료=json.dumps(data)))
+        review(name + " 낮은 쪽 신뢰도", check_document(req, low_page, identity=IDENTITY), "PAGES_UNREADABLE")
     low_marker = resident_words("1/2")
     next(w for w in low_marker if w.text == "1/2").confidence = engine_config.OCR_CONFIDENCE_THRESHOLD - 0.01
     review("낮은 쪽표기 신뢰도", check_document(req, read_fake(tmp, "low-marker", [low_marker]), identity=IDENTITY), "PAGES_UNREADABLE")
