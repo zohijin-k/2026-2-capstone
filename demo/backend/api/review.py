@@ -13,6 +13,7 @@
 """
 
 import math
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -48,7 +49,7 @@ from ..rules.household import overlap_members, qualification_members
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria, supplement_for_application
 from ..rules.programs import DOUBLE_SAVINGS, JOB_PACKAGE, ProgramConfig, get_program
-from ..rules.required_docs import upload_slots
+from ..rules.required_docs import DocRequirement, upload_slots
 from ..rules.scoring import ScoreSheet, score_application
 from ..rules.subsidy import get_limit
 from .common import (
@@ -110,6 +111,42 @@ def _has_value(value: Any) -> bool:
     if isinstance(value, list):
         return len(value) > 0
     return bool(str(value or "").strip())
+
+
+def document_blockers(
+    checklist: Sequence[DocRequirement], documents: Sequence[Document],
+) -> list[dict[str, Any]]:
+    """Project missing/failed upload blockers without application lookups."""
+    items: list[dict[str, Any]] = []
+    by_slot = {d.slot_key: d for d in documents}
+
+    for req in upload_slots(checklist):
+        doc = by_slot.get(req.slot_key)
+        if doc is None:
+            if req.required:
+                items.append(
+                    {
+                        "kind": "document",
+                        "target": req.slot_key,
+                        "label": req.label,
+                        "message": f"'{req.label}'을(를) 아직 올리지 않았습니다.",
+                        "goto": "upload",
+                    }
+                )
+            continue
+        if doc.stage1_status == "FAIL":
+            reason = (doc.findings_json or [{}])[0].get("message", "부적합 판정입니다.")
+            items.append(
+                {
+                    "kind": "document",
+                    "target": req.slot_key,
+                    "label": req.label,
+                    "message": reason,
+                    "goto": "upload",
+                }
+            )
+
+    return items
 
 
 def _blockers(app: Application) -> list[dict[str, Any]]:
@@ -208,33 +245,7 @@ def _blockers(app: Application) -> list[dict[str, Any]]:
     documents = list_documents(app.id or 0)
     criteria_version = for_application(app)
     criteria = read_criteria(criteria_version)
-    by_slot = {d.slot_key: d for d in documents}
-
-    for req in upload_slots(checklist):
-        doc = by_slot.get(req.slot_key)
-        if doc is None:
-            if req.required:
-                items.append(
-                    {
-                        "kind": "document",
-                        "target": req.slot_key,
-                        "label": req.label,
-                        "message": f"'{req.label}'을(를) 아직 올리지 않았습니다.",
-                        "goto": "upload",
-                    }
-                )
-            continue
-        if doc.stage1_status == "FAIL":
-            reason = (doc.findings_json or [{}])[0].get("message", "부적합 판정입니다.")
-            items.append(
-                {
-                    "kind": "document",
-                    "target": req.slot_key,
-                    "label": req.label,
-                    "message": reason,
-                    "goto": "upload",
-                }
-            )
+    items.extend(document_blockers(checklist, documents))
 
     # 근로확인서류가 있는 사업에서만 근로유형을 묻는다. 취업패키지는 근로요건이
     # 없으므로 이 항목 자체가 없다.
