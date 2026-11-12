@@ -15,7 +15,7 @@
 | 기준은 코드 밖에 둔다 | 발급일 유효기간, 나이, 거주기간 등은 `rulepacks/*.yaml`에 둔다. 공고가 바뀌어도 코드는 안 바뀐다. |
 | 출력은 두 갈래 | 신청자용(적합/부적합 + 보완 안내)과 담당자용(근거·신뢰도·배점)을 분리한다. **배점은 존재 자체가 대외비**이므로 신청자용 출력에 절대 포함하지 않는다. |
 | 모르면 사람에게 | 신뢰도가 낮거나 판단 불가하면 억지로 판정하지 않고 `검토필요`로 보낸다. |
-| 실서류 전송은 제한한다 | 승인되지 않은 외부 API로 실제 서류를 보내지 않는다. 전북AI는 명시적 설정과 기관 확인 범위 안에서만 연결한다. |
+| 실서류 전송은 제한한다 | 승인되지 않은 외부 API로 실제 서류를 보내지 않는다. 전북AI 연동 코드는 있으나 이번 제출에서는 사용하지 않는다. |
 | 학습보다 평가 | 실제 서류 데이터는 학습용이 아니라 정확도 검증용으로만 쓴다. |
 
 ---
@@ -32,7 +32,7 @@
 ### 1-2. 데이터
 
 - 실제 신청자 서류는 사용하지 않는다 (나루 측 데이터 제공 불가).
-- 팀원 **본인 서류(PDF)** 를 양식 기준으로 사용한다. → `data/private/` 에만 두고 **절대 커밋하지 않는다.**
+- 실서류 보관 위치는 저장소에서 제외되는 내부 전용 폴더다. 실서류와 판독 결과는 커밋하지 않는다.
 - 평가셋은 본인 서류 양식을 본뜬 **합성 서류**로 만든다 (적합 + 의도적 부적합 케이스).
 
 ### 1-3. 가정값 (허브센터/공고 확정 전 임시값)
@@ -218,9 +218,7 @@ x 범위가 겹치는 아래쪽에서 값을 찾는다. 행 표는 페이지마�
 
 ### 초본 판독 점검 (개인정보·서식 값 미기록)
 
-실제 초본은 텍스트 레이어가 없는 이미지 PDF여서 OCR 경로로 처리한다. 전북AI 시험에서는
-서류별 필수 항목·쪽 완전성 검증을 통과하지 못해 로컬 OCR로 대체됐다. 로컬 OCR 경로는
-판독 검증을 통과했다. 실서류 판독 결과의 값과 수치는 이 문서에 기록하지 않는다.
+시험한 초본은 텍스트 레이어가 없는 이미지 PDF여서 OCR 경로로 처리했다. 이번 제출에서는 전북AI를 사용하지 않는다. 실서류 판독 결과의 값과 수치는 이 문서에 기록하지 않는다.
 
 실제 서류와 별도로, 가상 값으로 만든 합성 자료와 가짜 OCR 결과를 사용해 추출기·규칙
 연결을 시험한다. 좌표·라벨 처리와 OCR 신뢰도만으로 정답 여부를 단정하지 않는 설계는
@@ -393,7 +391,7 @@ OCR 엔진 점수만으로 정답 여부를 정하지 않는다. 실측에서 �
 
 공통 어댑터는 `pipeline/ocr/`에 있고 `own.py` 등 엔진별 모듈이 `OcrWord(text, confidence, bbox_px)`를 반환한다. 엔진 비교 도구는 `tools/ocr_bench.py`다. 자체 엔진 설치·모델 출처·평가 범위는 [`docs/own-ocr.md`](docs/own-ocr.md)를 참고한다.
 
-`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`로 다음 엔진을 선택한다. 지정하지 않으면 macOS에서는 Apple Vision, 그 밖의 환경에서는 `own`을 사용한다.
+`engine_v2.engine.run`과 CLI는 `ENGINE_V2_OCR`로 다음 엔진을 선택한다. 지정하지 않으면 macOS에서는 Apple Vision, 그 밖의 환경에서는 `own`을 사용한다. 데모 로컬 OCR은 macOS를 포함한 모든 환경에서 own이 기본이다.
 
 | 값 | 설치 | 서버(리눅스) 배포 | 역할 |
 |---|---|---|---|
@@ -401,60 +399,9 @@ OCR 엔진 점수만으로 정답 여부를 정하지 않는다. 실측에서 �
 | `own` | PP-OCRv5 mobile 검출·한국어 인식 ONNX 변환본, ONNX Runtime CPU; 모델 출처 Apache-2.0 | 가능 | macOS 외 기본값; `python engine_v2/tools/fetch_own_models.py`로 모델 설치 |
 | `easyocr` | EasyOCR 선택 의존성 | 가능 | 비교용 로컬 엔진 |
 | `paddle` | PaddleOCR 선택 의존성 | 가능 | 비교용 로컬 엔진 |
-| `off` | 없음 | 가능 | OCR을 사용하지 않음 |
 
-전북AI OpenAI 호환 OCR은 `pipeline/jbai_ocr.py`의 쪽별 텍스트·표 결과로 받는다.
-기존 `OcrWord`와 달리 bbox가 없고, 표 응답은 HTML 또는 OTSL 토큰이다. `extractors/jbai_text.py`가
-기존 초본·납부확인서·자격득실 추출기의 결과 계약에 맞춰 연결되며, `run(..., ocr_engine="jbai")`로
-선택할 수 있다. `jbai`는 `ENGINE_V2_OCR` 선택값이 아닌 별도 명시 엔진 인자다. 데모는 기관 확인에 따라 `demo/backend/ocr/jbai.py`에서 전북AI를 기본 판독으로 쓰고,
-통신 오류 또는 서류별 필수 항목·판독 검증 실패 시 로컬 OCR로 대체한다. 검증이 통과하면
-환각 점수와 무관하게 전북AI 결과를 사용하고, 잡음 여부는 담당자 화면에 참고 표시한다.
-요청은 `temperature=0`, 기본 `max_tokens=4096`을 사용한다. 토큰 한도는 선택 환경변수
-`JBAI_MAX_TOKENS`로 바꿀 수 있으며, 서버가 요청 옵션을 HTTP 400으로 거부하면 해당 옵션을
-빼고 재요청한다. 모델 특수 토큰은 판독 텍스트에 남기지 않는다. `python -m engine_v2.tools.ocr_bench <합성.pdf> --engines jbai-ocr jbai-table`에서 합성 자료로 엔진을 비교할 수 있고,
-인식 값은 콘솔이나 파일에 출력하지 않는다. 키는 `JBAI_API_KEY` 환경변수에서만 읽고,
-`JBAI_ALLOW_REAL_DOCS`가 true가 아니면 `data/private/` 파일과 데모 업로드는 차단한다.
 
-전북AI OCR은 JPG만 받으므로 전송 이미지는 JPEG다. PDF는 쪽마다 200dpi RGB(알파 없음)로 렌더링해
-품질 95 JPEG로 만들고(`render_pdf_pages_200dpi`), 사진은 EXIF 회전을 반영한 RGB JPEG로 바꾼다
-(`image_file_to_jpeg`, `run_jbai_file_pair`). 32MB 제한은 실제 전송하는 JPEG 바이트로 검사한다.
-응답 원문의 주민등록번호는 받은 즉시 `mask_rrn`으로 성별 자리 뒤 6자리를 지우고, 모델 특수 토큰을
-제거한 텍스트만 `text_lines`·`tables`·`raw_content`에 남긴다(추출기는 생년월일과 성별 자리만 쓴다).
-쪽별 비한국어 문자 비율·반복 줄·이미지 대비 응답 길이를 합산해 잡음 점수를 계산한다.
-이 점수만으로 로컬 OCR로 대체하지는 않는다. 필수 항목이나 서류 내부 검증이 실패할 때
-대체하며, 그때 잡음 기준도 넘은 쪽은 담당자용 사유에 표시한다. 검증에 성공했지만 잡음
-기준을 넘은 결과는 전북AI 판독을 유지하고 담당자 화면에 참고 메모를 붙인다. 값을 출력하는
-도구는 `engine_v2/tools/privacy.py`의 공용 마스커를 쓴다.
-
-가상 값만 넣은 합성 표 이미지로 `OCR:`와 `Table Recognition:`을 각각 호출해 HTTP 200을 확인했다.
-`OCR:` 응답은 `choices[0].message.content`의 일반 문자열이며 줄 사이를 개행으로 나눴고,
-좌표나 bbox는 없었다. 표 작업 응답도 문자열이지만 HTML이 아니라 `<fcel>`, `<lcel>`,
-`<ecel>`, `<ucel>`, `<xcel>`, `<nl>` 구조 토큰을 사용했다. 합성 표의 OTSL을 격자로
-변환해 가로·세로 병합을 복원하고 기존 `JBAITable`의 `rowspan`/`colspan`으로 보존한다.
-응답에 쓸 만한 별도 reasoning 필드는 없었다. 합성 호출은 각각 약 0.6초 걸렸다.
-`python -m engine_v2.tools.extract_check <합성.pdf> --doc resident_abstract --engine jbai --gt <정답.json>`로
-합성 재생 결과를 점검할 수 있다. 실제 서류는 `JBAI_ALLOW_REAL_DOCS=true`를 명시하기 전에는 차단된다.
-기관 제공 엔드포인트의 실제 응답 구조만 가려 확인할 때는
-`python -m engine_v2.tools.jbai_dump <파일.pdf>`를, 합성·승인 자료의 요청 방식 지표를 비교할 때는
-`python -m engine_v2.tools.jbai_bench <파일.pdf> --temperature-zero --gray-contrast --stripes 4 --dpi 300`을 쓴다.
-두 도구 모두 실제 파일 실행 전에 `JBAI_ALLOW_REAL_DOCS=true`를 요구하며 응답 텍스트를 노출하지 않는다.
-
-가려진 구조를 확인할 때는 다음처럼 실행한다. `jbai_dump`는 값이 가려진 응답 구조를 출력하고,
-`jbai_bench`는 응답·이미지를 저장하지 않고 입력 방식별 숫자 지표를 출력한다. 두 도구는
-이름·주소·번호의 한글·한자·숫자 등을 가린다.
-
-```bash
-set -a; source .env; set +a
-JBAI_ALLOW_REAL_DOCS=true python -m engine_v2.tools.jbai_dump "<파일 경로>"
-JBAI_ALLOW_REAL_DOCS=true python -m engine_v2.tools.jbai_bench "<파일 경로>" --temperature-zero --gray-contrast --stripes 4 --dpi 300 --doc resident_abstract
-```
-
-실서류 주민등록초본 시험에서 전북AI 판독 검증을 통과하지 않아 로컬 OCR로 대체된 사례가
-있다. 전북AI 응답에는 bbox가 없어 해당 결과에는 위치 정보가 없다.
-
-비교 지표는 처리시간, 판독 검증, 정답 필드 일치 등이다. 실제 서류의 비교 결과와 값은
-이 공개 문서에 기록하지 않는다. 서류별 엔진은 기관과 협의한 시험 범위에서 실측 비교해
-결정한다.
+전북AI 연동 코드는 `pipeline/jbai_ocr.py`, `extractors/jbai_text.py`, 데모 어댑터 등에 남아 있다. 이번 제출에서의 사용 여부와 데모 판독 체인은 아래 데모 연결 항목을 참고한다.
 
 ### 발견: OCR 신뢰도 ≠ 정답 여부
 
@@ -483,12 +430,7 @@ result = run(application_input)        # 담당자용 전체 (ApplicationResult)
 view = result.to_applicant_view()      # 신청자용 — 판정 + 보완 안내 문구만
 ```
 
-실제 서류로 확인:
-
-```bash
-python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json
-python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input engine_v2/data/private/초본.gt.json --issue-date 2026-01-01   # 오류 시나리오
-```
+개인 서류를 확인하는 경우 입력 위치에는 `<실서류 경로>` 자리표시자만 사용하고, 경로와 결과를 공개 저장소 문서에 기록하지 않는다. 이번 제출에서는 전북AI 설정을 사용하지 않는다.
 
 새 서류 추출기 추가:
 1. `extractors/<서류>.py`에 `extract(pages, today)` 구현 — 반환값은 `detected_type, type_confidence, fields, validations, warnings`를 가진 객체 (`resident_abstract.py` 참고)
@@ -500,50 +442,21 @@ python -m engine_v2.tools.run_engine engine_v2/data/private/초본.pdf --input e
 
 ## 데모 사이트 연결
 
-데모의 OCR 체인은 시연용 고정 응답 다음에 **전북AI 판독**(`demo/backend/ocr/jbai.py`)을
-연결하고, 실패하면 `ENGINE_V2_OCR` 선택값을 쓰는 **Tier1.5 로컬 판독**
-(`demo/backend/ocr/localocr.py`)으로 대체한다.
+이번 제출에서는 전북AI를 사용하지 않는다(연동 코드는 있으나 이번 제출에서는 사용하지 않음). 데모의 판독 체인은 시연 고정 응답 → 로컬 OCR → PDF 텍스트다. JBAI_* 설정은 비워 둔다.
 
-```
-Tier1 fixture → Tier1.2 JBAI → Tier1.5 LocalOcr (engine_v2) → Tier2 PdfText → Tier3 Upstage(스텁)
-```
+데모 로컬 OCR은 macOS를 포함한 모든 환경에서 own이 기본이다. 기본 선택에서 own 모델 파일이 없을 때만 easyocr로 대체한다. 명시한 own의 모델 누락·해시 오류·추론 오류에는 다른 엔진으로 대체하지 않는다. macOS에서도 own 모델 설치가 필요하다.
 
-| 파일 | 누가 읽나 |
-|---|---|
-| 시연용 샘플(파일명 일치) | Tier1 |
-| **지원되는 텍스트 레이어 없는 서류·사진** | **Tier1.2 JBAI** — 문서 종류별 판독기와 핵심 검증을 통과하면 사용. 실패하면 Tier1.5 로컬 OCR |
-| 텍스트 PDF · 암호 PDF | Tier2 (경계 기준을 Tier2와 동일하게: 첫 쪽에 글자가 있거나 암호면 Tier2) |
-| 서류 종류를 못 알아본 파일, OCR 엔진 없는 서버 | 기존 계층 그대로 |
+`ENGINE_V2_OCR`에 비어 있지 않은 값이 있으면 데모 엔진 선택에 우선한다. 데모 전용 `off` 값은 OCR을 끈다. `engine_v2.engine.run`과 CLI 선택값은 `own`, `applevision`, `easyocr`, `paddle`이다.
 
-데모 체인 순서는 시연 고정 응답 → 전북AI → 로컬 OCR(선택 엔진) → PDF 텍스트다.
-전북AI가 필수 필드·쪽 완전성 등 문서별 판독 검증을 통과하지 못하면 로컬 OCR로 대체한다.
-환각 점수만으로 결과를 버리지는 않는다. 검증을 통과한 결과에 잡음이 있으면 담당자
-화면의 판독 엔진 줄에 참고 표시한다. 실제 초본 시험은 전북AI 검증에 실패해 현재 로컬
-OCR로 대체되었다. own을 신청 화면 판독 체인의 기본 엔진으로 연결하는 작업은 진행 중이다.
-독립 실행형 `engine_v2.engine.run` 기본값과 데모 어댑터의 암묵 기본값은 구분한다: engine_v2는
-macOS 외에서 own을 기본으로 하고, 데모 어댑터는 own 연결을 마칠 때까지 macOS에서 Apple
-Vision, 그 밖의 환경에서 EasyOCR를 기본으로 한다. 환경변수로 선택 엔진을 지정할 수 있다.
+신청자 화면은 **본인인증 → 서식 작성 → 서류 업로드 → 확인 및 제출** 순이다. 원본 공고 서식 위에서 온라인 작성·서명하고, 서식 목록 위 다운로드 메뉴에서 작성한 서식 PDF 한 파일과 원본 HWP를 받는다. 두배적금 서식5는 종이 작성 후 스캔본 제출을 선택할 수 있다. 담당자는 신청자가 올린 원본 서류를 화면에서만 확인한다.
 
-신청자 화면은 **본인인증 → 서식 작성 → 서류 업로드 → 확인 및 제출** 순이다. 원본 공고
-서식 위에서 온라인 작성·서명하고, 서식 목록 위 다운로드 메뉴에서 작성한 서식 PDF 한 파일과
-원본 HWP를 받는다. 두배적금 서식5는 종이 작성 후 스캔본 제출을 선택할 수 있다. 담당자는
-신청자가 올린 원본 서류를 화면에서만 확인한다.
-
-데모 필드로 넘기는 값: `성명`, `생년월일`, `발급일`, `전입일`(= 전북 연속 거주 시작일, 배점 '도 거주기간'의 근거), `주소변동내역`, `현주소시도`, `판독검증`(서류 내부 검증 n/9 통과) + 각 원본 좌표.
-
-OCR 엔진: `ENGINE_V2_OCR` = `applevision` | `own` | `easyocr` | `paddle` | `off`. `engine_v2.engine.run`/CLI 기본값은 macOS=`applevision`, 그 외=`own`이다. 데모 체인은 시연 고정 응답 → 전북AI → 선택 로컬 OCR → PDF 텍스트 순이며, 데모 비macOS 암묵 기본값은 아직 EasyOCR다.
-
-시나리오 검증은 저장소 루트에서 모든 시나리오를 끝까지 실행한다. 파일 이름 순서상 P11\~P15가 P2\~P9보다 먼저 오므로 실패해도 다음 파일로 계속 간다.
-
-```bash
-for f in demo/backend/tests/run_p*_scenarios.py; do echo "== $f"; python -m demo.backend.tests.$(basename "$f" .py) || echo "FAILED $f"; done
-```
+시나리오 실행 안내는 [개발 안내](../docs/DEVELOPMENT.md)를 참고한다.
 
 ---
 
 ## 진행 상황
 
-엔진 테스트: `python -m pytest engine_v2/tests` (현재 147개).
+엔진 테스트: `python -m pytest engine_v2/tests` (260개 통과, 3개 건너뜀). 맥에는 합성 글꼴이 없어 일부 테스트가 건너뛰어질 수 있다. 시나리오 스크립트 18개에서 1,776개 확인이 통과했다.
 
 - [x] 1. 범위와 가정
 - [x] 2. 입출력 계약 — `schemas/models.py`
@@ -554,20 +467,20 @@ for f in demo/backend/tests/run_p*_scenarios.py; do echo "== $f"; python -m demo
 - [x] 7. OCR 엔진 선택·어댑터 — `ENGINE_V2_OCR` 및 자체 CPU 엔진 `own` 구현
 - [x] 8. 평가 도구 — 합성 평가 세트·글꼴 내려받기·`ocr_bench`
 - [x] 9. 규칙 실행기 (`rules/registry.py`) + 엔진 진입점 (`engine.run`) — 테스트 9개
-- [\~] 데모 연결 — own을 신청 화면 로컬 OCR 기본 엔진으로 연결
+- [x] 데모 로컬 OCR 기본 엔진 연결 — own
 - [ ] 10. 팀 공유 — 추가 서류 추출기를 추출기 형식에 맞추기
 
 ---
 
 ## 본인 서류 점검 방법
 
-PDF를 다른 곳에 올리지 말고 **본인 PC에서**, **저장소 루트에서** 실행한다. 본인 서류는 `engine_v2/data/private/`에 둔다 (커밋 차단됨).
+PDF를 다른 곳에 올리지 말고 **본인 PC에서**, **저장소 루트에서** 확인한다. 실서류 보관 위치는 저장소에서 제외되는 내부 전용 폴더다.
 
 ```bash
 python -m pip install -r engine_v2/requirements.txt
-python -m engine_v2.tools.inspect_pdf engine_v2/data/private/초본.pdf
+python -m engine_v2.tools.inspect_pdf "<실서류 경로>"
 ```
 
 - 텍스트 레이어 유무, 페이지 수, 이미지 수, 암호화 여부를 알려준다.
 - 숫자는 전부 마스킹해서 출력하므로 결과를 팀에 공유해도 된다.
-- `--dump` 옵션을 주면 단어별 좌표를 `data/private/`에 저장한다 (추출 규칙 설계용, 커밋 금지).
+- `--dump` 옵션은 단어별 좌표를 파일로 저장하므로 공개 저장소에 추가하지 않는다.
