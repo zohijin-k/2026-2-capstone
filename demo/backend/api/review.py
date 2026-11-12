@@ -42,6 +42,7 @@ from ..models import (
 )
 from ..rules.facts import build_facts, extract_region, parse_ymd
 from ..rules.age_eligibility import assess_age
+from ..rules.work_continuity import assess_work
 from ..rules.household import overlap_members, qualification_members
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria, supplement_for_application
@@ -554,10 +555,20 @@ def _run_review(app: Application) -> Review:
             "message": age.basis,
             "doc_type": None,
         })
+    work = assess_work(program, datetime.fromisoformat(criteria["announcement_date"]).date(),
+                       (app.doc_context_json or {}).get("work_category"), rows, app.identity_json)
+    if program.has_work_requirement:
+        payload["work_continuity"] = work.as_dict()
+        if work.reason_code:
+            payload.setdefault("reasons", []).append({
+                "stage": "stage2_eligibility", "code": work.reason_code,
+                "detail_codes": work.detail_codes, "message": work.basis, "doc_type": None,
+            })
     additional_statuses = (
         "NEEDS_REVIEW" if household_needs_review else "PASS",
         "NEEDS_REVIEW" if income_needs_review else "PASS",
         age.status,
+        work.review_status,
     )
     final_status = _merge_statuses(final_status, *additional_statuses)
     stage2_status = _merge_statuses(stage2_status, *additional_statuses)
