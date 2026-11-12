@@ -26,6 +26,9 @@ def _positional_page(page, result):
     # e.g. a noisy prefix before spaced 신고일 still locates its whole box.
     comparison = [[replace(w, text=re.sub(r"[^가-힣]", "", w.text)) for w in row]
                   for row in header]
+    if any(squash(line_text(row)).count(label) > 1
+           for row in comparison for label in ("발생일", "신고일")):
+        return unknown
     hits = forms.label_hits(comparison, ("발생일", "신고일"))
     columns = []
     for label in ("발생일", "신고일"):
@@ -44,7 +47,9 @@ def _positional_page(page, result):
             and ("이하여백" in squash(line_text(row)) or
                  ("병역" in squash(line_text(row)) and row[0].x0 < 12) or
                  squash(line_text(row)).startswith(("※", "수수료")))]
-    end = min(ends, default=100)
+    if not ends:
+        return unknown  # Without a table end, numbered footer notes are not rows.
+    end = min(ends)
     body = [w for row in lines for w in row if top < w.cy < end]
     # Any overlapping digit-bearing word, however faint or malformed, vetoes
     # omission. Never use a center-only test that drops a boundary-crossing date.
