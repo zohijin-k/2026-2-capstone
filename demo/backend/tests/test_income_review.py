@@ -67,6 +67,15 @@ def make_application(*, a="확실한 공란", b="확실한 공란", premium=None
             fact = fact_by_type.get(str(req.doc_type), {})
             fields = {"성명": "가상신청", "생년월일": "1999-01-01", "발급일": "2026-04-07",
                       "전입일": "2020-01-01", **fact.get("fields", {})}
+            if req.doc_type == DocType.INSURANCE_4:
+                # Normal review fixtures independently prove work, so income
+                # and age tests keep isolating their intended eligibility rule.
+                fields.update({"양식판독상태":"완전", "가입내역":json.dumps([
+                    {"보험":insurance,"성명":"가상신청","가입자종별":category,
+                     "사업장관리번호":"FAKE-WORKPLACE-000","사업장명칭":"가상사업장",
+                     "자격취득일":"2020-01-01","신고접수일":"2020-01-01","상태":"가입"}
+                    for insurance,category in (("국민연금","사업장가입자"),("건강보험","직장가입자"),
+                                               ("고용보험","근로자"),("산재보험","근로자"))],ensure_ascii=False)})
             row = models.Document(application_id=app.id, slot_key=req.slot_key,
                                   doc_type=str(req.doc_type), expected_doc_type=str(req.doc_type),
                                   file_path="FAKE-document.pdf", file_format="pdf", declared_issue_date=date(2026, 4, 7),

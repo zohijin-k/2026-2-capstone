@@ -25,6 +25,18 @@ def test_both_programs_enforce_inclusive_range_and_checklist_matches_final_reaso
     app.form1_json = {**app.form1_json, "birth": birth.isoformat() if birth else None}
     if birth:
         app.identity_json = {**app.identity_json, "birth": birth.isoformat()}
+        # This test varies a valid shared synthetic identity across age bounds;
+        # keep independent normal work evidence on that same fictitious person.
+        from demo.backend import models
+        from demo.backend.rules.doc_types import DocType
+        from sqlmodel import select
+        with models.get_session() as session:
+            for document in session.exec(select(models.Document).where(
+                    models.Document.application_id==app.id, models.Document.doc_type==str(DocType.INSURANCE_4))).all():
+                document.ocr_json = {**document.ocr_json,"fields":{
+                    **document.ocr_json["fields"],"생년월일":birth.isoformat()}}
+                session.add(document)
+            session.commit()
     review = _run_review(app)
     assert review.final_status == review.stage2_status == review.review_payload_json["final_status"] == expected
     age = review.review_payload_json["age_eligibility"]

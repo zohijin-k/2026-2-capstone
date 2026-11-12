@@ -719,12 +719,13 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
     # 근로요건이 있는 사업에서만 근로기간을 본다. 취업패키지의 자격요건은
     # 사업계획서상 "나이, 거주지 등"이 전부다.
     if program.has_work_requirement:
+        work = ((entry.review.review_payload_json or {}).get("work_continuity") or {}) if entry.review else {}
         rows.append(
             {
                 "key": "work",
                 "label": "③ 근로 — 공고일 기준 계속 근로 중",
-                "ok": not items.get("work", {}).get("incomplete", True),
-                "basis": items.get("work", {}).get("basis", "근로기간을 확인할 수 없습니다."),
+                "ok": work.get("status") == "MET",
+                "basis": work.get("basis", "근로 계속성 판정 근거가 없어 담당자 확인이 필요합니다."),
             }
         )
     if program.has_income_requirement:

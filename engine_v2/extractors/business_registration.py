@@ -94,6 +94,14 @@ def _grid(lines, title, joint_headers):
     title_bottom = max(word.y1 for word in title)
     bottom = min(word.y0 for word in joint_headers)
     region = [row for row in lines if title_bottom < row[0].cy < bottom]
+    first_label = _unique_label(region,ROW_LABELS["상호"])
+    first_top = min((word.y0 for word in first_label),default=0)
+    status_metadata = [row for row in region if row[0].cy < first_top and
+                       _label_hits([row],("사업자상태","영업상태"))]
+    status_ids = {id(word) for row in status_metadata for word in row}
+    lines = [[word for word in row if id(word) not in status_ids] for row in lines]
+    lines = [row for row in lines if row]
+    region = [row for row in lines if title_bottom < row[0].cy < bottom]
     anchors = [_unique_label(region, ROW_LABELS[key]) for key in
                ("사업자등록번호", "등록번호", "사업장소재지", "사업자등록일")]
     if any(not anchor for anchor in anchors):
@@ -285,6 +293,28 @@ def extract(pages, today=None):
     retain("생년월일", birth, birth_words)
     for key in ("개업일", "사업자등록일"):
         retain(key, _date(cells.get(key, [])), cells.get(key, []))
+    # Optional explicit status belongs to the metadata above the business grid.
+    # Never treat closure words in issuer instructions or footer notices as a
+    # status. An observed damaged status label prevents a silent active result.
+    status_label = _unique_label(lines,ROW_LABELS["상호"])
+    status_bottom = min((word.y0 for word in status_label), default=0)
+    status_top = max((word.y1 for word in title), default=0)
+    status_lines = [row for row in lines if status_top < row[0].cy < status_bottom]
+    status_hits = _label_hits(status_lines, ("사업자상태", "영업상태"))
+    if status_hits:
+        status_words = []
+        status = None
+        if len(status_hits) == 1:
+            label = status_hits[0]
+            height = max(word.y1-word.y0 for word in label)
+            status_words = [word for row in status_lines for word in row
+                            if abs(word.cy-_center(label)) <= height*.7 and
+                            word.x0 > max(item.x1 for item in label)]
+            text = squash(_text(status_words)).lstrip(":：")
+            if text in {"휴업", "폐업", "계속사업자", "정상"} and all(word.conf>=.85 for word in label+status_words):
+                status = text
+        retain("사업자상태_상태", "확인" if status else "못 읽음", status_hits[0]+status_words)
+        retain("사업자상태", status, status_words)
     for key in ("업태", "종목"):
         source = cells.get(key, [])
         items = [re.sub(r"\s+", " ", item).strip() for item in _text(source).split("|")]
@@ -331,6 +361,7 @@ def extract(pages, today=None):
     for key, value in values.items():
         source = evidence[key]
         raw = value.isoformat() if key == "생년월일" else _text(source)
-        fields[key] = common.make_field(value, raw, source, page_map, confidence, sources)
+        field_confidence = min(confidence,min((word.conf for word in source),default=0)) if key=="개업일" else confidence
+        fields[key] = common.make_field(value, raw, source, page_map, field_confidence, sources)
     warnings = [] if complete else ["사업자등록증명의 필수 정보 또는 양식 구조를 완전히 확인하지 못했습니다."]
     return Extraction(detected, .95 if title else 0, fields, checks, warnings, structure_complete=complete)
