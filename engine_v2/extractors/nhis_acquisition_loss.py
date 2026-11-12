@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import re
 import json
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -133,7 +134,9 @@ def _parse_history(pages):
             employer = ""
             for word in line:
                 flat = squash(word.text)
-                if "직장" in flat:
+                if "피부양자" in flat:
+                    category = "직장피부양자"
+                elif "직장" in flat:
                     category = "직장"
                 elif "지역" in flat:
                     category = "지역"
@@ -144,11 +147,28 @@ def _parse_history(pages):
     return rows
 
 
-def _five_years_before(day: date) -> date:
+def _five_years_before(day: date, years: int = 5) -> date:
     try:
-        return day.replace(year=day.year - 5)
+        return day.replace(year=day.year - years)
     except ValueError:
-        return day.replace(year=day.year - 5, day=28)
+        return day.replace(year=day.year - years, day=28)
+
+
+def history_covers_recent_years(
+    issue_date: date,
+    period: tuple[date, date] | None,
+    rows: Iterable[tuple[date | None, date | None]],
+    years: int = 5,
+) -> bool:
+    """Apply the NHIS coverage rule to dates from extractor rows or serialized JSON."""
+    cutoff = _five_years_before(issue_date, years)
+    if period:
+        return period[0] <= cutoff and period[1] >= issue_date
+    row_dates = tuple(rows)
+    if any(acquired and acquired <= cutoff and (lost is None or lost >= issue_date)
+           for acquired, lost in row_dates):
+        return True
+    return any(lost and lost < cutoff for _, lost in row_dates)
 
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> AcquisitionLossResult:
@@ -217,16 +237,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     issue = fields.get("발급일")
     issue_date = date.fromisoformat(issue.value) if issue else None
     period, period_words = _query_period(pages)
-    spans_five_years = False
+    spans_five_years = bool(issue_date and history_covers_recent_years(
+        issue_date, period, ((row.acquired, row.lost) for row in rows)
+    ))
     if issue_date:
-        cutoff = _five_years_before(issue_date)
-        if period:
-            spans_five_years = period[0] <= cutoff and period[1] >= issue_date
-        else:
-            spans_five_years = any(row.acquired and row.acquired <= cutoff and
-                                    (row.lost is None or row.lost >= issue_date) for row in rows)
-            if not spans_five_years:
-                spans_five_years = any(row.lost and row.lost < cutoff for row in rows)
         status = "최근 5년 포함" if spans_five_years else "최근 5년 미포함"
         fields["변동내역"] = common.make_field(status, status, period_words or
             next((row.words for row in rows if row.acquired), []), page_map,

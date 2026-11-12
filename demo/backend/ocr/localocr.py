@@ -199,6 +199,17 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
+    if detected == DocType.NHIS_ACQUISITION_LOSS and "변동내역" in fields:
+        covered = next((validation.passed for validation in validations
+                        if validation.name == "recent_five_years_covered"), None)
+        history_text = fields.get("자격이력자료")
+        if type(covered) is bool and history_text:
+            try:
+                history = json.loads(history_text)
+                history["recent_five_years_covered"] = covered
+                fields["자격이력자료"] = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
+            except (TypeError, ValueError):
+                pass
     issue = ex.fields.get("발급일")
     issue_date = None
     if issue:
