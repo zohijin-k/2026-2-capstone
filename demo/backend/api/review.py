@@ -493,35 +493,12 @@ def _run_review(app: Application) -> Review:
         program=program,
         # 소득요건이 없는 사업은 소득값을 넘기지 않는다. 엔진 2단계가 소득분위
         # 검사를 건너뛴다.
-        income_percent=sheet.income_percent if sheet else None,
+        income_percent=sheet.income_percent if sheet and program.has_income_requirement else None,
+        income_over_limit=sheet.income_over_limit if sheet and program.has_income_requirement else None,
     )
     result = run_pipeline(applicant, to_engine_documents(rows), checklist_for(app))
     payload = inject_file_refs(result.review_payload, rows)
 
-    household_needs_review = bool(
-        program.selection == "scored" and facts.household_size_issue
-    )
-    if household_needs_review:
-        if payload is None:
-            payload = {
-                "applicant_id": app.application_no,
-                "name": applicant.name,
-                "program": applicant.program,
-                "submitted_at": datetime.now().isoformat(timespec="seconds"),
-                "final_status": "NEEDS_REVIEW",
-                "documents": [],
-                "reasons": [],
-                "recommended_action": "담당자 재검토 필요",
-            }
-        payload["final_status"] = "NEEDS_REVIEW"
-        payload["recommended_action"] = "담당자 재검토 필요"
-        reasons = payload.setdefault("reasons", [])
-        reasons.append({
-            "stage": "stage2_eligibility",
-            "code": "HEALTH_INSURANCE_HOUSEHOLD_SIZE_UNCONFIRMED",
-            "message": facts.household_size_issue,
-            "doc_type": str(DocType.NHIS_QUALIFICATION),
-        })
     if payload is None:
         # PASS면 엔진이 payload를 만들지 않는다. 담당자 화면은 항상 같은 모양을
         # 기대하므로 최소 형태로 채워 둔다.
@@ -545,6 +522,31 @@ def _run_review(app: Application) -> Review:
         }
         inject_file_refs(payload, rows)
 
+    final_status = result.status.value
+    stage2_status = result.stage2.status.value if result.stage2 else None
+    household_needs_review = bool(program.has_income_requirement and facts.household_size_issue)
+    income_needs_review = bool(
+        program.has_income_requirement and (sheet is None or sheet.income_status == "UNDETERMINED")
+    )
+    if household_needs_review:
+        payload.setdefault("reasons", []).append({
+            "stage": "stage2_eligibility",
+            "code": "HEALTH_INSURANCE_HOUSEHOLD_SIZE_UNCONFIRMED",
+            "message": facts.household_size_issue,
+            "doc_type": str(DocType.NHIS_QUALIFICATION),
+        })
+    if income_needs_review:
+        income_item = next((item for item in sheet.items if item.key == "income"), None) if sheet else None
+        payload.setdefault("reasons", []).append({
+            "stage": "stage2_eligibility",
+            "code": "INCOME_UNDETERMINED",
+            "detail_codes": sheet.income_reason_codes if sheet else ["INCOME_SCORE_UNAVAILABLE"],
+            "message": income_item.basis if income_item else "소득 요건 판정 근거를 확인하지 못했습니다.",
+            "doc_type": str(DocType.NHIS_PAYMENT),
+        })
+    if household_needs_review or income_needs_review:
+        final_status = stage2_status = "NEEDS_REVIEW"
+
     if facts.household_size_form_mismatch:
         form_count, certificate_count = facts.household_size_form_mismatch
         reference_note = {
@@ -560,21 +562,23 @@ def _run_review(app: Application) -> Review:
             "doc_type": str(DocType.NHIS_QUALIFICATION),
         })
 
+    payload["final_status"] = final_status
+    payload["recommended_action"] = {
+        "PASS": "자동 승인", "FAIL": "반려/보완요청 안내", "NEEDS_REVIEW": "담당자 재검토 필요",
+    }[final_status]
+
     # 보완이 허용되는 사업에서 미비가 남은 채로 접수되면, 그 순간부터 기한이 돈다.
     # (추진체계: 지원대상자 및 서류보완 안내(1차) → 7일 내 서류 보완안내)
     supplement_deadline: datetime | None = None
     supplement = supplement_for_application(app)
-    if supplement["allowed"] and result.status.value != "PASS":
+    if supplement["allowed"] and final_status != "PASS":
         supplement_deadline = datetime.now() + timedelta(days=supplement["days"] or 0)
 
     return Review(
         application_id=app.id or 0,
-        final_status="NEEDS_REVIEW" if household_needs_review else result.status.value,
+        final_status=final_status,
         stage1_status=result.stage1.status.value,
-        stage2_status=(
-            "NEEDS_REVIEW" if household_needs_review
-            else result.stage2.status.value if result.stage2 else None
-        ),
+        stage2_status=stage2_status,
         score_json=mask_data(sheet.as_dict()) if sheet else {},
         total_score=sheet.total if sheet else None,
         tiebreak_json=mask_data(sheet.tiebreak) if sheet else [],

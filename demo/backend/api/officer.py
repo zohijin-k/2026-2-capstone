@@ -695,7 +695,6 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
     form1 = entry.app.form1_json or {}
     birth = parse_ymd(form1.get("birth"))
     low, high = program.birth_range
-    percent = score.get("income_percent")
 
     #: 점수제 사업은 심사표 근거를, 선착순 사업은 신청서 입력값을 근거로 쓴다.
     age_basis = items.get("age", {}).get("basis") or (
@@ -740,7 +739,7 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
             {
                 "key": "income",
                 "label": "④ 소득 — 가구 기준 중위소득 140% 이하",
-                "ok": percent is not None and not score.get("income_over_limit"),
+                "ok": score.get("income_status") == "MET",
                 "basis": items.get("income", {}).get("basis", "소득을 확인할 수 없습니다."),
             }
         )
