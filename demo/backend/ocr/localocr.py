@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -176,6 +177,39 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     )
 
 
+def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
+    """Keep acquisition-loss completeness true after final header-value safety."""
+    if result.detected_doc_type != DocType.NHIS_ACQUISITION_LOSS or result.tier == "fixture":
+        return result
+    from engine_v2.pipeline.field_safety import remove_header_only_fields
+
+    for key in remove_header_only_fields(result.fields):
+        result.bboxes.pop(key, None)
+    missing = []
+    for label in ("성명", "생년월일", "발급일"):
+        value = str(result.fields.get(label) or "").strip()
+        valid = bool(value)
+        if label != "성명":
+            try:
+                date.fromisoformat(value[:10])
+            except ValueError:
+                valid = False
+        if not valid:
+            missing.append(label)
+    if not missing:
+        return result
+    failed = [value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()]
+    added = [f"{label}_required" for label in missing if f"{label}_required" not in failed]
+    counts = re.fullmatch(r"(\d+)/(\d+) 통과", result.fields.get("판독검증", ""))
+    passed, total = (int(counts[1]), int(counts[2])) if counts else (0, 0)
+    result.fields["판독검증"] = f"{passed}/{total + len(added)} 통과"
+    result.fields["판독검증실패"] = ", ".join([*failed, *added])
+    result.confidence = min(result.confidence, 0.4)
+    if "발급일" in missing:
+        result.issue_date = None
+    return result
+
+
 def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
                detected_override: DocType | None = None) -> OcrResult:
     """engine_v2 건강보험 판독 결과를 신청자·담당자 화면 계약으로 옮긴다."""
@@ -223,7 +257,7 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
             issue_date = date.fromisoformat(str(issue.value)[:10])
         except ValueError:
             pass
-    return OcrResult(
+    return ensure_nhis_required_fields(OcrResult(
         detected_doc_type=detected,
         confidence=round(min(confidence, ex.type_confidence), 2),
         image_quality=_quality([page for page, _ in pages]),
@@ -234,7 +268,7 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         tier=NAME,
         classification_evidence=classification_evidence,
         classification_confidence=0.95 if detected else 0.0,
-    )
+    ))
 
 
 def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:

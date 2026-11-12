@@ -302,6 +302,7 @@ def check_document(
     `identity`(본인인증 결과)가 있으면 서류의 성명·생년월일이 본인 것인지 대조한다.
     """
     findings: list[CheckFinding] = []
+    nhis_review_needed = False
 
     # 종류 판별이 끝나지 않았거나 다른 지원 서류로 판명되면 여기서 끝낸다.
     # 그 파일과 무관한 발급일·필수 항목 경고를 뒤에 붙이지 않는다.
@@ -339,6 +340,27 @@ def check_document(
             if type_confidence < engine_config.OCR_CONFIDENCE_THRESHOLD:
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
+
+    if (not ocr.is_encrypted and ocr.tier != "fixture"
+            and ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS):
+        missing = []
+        for label in ("성명", "생년월일", "발급일"):
+            value = str(ocr.fields.get(label) or "").strip()
+            valid = bool(value)
+            if label != "성명":
+                try:
+                    date.fromisoformat(value[:10])
+                except ValueError:
+                    valid = False
+            if not valid:
+                missing.append(label)
+        if missing:
+            nhis_review_needed = True
+            findings.append(_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                "자격득실확인서의 필수 정보를 읽지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="·".join(missing),
+            ))
 
     # 2) 엔진 단건 검사 — 암호/화질/서명/발급일/입력일 대조/신뢰도.
     engine_doc = to_engine_document(req, ocr, declared_issue_date, file_format, req.date_basis)
@@ -551,6 +573,15 @@ def check_document(
                     severity=severity,
                     detail=officer_detail,
                 ))
+        elif ocr.detected_doc_type is DocType.NHIS_ACQUISITION_LOSS and ocr.tier != "fixture":
+            checked, mismatched = compare(identity, ocr.fields)
+            if len(checked) != 2 or mismatched:
+                nhis_review_needed = True
+                findings.append(_finding(
+                    CODE_IDENTITY_UNCERTAIN,
+                    "자격득실확인서의 성명·생년월일을 본인인증 정보와 확인해야 합니다. 담당자가 원본을 확인합니다.",
+                    req,
+                ))
         elif req.doc_type is DocType.RESIDENT_ABSTRACT and ocr.detected_doc_type is DocType.RESIDENT_ABSTRACT and ocr.tier != "fixture":
             if abstract_applicant_missing:
                 pass  # 신청인 칸 미판독은 위에서 인증 여부와 무관하게 확인필요로 기록했다.
@@ -654,6 +685,12 @@ def check_document(
             detail="판독한 주소 이력이 1건뿐이어서 과거 주소 변동사항이 생략됐을 가능성이 있습니다. 부적합으로 단정하지 않습니다.",
         ))
 
+    if nhis_review_needed:
+        # Incomplete or mismatching identity cannot establish this applicant's
+        # eligibility. Retain legacy finding codes while sending them for review.
+        for finding in findings:
+            if finding.severity == "FAIL":
+                _uncertain(finding)
     if any(f.severity == "FAIL" for f in findings):
         status = "FAIL"
     elif any(f.severity == "NEEDS_REVIEW" for f in findings):

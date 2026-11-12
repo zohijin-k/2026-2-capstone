@@ -1,0 +1,51 @@
+"""Authored NHIS acquisition-loss cells; all values are conspicuously fictitious."""
+from engine_v2.pipeline.ocr import OcrResult, OcrWord
+from engine_v2.pipeline.preprocess import PageImage, PageSource
+
+NAME = "가짜이름"
+BIRTH = "1990-01-01"
+ISSUE = "2026-03-03"
+
+
+def acquisition_cells(*, name=NAME):
+    cells = [(5, 4, "1 / 1"), (10, 8, "발급번호 : G000000000000000000"),
+             (25, 12, "건강보험자격득실확인서"), (10, 19, "확인청구자"),
+             (28, 18, "성명"), (55, 18, "주 민 등 록 번 호"),
+             (55, 22, "900101-1******"), (25, 27, "자 격 득 실 확 인 내 역"),
+             (7, 32, "No"), (15, 32, "가입자구분"), (33, 32, "사업장명칭"),
+             (65, 32, "자격취득일"), (81, 32, "자격상실일"),
+             (15, 68, "건강보험 자격득실내역을 위와 같이 확인합니다."),
+             (43, 72, "2026.03.03"), (30, 76, "국민건강보험공단 이사장")]
+    if name:
+        cells.append((28, 22, name))
+    # Deliberately append history after the footer in text insertion order.
+    cells += [(7, 37, "1"), (15, 37, "직장가입자"), (33, 37, "가짜상사 (FAKE,Corp)"),
+              (65, 37, "2024.01.01"), (7, 42, "2"), (15, 42, "지역세대주"),
+              (65, 42, "2020.01.01"), (81, 42, "2024.01.01"),
+              (7, 47, "3"), (15, 47, "직장피부양자"), (33, 47, "가짜센터(가짜사업부)"),
+              (65, 47, "2010.01.01"), (81, 47, "2020.01.01"),
+              (15, 52, "----------"), (33, 52, "이하여백"),
+              (65, 52, "----------"), (81, 52, "----------")]
+    return cells
+
+
+def coordinate_page(cells=None, *, name=NAME):
+    cells = acquisition_cells(name=name) if cells is None else cells
+    words = [OcrWord(t, .99, (x * 10, y * 14, (x + len(t) * .8) * 10, (y + .8) * 14))
+             for x, y, t in cells]
+    page = PageImage(0, PageSource.TEXT_LAYER, (595, 842), pixel_size=(1000, 1400), dpi=250)
+    return page, OcrResult("synthetic", words)
+
+
+def text_pdf(path, cells=None, *, name=NAME):
+    import pymupdf
+    cells = acquisition_cells(name=name) if cells is None else cells
+    with pymupdf.open() as document:
+        page = document.new_page(width=595, height=842)
+        font = pymupdf.Font("cjk")
+        for x, y, text in cells:
+            writer = pymupdf.TextWriter(page.rect)
+            writer.append((x * 5.95, y * 8.42), text, font=font, fontsize=8)
+            writer.write_text(page)
+        document.save(path)
+    return path
