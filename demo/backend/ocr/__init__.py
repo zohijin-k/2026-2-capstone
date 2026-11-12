@@ -15,7 +15,7 @@ from ..rules.doc_types import DocType
 from .base import BBox, OcrAdapter, OcrFallback, OcrResult
 from .fixture import FixtureOcr, fixture_keys
 from .jbai import JbaiOcr
-from .localocr import LocalOcr, ensure_nhis_required_fields
+from .localocr import LocalOcr, ensure_nhis_required_fields, ensure_business_required_fields
 from .pdftext import PdfTextOcr, split_pdf_pages
 from .upstage import UpstageOcr
 
@@ -80,6 +80,7 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
         result.bboxes.pop(key, None)
 
     ensure_nhis_required_fields(result)
+    ensure_business_required_fields(result)
 
     result.fields = mask_data(result.fields)
     result.fallback_reason = mask_rrn(result.fallback_reason)

@@ -359,6 +359,24 @@ def _check_document(
                 _uncertain(finding)
             return CheckResult(status=finding.severity, findings=[finding])
 
+    if (not ocr.is_encrypted and ocr.tier != "fixture" and ocr.detected_doc_type is DocType.BIZ_REG_PROOF):
+        from ..ocr.localocr import ensure_business_required_fields
+
+        ensure_business_required_fields(ocr)
+        if ocr.fields.get("양식판독상태") != "완전":
+            return CheckResult(status="NEEDS_REVIEW", findings=[_finding(
+                CODE_REQUIRED_FIELD_UNREADABLE,
+                "사업자등록증명의 필수 정보 또는 양식을 완전히 확인하지 못했습니다. 담당자가 원본을 확인합니다.",
+                req, field="사업자등록증명 필수 정보",
+            )])
+        checked, mismatched = compare(identity, ocr.fields) if identity is not None else ([], [])
+        if len(checked) != 2 or mismatched:
+            return CheckResult(status="NEEDS_REVIEW", findings=[_finding(
+                CODE_IDENTITY_UNCERTAIN,
+                "사업자등록증명의 대표자 성명·생년월일을 본인인증 정보와 확인해야 합니다. 담당자가 원본을 확인합니다.",
+                req,
+            )])
+
     if (not ocr.is_encrypted and ocr.tier != "fixture"
             and ocr.detected_doc_type is DocType.INSURANCE_4
             and ocr.fields.get("양식판독상태") == "불완전"):
