@@ -1,10 +1,74 @@
 """Independent date-omission evidence; do not use date-dependent parsed history rows."""
 import re
+from dataclasses import replace
 from types import SimpleNamespace
 from statistics import median
 from . import nhis_common as common, nhis_forms as forms
 from ..pipeline.layout import line_text, squash
 from .format_text import normalize_format_text
+
+
+def _positional_page(page, result):
+    """Prove blank observed date columns without depending on parsed history.
+
+    Numbered row anchors distinguish address continuations from separate rows.
+    All geometry remains in page percentages; header comparison alone removes
+    spacing/OCR prefix noise, without changing any source value token.
+    """
+    lines = common.page_lines(page, result)
+    unknown = {"status": "UNDETERMINED", "digits": False}
+    numbers = [w for row in lines for w in row if squash(w.text) == "번호"
+               and w.x0 < 15 and 16 < w.cy < 65 and w.conf >= .85]
+    if len(numbers) != 1:
+        return unknown
+    number = numbers[0]
+    header = [row for row in lines if abs(row[0].cy - number.cy) < 3.5]
+    # e.g. a noisy prefix before spaced 신고일 still locates its whole box.
+    comparison = [[replace(w, text=re.sub(r"[^가-힣]", "", w.text)) for w in row]
+                  for row in header]
+    hits = forms.label_hits(comparison, ("발생일", "신고일"))
+    columns = []
+    for label in ("발생일", "신고일"):
+        boxes = {(min(w.x0 for w in ws), max(w.x1 for w in ws),
+                  min(w.y0 for w in ws), max(w.y1 for w in ws))
+                 for found, ws in hits if found == label}
+        if len(boxes) != 1:
+            return unknown
+        columns.append(next(iter(boxes)))
+    first, second = columns
+    if not (number.x1 < first[0] and
+            (first[0] + first[1]) / 2 < (second[0] + second[1]) / 2):
+        return unknown
+    top = max(number.y1, *(box[3] for box in columns))
+    ends = [min(w.y0 for w in row) for row in lines if row[0].cy > top
+            and ("이하여백" in squash(line_text(row)) or
+                 ("병역" in squash(line_text(row)) and row[0].x0 < 12) or
+                 squash(line_text(row)).startswith(("※", "수수료")))]
+    end = min(ends, default=100)
+    body = [w for row in lines for w in row if top < w.cy < end]
+    # Any overlapping digit-bearing word, however faint or malformed, vetoes
+    # omission. Never use a center-only test that drops a boundary-crossing date.
+    digits = any(re.search(r"\d", normalize_format_text(w.text)) and
+                 any(w.x0 < right and w.x1 > left for left, right, _, _ in columns)
+                 for w in body)
+    if digits:
+        return {"status": "UNDETERMINED", "digits": True}
+    ordinals = sorted([w for w in body if number.x0 <= (w.x0+w.x1)/2 <= number.x1
+                       and re.fullmatch(r"[0-9]{1,3}", w.text) and w.conf >= .9],
+                      key=lambda w: w.cy)
+    row_count = 0
+    for index, ordinal in enumerate(ordinals):
+        row_top = (ordinals[index-1].cy + ordinal.cy)/2 if index else top
+        row_end = (ordinal.cy + ordinals[index+1].cy)/2 if index+1 < len(ordinals) else end
+        address = [w for w in body if row_top < w.cy < row_end
+                   and number.x1 < w.x0 and w.x1 < first[0]]
+        if any(re.search(r"[가-힣]", w.text) for w in address):
+            row_count += 1
+    if row_count < 2:
+        return unknown
+    return {"status": "MISSING", "digits": False, "page": page.page,
+            "rows": row_count, "reason": "rows_without_dates",
+            "basis": "positional_blank_date_columns"}
 
 
 def assess(pages, *, type_confidence):
@@ -31,6 +95,11 @@ def assess(pages, *, type_confidence):
                     title_kinds.add("register")
     if title_kinds != {"abstract"}:
         return unknown
+    positional = [_positional_page(page, result) for page, result in pages]
+    if positional and all(item["status"] == "MISSING" for item in positional):
+        return {"status": "MISSING", "confidence": .95,
+                "pages": [{key: value for key, value in item.items()
+                           if key not in {"status", "digits"}} for item in positional]}
     evidence = []
     any_dates = False
     for page, result in pages:
@@ -77,6 +146,8 @@ def assess(pages, *, type_confidence):
         elif not date_labels:
             return unknown  # Contradictory layout rather than certain option omission.
     if evidence and not any_dates:
+        if any(item["digits"] for item in positional):
+            return unknown
         return {"status": "MISSING", "confidence": .95, "pages": evidence}
     if evidence:
         return unknown
