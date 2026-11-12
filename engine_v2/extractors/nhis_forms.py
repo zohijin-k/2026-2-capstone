@@ -53,62 +53,63 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
 def person_table_header(page, result, anchor: str) -> common.PageHeader:
     """Read only the labeled identity table beside its form-specific anchor."""
     lines = common.page_lines(page, result)
-    hits = common.label_hits(lines, (anchor,))
-    anchors = hits[0][1] if hits else []
-    if not anchors:
+    anchors = label_hits(lines, (anchor,))
+    if len(anchors) != 1:
         return common.PageHeader(page.page)
-    anchor_y = anchors[0].cy
-    headings = [row for row in lines if abs(row[0].cy - anchor_y) <= 3 and
-                common.label_hits([row], ("성명",)) and
-                common.label_hits([row], ("주민등록번호",))]
+    anchor_words = anchors[0][1]
+    anchor_y = sum(w.cy for w in anchor_words) / len(anchor_words)
+    headings = [row for row in lines if label_hits([row], ("성명",)) and
+                label_hits([row], ("주민등록번호",))]
+    headings = [row for row in headings if abs(row[0].cy - anchor_y) <=
+                4 * max(w.y1 - w.y0 for w in row)]
     if len(headings) != 1:
         return common.PageHeader(page.page)
     heading = headings[0]
-    name_words = common.label_hits([heading], ("성명",))[0][1]
-    left = min(word.x0 for word in name_words)
-    top = min(word.y0 for word in heading)
-    bottom = max(word.y1 for word in heading) + 6
-    selected = [word for row in lines for word in row
-                if word.x0 >= left - .5 and top <= word.cy <= bottom]
-    scoped = OcrResult(result.engine, [OcrWord(word.text, word.conf, word.px) for word in selected])
-    header = common.header_for_page(page, scoped)
-    rrn_words = common.label_hits([heading], ("주민등록번호",))[0][1]
-    rrn_left = min(word.x0 for word in rrn_words)
-    heading_bottom = max(word.cy for word in heading)
-    names = []
+    names_label = label_hits([heading], ("성명",))[0][1]
+    rrn_label = label_hits([heading], ("주민등록번호",))[0][1]
+    top = max(w.y1 for w in heading)
+    height = max(w.y1 - w.y0 for w in heading)
+    # The side label can sit between the header and value baselines. Use only
+    # words horizontally overlapping the actual name label, below its baseline.
+    name_left, name_right = min(w.x0 for w in names_label), max(w.x1 for w in names_label)
+    rrn_left, rrn_right = min(w.x0 for w in rrn_label), max(w.x1 for w in rrn_label)
+    section_hits = label_hits(lines, ("자격득실확인내역", "자격확인내역"))
+    bottom = min([top + 6 * height] + [min(w.y0 for w in hit) for _, hit in section_hits
+                                                  if min(w.cy for w in hit) > top])
+    selected = [w for row in lines for w in row
+                if top < w.cy < bottom and
+                (min(w.x1, name_right) > max(w.x0, name_left) or
+                 min(w.x1, rrn_right) > max(w.x0, rrn_left))]
+    header = common.PageHeader(page.page)
+    names, rrns = [], []
     for row in common.group_lines(selected):
-        if row[0].cy <= heading_bottom:
-            continue
-        words = [word for word in row if left - .5 <= word.x0 < rrn_left]
-        if words:
-            value = re.sub(r"[()（）]", "", squash(line_text(words)))
-            name = value if common.NAME_RE.fullmatch(value) and not common.is_header_only_value(value) else None
-            names.append((name, words))
-    # Keep the established merged-label token handling without scanning any
-    # household/body rows outside this small identity table.
-    if header.name and header.name_words and all(word.cy <= heading_bottom for word in header.name_words):
-        names.append((header.name, header.name_words))
+        name_words = [w for w in row if min(w.x1, name_right) > max(w.x0, name_left)]
+        if name_words:
+            value = re.sub(r"[()（）]", "", squash(line_text(name_words)))
+            valid = common.NAME_RE.fullmatch(value) and not common.is_header_only_value(value)
+            # A label is never a name, including a spaced header-only row.
+            names.append((value if valid else None, name_words))
+        rrn_words = [w for w in row if min(w.x1, rrn_right) > max(w.x0, rrn_left)]
+        if rrn_words:
+            value = squash(common.normalize_format_text(line_text(rrn_words)))
+            match = common.MASKED_RRN_RE.fullmatch(value) or common.RRN_RE.fullmatch(value)
+            rrns.append((common.birth_from_rrn(value) if match else None, rrn_words))
+    # Preserve the existing merged label/value contract without scanning body rows.
+    for label_words, values, label in ((names_label, names, "성명"),
+                                        (rrn_label, rrns, "주민등록번호")):
+        text = squash(common.normalize_format_text(line_text(label_words)))
+        suffix = text.partition(label)[2].lstrip(":：")
+        if suffix:
+            if label == "성명":
+                value = suffix if common.NAME_RE.fullmatch(suffix) and not common.is_header_only_value(suffix) else None
+            else:
+                match = common.MASKED_RRN_RE.fullmatch(suffix) or common.RRN_RE.fullmatch(suffix)
+                value = common.birth_from_rrn(suffix) if match else None
+            values.append((value, label_words))
     if len(names) == 1 and names[0][0]:
         header.name, header.name_words = names[0]
-    else:
-        header.name = header.name_words = None
-
-    rrns = []
-    for row in common.group_lines(selected):
-        words = [word for word in row if word.x0 >= rrn_left - .5]
-        text = squash(common.normalize_format_text(line_text(words)))
-        # A label may be merged with its value, but unrelated text or an
-        # overlong mask cannot be discarded around a plausible number.
-        if text.startswith("주민등록번호"):
-            text = text[len("주민등록번호"):].lstrip(":：")
-        if not text:
-            continue
-        match = common.MASKED_RRN_RE.fullmatch(text) or common.RRN_RE.fullmatch(text)
-        rrns.append((common.birth_from_rrn(match.group()) if match else None, words))
-    if len(rrns) == 1 and rrns[0][0] is not None:
+    if len(rrns) == 1 and rrns[0][0]:
         header.birth, header.birth_words = rrns[0]
-    else:
-        header.birth = header.birth_words = None
     return header
 
 

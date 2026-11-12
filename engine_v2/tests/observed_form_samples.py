@@ -45,9 +45,9 @@ def acquisition(*, name=NAME, count=9, long=False):
         cells += [word(47, y, 5 * len(str(i + 1)), str(i + 1), 10),
                   word(63, y, 60 if i == 5 else 50, "직장피부양자" if i == 5 else
                        ("직장가입자" if i % 2 == 0 else "지역세대주"), 10),
-                  word(397, y, 50, f"{2024 - i * 2}.01.01", 10)]
+                  word(397, y, 50, f"{2024 - i * 3}.01.01", 10)]
         if i:
-            cells.append(word(492, y, 50, f"{2026 - i * 2}.01.01", 10))
+            cells.append(word(492, y, 50, f"{2027 - i * 3}.01.01", 10))
         if i % 2 == 0:
             cells += [word(157, y, 40, "가상회사", 10), word(202, y, 20, "센터", 10)]
         if long and i == 5:

@@ -242,7 +242,7 @@ def _nhis_document_number(pages):
 
 
 def _nhis_history(pages):
-    """Split table columns by their anchors; reserve date tokens before employer."""
+    """Split observed body columns; reserve date tokens before employer."""
     rows = []
     checks = []
     markers = []
@@ -256,18 +256,17 @@ def _nhis_history(pages):
             row_cells_read = False
             continue
         header_index, heading = headings[0]
-        anchors = {}
-        for key, label in (("category", "가입자구분"), ("employer", "사업장명칭"),
-                           ("acquired", "자격취득일"), ("lost", "자격상실일")):
-            hit = common.label_hits([heading], (label,))[0][1]
-            anchors[key] = (min(word.x0 for word in hit), max(word.x1 for word in hit))
-        category_left = anchors["category"][0]
-        row_cells_read &= any(word.text.strip() == "No" for word in heading)
-        row_cells_read &= (category_left < anchors["employer"][0] <
-                           anchors["acquired"][0] < anchors["lost"][0])
-        employer_left = (anchors["category"][1] + anchors["employer"][0]) / 2
-        date_left = (anchors["employer"][1] + anchors["acquired"][0]) / 2
-        lost_left = (anchors["acquired"][1] + anchors["lost"][0]) / 2
+        labels = ("No", "가입자구분", "사업장명칭", "자격취득일", "자격상실일")
+        hits = [nhis_forms.label_hits([heading], (label,)) for label in labels]
+        end = next((i for i in range(header_index + 1, len(lines))
+                    if "확인합니다" in squash(line_text(lines[i])) or
+                    "국민건강보험공단" in squash(line_text(lines[i]))), len(lines))
+        body = lines[header_index + 1:end]
+        boundaries = nhis_forms.table_columns([hit[0][1] if len(hit) == 1 else [] for hit in hits], body)
+        if boundaries is None:
+            row_cells_read = False
+            continue
+        _, category_left, employer_left, date_left, lost_left, _ = boundaries
         categories = {"직장가입자", "지역세대주", "지역세대원", "직장피부양자"}
         marker_seen = False
         for line in lines[header_index + 1:]:
