@@ -131,12 +131,19 @@ def test_upload_read_decision(tmp: Path) -> None:
                 check_true(f"판독 계층 localocr {index}", result is not None and result.tier == "localocr")
                 if result is not None:
                     history = json.loads(result.fields["자격이력자료"])
-                    check(f"엔진 5년 불리언 {index}", history.get("recent_five_years_covered"), old_loss)
+                    check(f"엔진 5년 세 상태 {index}", history.get("recent_five_years_covered"),
+                          True if old_loss else None)
+                    check(f"엔진 5년 판단 근거 {index}", history.get("coverage_basis"),
+                          "history_rows" if old_loss else "undetermined")
                     check_true(f"피부양자를 현 직장 취득일로 오인하지 않음 {index}", "취득일" not in result.fields)
                 codes = [finding.get("code") for finding in body.get("findings", [])]
-                expected_missing = not old_loss
                 check(f"NHIS_HISTORY_PERIOD_MISSING {index}",
-                      "NHIS_HISTORY_PERIOD_MISSING" in codes, expected_missing)
+                      "NHIS_HISTORY_PERIOD_MISSING" in codes, False)
+                check(f"NHIS_HISTORY_PERIOD_UNREADABLE {index}",
+                      "NHIS_HISTORY_PERIOD_UNREADABLE" in codes, not old_loss)
+                check_true(f"범위 불확실로 자동 FAIL하지 않음 {index}",
+                           not any(finding.get("severity") == "FAIL" for finding in body.get("findings", [])
+                                   if finding.get("code", "").startswith("NHIS_HISTORY_PERIOD")))
 
         print("\n[2] 기존 JSON(엔진 불리언 없음) 하위 호환")
         for index, old_loss in enumerate((True, False)):
@@ -144,6 +151,9 @@ def test_upload_read_decision(tmp: Path) -> None:
             codes = decision.codes
             check(f"기존 JSON NHIS_HISTORY_PERIOD_MISSING {index}",
                   "NHIS_HISTORY_PERIOD_MISSING" in codes, not old_loss)
+            check_true(f"기존 JSON 범위 불확실은 확인필요 {index}",
+                       all(finding.severity == "NEEDS_REVIEW" for finding in decision.findings
+                           if finding.code == "NHIS_HISTORY_PERIOD_MISSING"))
     finally:
         models.engine.dispose()
         shutil.rmtree(tmp / "storage", ignore_errors=True)
