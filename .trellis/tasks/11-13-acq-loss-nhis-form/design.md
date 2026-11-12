@@ -157,3 +157,8 @@ C 포털은 출력일시·확인용·관찰된 머리 표 좌표의 긍정 단�
 
 ### 5단계 결과
 지정된 사진 안내 첫 두 문장만 PHOTO_RETAKE_GUIDANCE로 분리했다. RETAKE_GUIDANCE 전체 문자열과 다른 안내는 그대로 유지하고, 공개 check_document에서 모든 조기 반환/정상 결과를 받은 뒤 PDF인 경우 message/how_to_fix의 해당 부분만 제거한다. jpg/png 안내는 동일하다. 신규 8건 및 백엔드 집중 48 passed, P2 53/0, P18 156/0.
+
+### 6단계 최종 검증 결과
+실제 TestClient 통합 신규 13건은 직접 판독/expected/비fixture 파일명/저장 OCR 결과 일치, 정상 A/B/C PASS, 세 양식 다쪽 검토, 잘못된 슬롯 유지, A 신원 문제 검토 및 B 기존 짝 규칙을 모두 확인했다.
+전체 최종 명령과 결과: engine_v2 pytest 366 passed/3 skipped/0 failed(기준 260/3/0), demo/backend pytest 61 passed/0 skipped/0 failed(기준 수집 0개), 기존 독립 시나리오 18모듈 모두 exit0. 수치 보고 17모듈 합계 1796 passed/0 failed/0 SKIP, P14는 8개 서식 검증 성공이다. P2 53/0은 이 합계에 포함된다. 기준선 대비 기존 시나리오 결과 차이 없음. 신규 시험 총 167건(엔진 106+백엔드 61). 기존 시험 삭제/완화 없음.
+최종 로그: /tmp/nhis-engine-final.txt, /tmp/nhis-demo-final.txt, /tmp/nhis-demo-scenarios-final.json. 엔진/백엔드 전체를 실행했고 최종 실패는 없다. 경로·양식 추론을 파일명/expected로 우회하지 않았으며 실제 서류는 사용하지 않았다.
