@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   fetchFormLayout,
@@ -611,7 +612,7 @@ export default function PdfFormsWorkspace({
           style={boxStyle}
           aria-label="서명 입력란"
           title="눌러서 서명"
-          onClick={() => setSignatureTarget(key)}
+          onClick={() => { setLocalError(''); setSignatureTarget(key) }}
         >
           {value && <img src={value} alt="입력한 서명" />}
         </button>
@@ -774,7 +775,7 @@ export default function PdfFormsWorkspace({
       {active && currentLayout && (
         <Modal
           title={`${formLabel(active.formNo)} ${active.mode === 'preview' ? '미리보기' : '작성'}`}
-          onClose={() => void saveAndClose()}
+          onClose={() => { if (signatureTarget) setSignatureTarget(null); else void saveAndClose() }}
           variant="viewer"
           footer={active.mode === 'edit' && !readOnly ? (
             <>
@@ -829,29 +830,11 @@ export default function PdfFormsWorkspace({
               )}
             </div>
           </div>
-          {active.mode === 'edit' && !readOnly && active.formNo === '서식5' && (
-            <div className="pdf-form__signature-mode">
-              <strong>서명 방식</strong>
-              <label><input type="radio" checked={signMode === '화면에 서명'} onChange={() => void changeSignMode('화면에 서명')} /> 화면에 서명</label>
-              <label><input type="radio" checked={signMode === '서명 이미지 올리기'} onChange={() => void changeSignMode('서명 이미지 올리기')} /> 서명 이미지 올리기</label>
-            </div>
-          )}
-          {active.mode === 'edit' && !readOnly && signatureTarget && (
+          {active.mode === 'edit' && !readOnly && signatureTarget && active.formNo !== '서식5' && (
             <div className="pdf-form__sign-pad">
               <h4>서명 입력 <button type="button" className="btn" onClick={() => setSignatureTarget(null)}>완료</button></h4>
-              {active.formNo === '서식5' && signMode === '서명 이미지 올리기' ? (
-                <div className="pdf-form__scan-upload">
-                  <label>서명 이미지
-                    <input type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" disabled={readOnly} onChange={(event) => void uploadScan(event.currentTarget.files?.[0], event.currentTarget)} />
-                  </label>
-                  {form5.signatureScanUploaded && <button type="button" className="btn" onClick={() => void removeScan()}>서명 이미지 지우기</button>}
-                </div>
-              ) : (
-                <>
-                  <SignaturePad value={signatureValue(active.formNo)} onChange={(value) => setSignature(active.formNo, value)} width={260} height={90} />
-                  <button type="button" className="btn" onClick={() => setSignature(active.formNo, '')}>서명 다시 하기</button>
-                </>
-              )}
+              <SignaturePad value={signatureValue(active.formNo)} onChange={(value) => setSignature(active.formNo, value)} width={260} height={90} />
+              <button type="button" className="btn" onClick={() => setSignature(active.formNo, '')}>서명 다시 하기</button>
             </div>
           )}
           {active.mode === 'edit' && !readOnly && active.formNo === '서식1' && (
@@ -871,6 +854,39 @@ export default function PdfFormsWorkspace({
           )}
 
         </Modal>
+      )}
+      {active?.mode === 'edit' && active.formNo === '서식5' && !readOnly && signatureTarget && createPortal(
+        <div className="form-signature__overlay" onClick={() => setSignatureTarget(null)}>
+          <div className="form-signature" role="dialog" aria-modal="true" aria-label="서명하기" onClick={(event) => event.stopPropagation()}>
+            <header className="form-signature__head">
+              <h3>서명하기</h3>
+              <button type="button" className="form-signature__close" aria-label="닫기" autoFocus onClick={() => setSignatureTarget(null)}>×</button>
+            </header>
+            <div className="form-signature__tabs" role="group" aria-label="서명 방식">
+              <button type="button" aria-pressed={signMode === '화면에 서명'} className={signMode === '화면에 서명' ? 'is-active' : ''} onClick={() => void changeSignMode('화면에 서명')}>그리기</button>
+              <button type="button" aria-pressed={signMode === '서명 이미지 올리기'} className={signMode === '서명 이미지 올리기' ? 'is-active' : ''} onClick={() => void changeSignMode('서명 이미지 올리기')}>서명 파일 업로드</button>
+            </div>
+            <div className="form-signature__body">
+              {signMode === '화면에 서명' ? (
+                <SignaturePad key={form5.signature ? 'signed' : 'empty'} value={form5.signature} onChange={(value) => setSignature('서식5', value)} width={Math.min(420, Math.max(220, window.innerWidth - 96))} height={210} />
+              ) : (
+                <div className="form-signature__upload">
+                  {form5.signatureScanUploaded ? <img src={signatureValue('서식5')} alt="업로드한 서명 미리보기" /> : <span>JPG 또는 PNG 서명 파일을 올려 주세요.</span>}
+                  <label className="btn" htmlFor="form-signature-file">{form5.signatureScanUploaded ? '다른 파일 선택' : '파일 선택'}</label>
+                  <input id="form-signature-file" type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" onChange={(event) => void uploadScan(event.currentTarget.files?.[0], event.currentTarget)} />
+                </div>
+              )}
+            </div>
+            {localError && <p className="form-signature__error" role="alert">{localError}</p>}
+            <footer className="form-signature__foot">
+              <button type="button" className="btn form-signature__clear" disabled={signMode === '화면에 서명' ? !form5.signature : !form5.signatureScanUploaded} onClick={() => signMode === '화면에 서명' ? setSignature('서식5', '') : void removeScan()}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m3 0-1 13H7L6 7m4 4v6m4-6v6" /></svg>
+                지우기
+              </button>
+              <button type="button" className="btn btn--primary" disabled={signMode === '화면에 서명' ? !form5.signature : !form5.signatureScanUploaded} onClick={() => setSignatureTarget(null)}>확인</button>
+            </footer>
+          </div>
+        </div>, document.body,
       )}
     </section>
   )
