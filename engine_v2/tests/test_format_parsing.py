@@ -208,6 +208,16 @@ def test_ascii_compatibility_against_main_snapshots(kind, factory, digest):
         "type": result.detected_type.value, "type_confidence": result.type_confidence,
         "diagnostics": getattr(result, "diagnostics", {}),
     }
+    if kind is nhis_acquisition_loss:
+        # Assert the new additive contract, then retain the original digest
+        # for every pre-existing field/evidence/confidence/check/warning.
+        evidence = {"recent_five_years_covered": True, "coverage_basis": "query_period",
+                    "coverage_years": 5, "period_label_present": True}
+        for key in ("value", "raw_text"):
+            history = json.loads(snapshot["fields"]["자격이력자료"][key])
+            assert {name: history.pop(name) for name in evidence} == evidence
+            snapshot["fields"]["자격이력자료"][key] = json.dumps(
+                history, ensure_ascii=False, separators=(",", ":"))
     serialized = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, default=str).encode()
     assert hashlib.sha256(serialized).hexdigest() == digest
 

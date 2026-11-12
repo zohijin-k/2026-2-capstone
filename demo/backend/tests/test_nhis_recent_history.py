@@ -86,8 +86,9 @@ def checked(data, *, confidence=.95, quality=.9, years=5):
 
 @pytest.mark.parametrize("boolean", ["absent", True, False])
 @pytest.mark.parametrize("old", [True, False])
-def test_legacy_json_positive_results_preserved_and_uncertain_negatives_reviewed(boolean, old):
-    data = {"period": None, "rows": [
+@pytest.mark.parametrize("empty_period", [None, [], ""])
+def test_legacy_json_positive_results_preserved_and_uncertain_negatives_reviewed(boolean, old, empty_period):
+    data = {"period": empty_period, "rows": [
         {"acquired": "2000-01-01" if old else "2028-01-01",
          "lost": "2010-01-01" if old else "2029-01-01"}]}
     if boolean != "absent":

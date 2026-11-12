@@ -295,7 +295,8 @@ def _nhis_history_coverage(data, issue: date, years: int, structure_complete: bo
             return None, False
     raw_period = data.get("period")
     period = None
-    if raw_period is not None:
+    # Old JSON treated every empty period representation as absent.
+    if raw_period is not None and (has_basis or raw_period):
         if not isinstance(raw_period, (list, tuple)) or len(raw_period) != 2:
             raise ValueError("invalid period")
         period = (date.fromisoformat(raw_period[0]), date.fromisoformat(raw_period[1]))
