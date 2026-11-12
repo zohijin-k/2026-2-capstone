@@ -554,10 +554,13 @@ def _run_review(app: Application) -> Review:
             "message": age.basis,
             "doc_type": None,
         })
-    if household_needs_review or income_needs_review or age.status == "NEEDS_REVIEW":
-        final_status = stage2_status = "NEEDS_REVIEW"
-    elif age.status == "FAIL":
-        final_status = stage2_status = "FAIL"
+    additional_statuses = (
+        "NEEDS_REVIEW" if household_needs_review else "PASS",
+        "NEEDS_REVIEW" if income_needs_review else "PASS",
+        age.status,
+    )
+    final_status = _merge_statuses(final_status, *additional_statuses)
+    stage2_status = _merge_statuses(stage2_status, *additional_statuses)
 
     if facts.household_size_form_mismatch:
         form_count, certificate_count = facts.household_size_form_mismatch
@@ -599,6 +602,13 @@ def _run_review(app: Application) -> Review:
     )
 
 
+def _merge_statuses(*statuses: str | None) -> str | None:
+    """모든 출처 중 엄한 상태를 유지한다. 미실행 단계(None)는 기여하지 않는다."""
+    priority = {"PASS": 0, "NEEDS_REVIEW": 1, "FAIL": 2}
+    return max((status for status in statuses if status is not None),
+               key=priority.__getitem__, default=None)
+
+
 def _append_household_link(
     review: Review,
     other: Application,
@@ -638,11 +648,13 @@ def _append_household_link(
             "matched_members": shared,
         })
     payload["reasons"] = reasons
-    payload["final_status"] = "NEEDS_REVIEW"
-    payload["recommended_action"] = "담당자 재검토 필요"
+    review.final_status = _merge_statuses(review.final_status, "NEEDS_REVIEW")
+    review.stage2_status = _merge_statuses(review.stage2_status, "NEEDS_REVIEW")
+    payload["final_status"] = review.final_status
+    payload["recommended_action"] = {
+        "PASS": "자동 승인", "FAIL": "반려/보완요청 안내", "NEEDS_REVIEW": "담당자 재검토 필요",
+    }[review.final_status]
     review.review_payload_json = mask_data(payload)
-    review.final_status = "NEEDS_REVIEW"
-    review.stage2_status = "NEEDS_REVIEW"
 
 
 def _link_overlapping_households(app: Application, current_review: Review) -> None:
@@ -699,8 +711,6 @@ def _link_overlapping_households(app: Application, current_review: Review) -> No
             s.add(candidate)
             current_changed = True
         if current_changed:
-            current_review.final_status = "NEEDS_REVIEW"
-            current_review.stage2_status = "NEEDS_REVIEW"
             s.commit()
 
 
