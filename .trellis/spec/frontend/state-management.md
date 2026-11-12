@@ -22,7 +22,7 @@ Questions to answer:
 
 ## State Categories
 
-The demo uses React component state for the active applicant and officer screens. Keep only navigation coordinates (mode, application ID, stage, and officer view) in tab-scoped `sessionStorage` so refresh can restore the screen. Fetch application data and consent values from the API when restoring an applicant draft; do not duplicate forms or identity data in browser storage.
+The demo uses React component state for the active applicant and officer screens. Keep the active screen in readable paths such as `/apply/45/identity` and `/officer/province/review/9` so refresh, copied links, and browser history can restore it. Use query parameters only for optional filters and preserve unrelated options such as `mock` and `debug`. Fetch application data and consent values from the API when restoring an applicant draft; do not put forms or identity data in the URL.
 
 ---
 

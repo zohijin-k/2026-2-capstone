@@ -48,6 +48,7 @@ import { CONSENT_OPTIONS } from '../../forms/consent-model.ts'
 import { EMPTY_FORM1, type Form1Value } from '../../forms/form1-model.ts'
 import { EMPTY_FORM5, SIGN_MODES, type Form5Value, type SignMode } from '../../forms/form5-model.ts'
 import type { SelfCheckAnswers } from '../../forms/form2-model.ts'
+import { currentMode, currentParams, routeUrl } from '../../navigation-url.ts'
 import './apply-flow.css'
 
 type Stage =
@@ -60,22 +61,15 @@ type Stage =
   | 'complete'
   | 'mypage'
 
-export const APPLICANT_SESSION_KEY = 'demo-applicant-page'
-
 function savedPage(): { appId: number; stage: Stage; previous: Stage } | null {
-  try {
-    const value = JSON.parse(window.sessionStorage.getItem(APPLICANT_SESSION_KEY) ?? 'null') as
-      { appId?: unknown; stage?: unknown; previous?: unknown } | null
-    const stages: Stage[] = ['identity', 'forms', 'subsidy', 'upload', 'final', 'complete', 'mypage']
-    if (!value || !Number.isSafeInteger(value.appId) || Number(value.appId) <= 0 || !stages.includes(value.stage as Stage)) return null
-    return {
-      appId: Number(value.appId),
-      stage: value.stage as Stage,
-      previous: stages.includes(value.previous as Stage) ? value.previous as Stage : 'identity',
-    }
-  } catch {
-    return null
-  }
+  const params = currentParams()
+  const route = /^\/apply\/([1-9]\d*)\/([a-z]+)\/?$/.exec(window.location.pathname)
+  const appId = Number(route?.[1] ?? params.get('application'))
+  const stage = (route?.[2] ?? params.get('stage')) as Stage
+  const previous = (params.get('from') ?? params.get('previous')) as Stage
+  const stages: Stage[] = ['identity', 'forms', 'subsidy', 'upload', 'final', 'complete', 'mypage']
+  if (!Number.isSafeInteger(appId) || appId <= 0 || !stages.includes(stage)) return null
+  return { appId, stage, previous: stages.includes(previous) ? previous : 'identity' }
 }
 
 type Step = { key: 'identity' | 'forms' | 'upload' | 'final'; label: string }
@@ -112,6 +106,7 @@ function consentTypesOf(program: Program): ConsentType[] {
 
 export default function ApplyFlow() {
   const [initialPage] = useState(savedPage)
+  const initialUrlWrite = useRef(true)
   const [restoring, setRestoring] = useState(initialPage !== null)
   const [program, setProgram] = useState<Program | null>(null)
   const [appId, setAppId] = useState<number | null>(null)
@@ -192,7 +187,7 @@ export default function ApplyFlow() {
         setStageBeforeMypage(initialPage.previous)
       } catch {
         if (!active) return
-        window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
+        if (currentMode() === 'applicant') routeUrl('/', {}, true)
       } finally {
         if (active) setRestoring(false)
       }
@@ -202,12 +197,13 @@ export default function ApplyFlow() {
   }, [initialPage])
 
   useEffect(() => {
-    if (restoring) return
+    if (restoring || currentMode() !== 'applicant') return
     if (appId === null || stage === 'program') {
-      window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
+      routeUrl('/', {}, true)
     } else {
-      window.sessionStorage.setItem(APPLICANT_SESSION_KEY, JSON.stringify({ appId, stage, previous: stageBeforeMypage }))
+      routeUrl(`/apply/${appId}/${stage}`, stage === 'mypage' ? { from: stageBeforeMypage } : {}, initialUrlWrite.current)
     }
+    initialUrlWrite.current = false
   }, [appId, stage, stageBeforeMypage, restoring])
 
   const reportFormProgress = useCallback((completed: number, total: number) => {

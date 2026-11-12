@@ -7,7 +7,7 @@
  * 인증이 아니라 절차 구조를 시연하는 것이 목적이다.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   fetchOfficerList,
@@ -24,10 +24,13 @@ import ReviewDetail from './ReviewDetail.tsx'
 import CriteriaEditor from '../../components/CriteriaEditor.tsx'
 import { Skeleton, SkeletonBlock, SkeletonLine } from '../../components/Skeleton.tsx'
 import useDelayedFlag from '../../hooks/useDelayedFlag.ts'
+import { currentMode, currentParams, routeUrl } from '../../navigation-url.ts'
 import './officer.css'
 
 const DEFAULT_QUERY: OfficerListQuery = { role: 'province', page: 1, page_size: 20 }
-const OFFICER_SESSION_KEY = 'demo-officer-page'
+const QUERY_KEYS = [
+  'region', 'town', 'program', 'status', 'ai_status', 'submitted_from', 'submitted_to', 'sort',
+] as const
 
 function savedOfficerPage(): {
   query: OfficerListQuery
@@ -35,27 +38,35 @@ function savedOfficerPage(): {
   showCriteria: boolean
   criteriaProgram: string
 } | null {
-  try {
-    const value = JSON.parse(window.sessionStorage.getItem(OFFICER_SESSION_KEY) ?? 'null') as {
-      query?: OfficerListQuery
-      open?: { id: number; slot: string | null } | null
-      showCriteria?: boolean
-      criteriaProgram?: string
-    } | null
-    if (!value?.query || typeof value.query.role !== 'string' || !Number.isSafeInteger(value.query.page)) return null
-    return {
-      query: value.query,
-      open: value.open && Number.isSafeInteger(value.open.id) ? value.open : null,
-      showCriteria: value.showCriteria === true,
-      criteriaProgram: value.criteriaProgram === 'job_package' ? 'job_package' : 'double_savings',
-    }
-  } catch {
-    return null
+  const params = currentParams()
+  const detailRoute = /^\/officer(?:\/([^/]+))?(?:\/review\/([1-9]\d*))?\/?$/.exec(window.location.pathname)
+  const criteriaRoute = /^\/officer\/criteria\/([^/]+)\/?$/.exec(window.location.pathname)
+  const legacy = [...QUERY_KEYS.map((key) => `o_${key}`), 'o_role', 'o_page', 'o_page_size', 'o_open', 'o_slot', 'o_criteria', 'o_criteria_program'].some((key) => params.has(key))
+  if (!detailRoute && !criteriaRoute && !legacy) return null
+  const query: OfficerListQuery = {
+    ...DEFAULT_QUERY,
+    role: detailRoute?.[1] || params.get('role') || params.get('o_role') || DEFAULT_QUERY.role,
+  }
+  for (const key of QUERY_KEYS) {
+    const value = params.get(key === 'ai_status' ? 'ai' : key) ?? params.get(`o_${key}`)
+    if (value) query[key] = value
+  }
+  const page = Number(params.get('page') ?? params.get('o_page'))
+  const pageSize = Number(params.get('page_size') ?? params.get('o_page_size'))
+  if (Number.isSafeInteger(page) && page > 0) query.page = page
+  if (Number.isSafeInteger(pageSize) && pageSize > 0) query.page_size = pageSize
+  const openId = Number(detailRoute?.[2] ?? params.get('o_open'))
+  return {
+    query,
+    open: Number.isSafeInteger(openId) && openId > 0 ? { id: openId, slot: params.get('slot') ?? params.get('o_slot') } : null,
+    showCriteria: criteriaRoute !== null || params.get('o_criteria') === '1',
+    criteriaProgram: criteriaRoute?.[1] === 'job_package' || params.get('o_criteria_program') === 'job_package' ? 'job_package' : 'double_savings',
   }
 }
 
 export default function OfficerConsole() {
   const [initialPage] = useState(savedOfficerPage)
+  const initialUrlWrite = useRef(true)
   const [roles, setRoles] = useState<OfficerRole[]>([])
   const [query, setQuery] = useState<OfficerListQuery>(initialPage?.query ?? DEFAULT_QUERY)
   const [list, setList] = useState<OfficerList | null>(null)
@@ -92,7 +103,19 @@ export default function OfficerConsole() {
   useEffect(reload, [reload])
 
   useEffect(() => {
-    window.sessionStorage.setItem(OFFICER_SESSION_KEY, JSON.stringify({ query, open, showCriteria, criteriaProgram }))
+    if (currentMode() !== 'officer') return
+    const path = showCriteria
+      ? `/officer/criteria/${criteriaProgram}`
+      : open ? `/officer/${encodeURIComponent(query.role)}/review/${open.id}`
+        : query.role === DEFAULT_QUERY.role ? '/officer' : `/officer/${encodeURIComponent(query.role)}`
+    const params: Record<string, string | null> = {
+      page: query.page === DEFAULT_QUERY.page ? null : String(query.page ?? 1),
+      page_size: query.page_size === DEFAULT_QUERY.page_size ? null : String(query.page_size ?? 20),
+      slot: open?.slot ?? null,
+    }
+    for (const key of QUERY_KEYS) params[key === 'ai_status' ? 'ai' : key] = query[key] ?? null
+    routeUrl(path, params, initialUrlWrite.current)
+    initialUrlWrite.current = false
   }, [query, open, showCriteria, criteriaProgram])
 
   const patch = (next: Partial<OfficerListQuery>) => {

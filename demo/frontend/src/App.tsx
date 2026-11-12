@@ -11,13 +11,12 @@
  * (담당자 탭으로 넘어갔다 돌아올 때도 마찬가지로 초기화된다.)
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import ApplyFlow, { APPLICANT_SESSION_KEY } from './pages/applicant/ApplyFlow.tsx'
+import ApplyFlow from './pages/applicant/ApplyFlow.tsx'
 import OfficerConsole from './pages/officer/OfficerConsole.tsx'
+import { currentMode, currentUrl, goToHome, routeUrl, type Mode } from './navigation-url.ts'
 import './app-shell.css'
-
-type Mode = 'applicant' | 'officer'
 
 const MODES: { key: Mode; label: string }[] = [
   { key: 'applicant', label: '신청자' },
@@ -25,21 +24,45 @@ const MODES: { key: Mode; label: string }[] = [
 ]
 
 export default function App() {
-  const [mode, setMode] = useState<Mode>(() => window.sessionStorage.getItem('demo-mode') === 'officer' ? 'officer' : 'applicant')
+  const [mode, setMode] = useState<Mode>(currentMode)
   /** 값이 바뀌면 신청자 화면이 새로 마운트돼 사업 선택 화면으로 돌아간다. */
   const [applicantKey, setApplicantKey] = useState(0)
+  const [officerKey, setOfficerKey] = useState(0)
+  const applicantUrl = useRef<string | null>(currentMode() === 'applicant' ? currentUrl() : null)
+  const officerUrl = useRef<string | null>(currentMode() === 'officer' ? currentUrl() : null)
+
+  useEffect(() => {
+    const onHistoryChange = () => {
+      const next = currentMode()
+      if (next === 'applicant') applicantUrl.current = currentUrl()
+      else officerUrl.current = currentUrl()
+      setMode(next)
+      setApplicantKey((key) => key + 1)
+      setOfficerKey((key) => key + 1)
+    }
+    window.addEventListener('popstate', onHistoryChange)
+    return () => window.removeEventListener('popstate', onHistoryChange)
+  }, [])
 
   const pick = (next: Mode) => {
+    if (next !== mode) {
+      if (mode === 'applicant') applicantUrl.current = currentUrl()
+      else officerUrl.current = currentUrl()
+      const remembered = next === 'applicant' ? applicantUrl.current : officerUrl.current
+      if (remembered) window.history.pushState(null, '', remembered)
+      else routeUrl(next === 'applicant' ? '/' : '/officer')
+    }
     setMode(next)
-    window.sessionStorage.setItem('demo-mode', next)
     window.scrollTo({ top: 0 })
   }
 
   const goHome = () => {
-    window.sessionStorage.removeItem(APPLICANT_SESSION_KEY)
-    window.sessionStorage.setItem('demo-mode', 'applicant')
+    goToHome()
+    applicantUrl.current = currentUrl()
+    officerUrl.current = null
     setMode('applicant')
     setApplicantKey((key) => key + 1)
+    setOfficerKey((key) => key + 1)
     window.scrollTo({ top: 0 })
   }
 
@@ -73,7 +96,7 @@ export default function App() {
         <ApplyFlow key={applicantKey} />
       </div>
       <div style={{ display: mode === 'officer' ? 'block' : 'none' }}>
-        <OfficerConsole />
+        <OfficerConsole key={officerKey} />
       </div>
     </>
   )
