@@ -80,6 +80,57 @@ def _date_cell(words, *, optional=False):
     return None, optional and bool(re.fullmatch(r"[\s\-－—–]+", text))
 
 
+def _management_cell(lines):
+    """Read the right metadata cell, retaining unknown/crossing word evidence."""
+    management = forms.label_hits(lines, ("사업장관리번호",))
+    certificate = forms.label_hits(lines, ("증번호",))
+    request = forms.label_hits(lines, ("자격확인요청일",))
+    headings = [row for row in lines if forms.label_hits([row], ("성명",)) and
+                forms.label_hits([row], ("주민등록번호",))]
+    if not (len(management) == len(certificate) == len(request) == 1):
+        return None, management[0][1] if len(management) == 1 else []
+    label, left, above = management[0][1], certificate[0][1], request[0][1]
+    height = max(word.y1 - word.y0 for word in label + left + above)
+    center = sum(word.cy for word in label) / len(label)
+    lower = [row for row in headings if min(word.y0 for word in row) > center]
+    if not lower:
+        return None, label
+    below = min(lower, key=lambda row: min(word.y0 for word in row))
+    label_start, label_end = min(word.x0 for word in label), max(word.x1 for word in label)
+    aligned = (abs(sum(word.cy for word in left) / len(left) - center) <= height and
+               max(word.x1 for word in left) < label_start and
+               max(word.y1 for word in above) < min(word.y0 for word in label) and
+               abs(min(word.x0 for word in above) - label_start) <= 2 * height and
+               min(word.y0 for word in below) - center <= 6 * height)
+    # A merged label/value token cannot establish where the cell starts.
+    if (not aligned or squash(line_text(label)) != "사업장관리번호" or
+            any(word.conf < .85 for word in label + left + above)):
+        return None, label
+    top = (max(word.y1 for word in above) + min(word.y0 for word in label)) / 2
+    bottom = (max(word.y1 for word in label) + min(word.y0 for word in below)) / 2
+    # The other metadata and observed table headings establish the form extent.
+    table_headers = [row for row in headings if forms.label_hits([row], ("자격취득일",))]
+    if len(table_headers) != 1:
+        return None, label
+    right = max(word.x1 for row in table_headers for word in row)
+    if right <= label_end:
+        return None, label
+    ids = {id(word) for word in label}
+    candidates = [word for row in lines for word in row if id(word) not in ids and
+                  word.x1 > label_start and word.y1 > top and word.y0 < bottom]
+    # Never discard a partial word or a low-confidence fragment as apparent blank.
+    if any(word.x0 < label_end or word.x1 > right or word.y0 < top or word.y1 > bottom or
+           word.conf < .85 for word in candidates):
+        return None, label + candidates
+    marker_only = all(not re.search(r"[^\s|:：.·=~\-－—–]", word.text) for word in candidates)
+    if marker_only:
+        return "", label + candidates
+    # Once any value is present, its entire cell must be numeric. Removing
+    # marker-like fragments here could silently shorten a malformed number.
+    raw = squash(line_text(sorted(candidates, key=lambda word: word.x0)))
+    return (raw if re.fullmatch(r"[0-9]+", raw) else None), label + candidates
+
+
 def _household(lines, *, ocr_page=False):
     headers = [i for i, row in enumerate(lines)
                if all(common.label_hits([row], (label,)) for label in
@@ -170,6 +221,8 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     result = QualificationResult(detected, .95 if detected != DocType.UNKNOWN else .2, {}, checks,
                                  form_kind="nhis" if recognized else "unknown")
     if not pages:
+        result.fields["사업장관리번호_상태"] = common.make_field(
+            "못 읽음", "못 읽음", [], {}, .4, {})
         result.warnings.append("자격확인 통보서의 쪽을 확인하지 못했습니다.")
         return result
     page, ocr = pages[0]
@@ -212,6 +265,14 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
                    common.Validation("household_rows_read", rows_ok),
                    common.Validation("subscriber_matches_first_member", first_matches)))
     result.structure_complete = all(check.passed for check in checks)
+    management, management_words = _management_cell(lines)
+    state = ("못 읽음" if not result.structure_complete or management is None else
+             "값 있음" if management else "확실한 공란")
+    result.fields["사업장관리번호_상태"] = common.make_field(
+        state, state, management_words, page_map, .95, sources)
+    if state != "못 읽음":
+        result.fields["사업장관리번호"] = common.make_field(
+            management, management, management_words, page_map, .95, sources)
     # A partial list must not become an authoritative, reduced household count.
     if result.structure_complete:
         data = [{"성명": row.name, "생년월일": row.birth.isoformat(),
