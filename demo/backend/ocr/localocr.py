@@ -37,6 +37,7 @@ from pathlib import Path
 
 from ..rules.doc_types import DocType
 from .base import BBox, OcrResult
+from engine_v2.pipeline.privacy import mask_rrn
 
 NAME = "localocr"
 ENGINE_ENV = "ENGINE_V2_OCR"
@@ -466,7 +467,7 @@ def _tier2_can_read(path: Path) -> bool:
         with fitz.open(path) as doc:
             if doc.needs_pass or doc.page_count == 0:
                 return True
-            return bool("".join(doc[0].get_text().split()))
+            return bool("".join(mask_rrn(doc[0].get_text()).split()))
     except Exception:  # noqa: BLE001 - 못 여는 파일은 Tier2가 '열 수 없음'으로 처리
         return True
 
@@ -507,7 +508,7 @@ class LocalOcr:
                 import pymupdf
 
                 with pymupdf.open(path) as document:
-                    if not is_notification(" ".join(page.get_text() for page in document)):
+                    if not is_notification(" ".join(mask_rrn(page.get_text()) for page in document)):
                         return None  # Other qualification forms retain their PdfText reader.
         elif engine == "off":
             return None

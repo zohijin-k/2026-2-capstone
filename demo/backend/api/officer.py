@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlmodel import select
+from engine_v2.pipeline.privacy import mask_data
 
 from ..models import (
     STATUS_DECIDED,
@@ -654,7 +655,7 @@ def _document_view(d: Document, labels: dict[str, str]) -> dict[str, Any]:
 
     `file_url`은 인라인 스트리밍 주소다. 다운로드 주소는 존재하지 않는다 (R4.1).
     """
-    ocr = d.ocr_json or {}
+    ocr = mask_data(d.ocr_json or {})
     file_name = d.file_path.replace("\\", "/").rsplit("/", 1)[-1]
     return {
         "document_id": d.id,
@@ -662,9 +663,9 @@ def _document_view(d: Document, labels: dict[str, str]) -> dict[str, Any]:
         "label": labels.get(d.slot_key, "미배정 페이지"),
         "expected_doc_type": d.expected_doc_type,
         "detected_doc_type": d.doc_type,
-        "classification_evidence": (d.ocr_json or {}).get("classification_evidence", ""),
+        "classification_evidence": ocr.get("classification_evidence", ""),
         "status": d.stage1_status,
-        "findings": d.findings_json or [],
+        "findings": mask_data(d.findings_json or []),
         "file_url": f"/api/files/{d.id}",
         "file_name": file_name,
         "file_format": (d.file_format or "").lower(),
@@ -690,7 +691,7 @@ def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[st
     채점 근거가 다르면 둘 중 어느 쪽을 믿어야 하는지 알 수 없게 된다.
     """
     program = entry.program
-    score = (entry.review.score_json or {}) if entry.review else {}
+    score = mask_data(entry.review.score_json or {}) if entry.review else {}
     form1 = entry.app.form1_json or {}
     birth = parse_ymd(form1.get("birth"))
     low, high = program.birth_range
@@ -783,7 +784,7 @@ def _exclusions(entry: Entry) -> list[dict[str, Any]]:
             }
         )
 
-    payload = (entry.review.review_payload_json or {}) if entry.review else {}
+    payload = mask_data(entry.review.review_payload_json or {}) if entry.review else {}
     hit = {r.get("code") for r in payload.get("reasons", [])}
     for code, label in EXCLUSION_CODES.items():
         rows.append(
@@ -850,7 +851,7 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
     labels = {r.slot_key: r.label for r in checklist_for(app)}
     documents = [_document_view(d, labels) for d in list_documents(application_id)]
 
-    score = (review.score_json or {}) if review else {}
+    score = mask_data(review.score_json or {}) if review else {}
     items = {i["key"]: i for i in score.get("items", [])}
 
     # 심사표 항목 → 좌측에서 열어야 할 서류. 클릭 한 번에 원본으로 가기 위한 연결이다.
@@ -861,7 +862,7 @@ def review_detail(application_id: int, role: str = Query(ROLE_PROVINCE)) -> dict
         item["source_file_url"] = target["file_url"] if target else None
         item["source_file_format"] = target["file_format"] if target else None
 
-    payload = (review.review_payload_json or {}) if review else {}
+    payload = mask_data(review.review_payload_json or {}) if review else {}
 
     return {
         "application_id": app.id,

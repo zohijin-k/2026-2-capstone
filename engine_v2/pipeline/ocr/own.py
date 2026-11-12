@@ -10,6 +10,7 @@ import math
 
 from ...tools.fetch_own_models import MODEL_DIR, verify_models
 from . import OcrWord
+from ..privacy import mask_words
 
 
 def ctc_decode(probabilities, characters: list[str]) -> tuple[str, float]:
@@ -132,4 +133,4 @@ def recognize(png: bytes, size: tuple[int, int]) -> list[OcrWord]:
         text, confidence = ctc_decode(pred, chars)
         if text.strip():
             words.append(OcrWord(text, confidence, polygon_bbox(box, size, size)))
-    return sorted(words, key=lambda word: (round(word.bbox_px[1] / 15), word.bbox_px[0]))
+    return mask_words(sorted(words, key=lambda word: (round(word.bbox_px[1] / 15), word.bbox_px[0])))

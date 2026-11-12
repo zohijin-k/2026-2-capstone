@@ -20,6 +20,7 @@ from enum import Enum
 from pathlib import Path
 
 import pymupdf
+from .privacy import mask_rrn
 
 TEXT_LAYER_MIN_CHARS = 50      # 이 이상이면 텍스트 레이어 신뢰
 MAIN_IMAGE_MIN_COVERAGE = 0.90  # 페이지 면적의 90% 이상 덮으면 본문 이미지로 간주
@@ -85,7 +86,7 @@ def _process_pdf_page(doc: pymupdf.Document, i: int) -> PageImage:
     result = PageImage(page=i, source=PageSource.RENDER, page_size_pt=(pw, ph))
 
     # 1) 텍스트 레이어
-    text = page.get_text("text").strip()
+    text = mask_rrn(page.get_text("text")).strip()
     if len(text) >= TEXT_LAYER_MIN_CHARS:
         result.source = PageSource.TEXT_LAYER
         result.text = text

@@ -19,7 +19,7 @@ def test_typed_dash_allowlist_and_original_evidence(dash):
     words = synthetic_words()
     issue = next(w for w in words if w.text == "2026.11.10 10:20")
     issue.text = f"2026{dash}11{dash}10 10:20"
-    identifier = next(w for w in words if w.text == "990101-1123456")
+    identifier = next(w for w in words if w.text in {"990101-1123456", "990101-1******"})
     identifier.text = identifier.text.replace("-", dash)
     raw_issue = issue.text
     result = insurance_4.extract([page(words)], today=date(2026, 11, 11))

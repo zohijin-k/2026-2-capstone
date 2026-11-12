@@ -53,7 +53,7 @@ def resident_words(marker="1/1", *, name=IDENTITY.name, birth="1999-01-01", inde
     for word in words:
         if word.text == "1/1":
             word.text = marker
-        elif word.text == "990101-1234567" and birth == OTHER_BIRTH:
+        elif word.text in {"990101-1234567", "990101-1******"} and birth == OTHER_BIRTH:
             word.text = "980203-1******"
     return words + table_head(31.8) + [
         *row(34.4, 1 + index * 2, "전북특별자치도 전주시 가상동", "2020-01-01"),
