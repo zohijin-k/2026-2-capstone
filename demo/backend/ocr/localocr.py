@@ -286,6 +286,40 @@ def ensure_business_required_fields(result: OcrResult) -> OcrResult:
     return result
 
 
+def _identity_source_confidence(ex, pages, *, include_issue=False) -> float:
+    """Preserve observed confidence inside the existing identity value boxes.
+
+    Extracted-field confidence primarily reflects structural checks. Fresh
+    work eligibility also needs reliable applicant identity tokens. Compare
+    geometry only: redacted/erased resident-number words retain their bounds.
+    Unrelated low-confidence seals and notices do not contribute.
+    """
+    keys = [key for key in ("성명",) if key in ex.fields]
+    birth = next((key for key in ("생년월일", "생년월일표기") if key in ex.fields), None)
+    if birth:
+        keys.append(birth)
+    if include_issue and "발급일" in ex.fields:
+        keys.append("발급일")
+    confidence = 1.0
+    for key in keys:
+        box = ex.fields[key].bbox
+        if box is None:
+            confidence = min(confidence, .4)
+            continue
+        source = []
+        for page, result in pages:
+            if page.page != box.page:
+                continue
+            for word in result.words:
+                x0,y0,x1,y1 = word.bbox_px
+                cx,cy = page.px_to_pt((x0+x1)/2,(y0+y1)/2)
+                # Field boxes are rounded to 0.1pt by the shared extractor.
+                if box.x0-.1 <= cx <= box.x1+.1 and box.y0-.1 <= cy <= box.y1+.1:
+                    source.append(word.confidence)
+        confidence = min(confidence,min(source,default=.4))
+    return confidence
+
+
 def _from_business_proof(ex, pages, classification_evidence="") -> OcrResult:
     fields = {}
     bboxes = {}
@@ -309,7 +343,9 @@ def _from_business_proof(ex, pages, classification_evidence="") -> OcrResult:
         fields["판독경고"] = " ".join(ex.warnings)
     fields["양식판독상태"] = "완전" if ex.structure_complete else "불완전"
     issue = ex.fields.get("발급일")
-    confidence = min((value.confidence for value in ex.fields.values()), default=.4)
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=True)
+    fields["근로근거신뢰도"] = str(source_confidence)
+    confidence = min(min((value.confidence for value in ex.fields.values()), default=.4), source_confidence)
     return ensure_business_required_fields(OcrResult(
         detected_doc_type=DocType.BIZ_REG_PROOF if ex.detected_type.value == "biz_reg_proof" else None,
         confidence=min(confidence, ex.type_confidence, 1 if ex.structure_complete else .4),
@@ -338,7 +374,13 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         fields["판독검증실패"] = ", ".join(failed)
     if ex.warnings:
         fields["판독경고"] = " ".join(ex.warnings)
+    work_form = ex.detected_type.value in {"nhis_acquisition_loss", "daily_work_record"}
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=work_form)
     confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    if work_form:
+        fields["근로근거신뢰도"] = str(source_confidence)
+    if not pages or not all(result.engine == "jbai" for _,result in pages):
+        confidence = min(confidence, source_confidence)
     structure_complete = getattr(ex, "structure_complete", None)
     if structure_complete is not None:
         fields["양식판독상태"] = "완전" if structure_complete else "불완전"
@@ -449,7 +491,9 @@ def _from_insurance4(ex, pages, classification_evidence: str = "") -> OcrResult:
         fields["판독경고"] = " ".join(ex.warnings)
     issue = ex.fields.get("발급일")
     issue_date = date.fromisoformat(str(issue.value)) if issue else None
-    confidence = min((field.confidence for field in ex.fields.values()), default=0.5)
+    source_confidence = _identity_source_confidence(ex,pages,include_issue=True)
+    fields["근로근거신뢰도"] = str(source_confidence)
+    confidence = min(min((field.confidence for field in ex.fields.values()), default=0.5), source_confidence)
     if structure_complete is False:
         confidence = min(confidence, 0.4)
     detected = DocType.INSURANCE_4 if ex.detected_type.value == "insurance_4" else None
@@ -723,7 +767,9 @@ class LocalOcr:
             # because damaged title glyphs cannot establish a document type.
             from .file_evidence import independent_page_markers
             markers = independent_page_markers(pages)
-            fields = {"독립쪽표기자료": json.dumps(markers)} if markers else {}
+            if markers is None:
+                return None  # Keep prior fallback results when there is no new usable evidence.
+            fields = {"독립쪽표기자료": json.dumps(markers)}
             result = OcrResult(fields=fields, page_count=len(pages), tier=NAME,
                                engine=engine, image_quality=_quality(page_images),
                                classification_evidence=evidence)

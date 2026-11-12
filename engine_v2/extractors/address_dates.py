@@ -1,5 +1,7 @@
 """Independent date-omission evidence; do not use date-dependent parsed history rows."""
 import re
+from types import SimpleNamespace
+from statistics import median
 from . import nhis_common as common, nhis_forms as forms
 from ..pipeline.layout import line_text, squash
 from .format_text import normalize_format_text
@@ -8,6 +10,26 @@ from .format_text import normalize_format_text
 def assess(pages, *, type_confidence):
     unknown = {"status": "UNDETERMINED", "confidence": 0.0}
     if type_confidence < .85:
+        return unknown
+    # A categorical type score is not confidence in the title's source words.
+    from ..pipeline.resident_title import classify_resident_title
+    reliable_pages = [(page, SimpleNamespace(words=[w for w in result.words if w.confidence >= .85]))
+                      for page, result in pages]
+    kind, _ = classify_resident_title(reliable_pages)
+    title_kinds = {kind} if kind else set()
+    for page, result in pages:
+        lines = common.page_lines(page, result)
+        heights = [w.y1-w.y0 for row in lines for w in row if re.search("[가-힣]", w.text)]
+        ordinary = median(heights) if heights else 0
+        for row in lines:
+            text = re.sub(r"[\s()（）]", "", line_text(row))
+            if (row[0].cy < 25 and all(w.conf >= .85 for w in row) and
+                    max(w.y1-w.y0 for w in row) >= 1.25*ordinary):
+                if text == "주민등록표초본":
+                    title_kinds.add("abstract")
+                elif text == "주민등록표등본":
+                    title_kinds.add("register")
+    if title_kinds != {"abstract"}:
         return unknown
     evidence = []
     any_dates = False

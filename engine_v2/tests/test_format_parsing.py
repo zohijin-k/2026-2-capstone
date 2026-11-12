@@ -216,6 +216,9 @@ def test_ascii_compatibility_against_main_snapshots(kind, factory, digest):
         for key in ("value", "raw_text"):
             history = json.loads(snapshot["fields"]["자격이력자료"][key])
             assert {name: history.pop(name) for name in evidence} == evidence
+            for row in history["rows"]:
+                assert row.pop("acquired_confidence") == .99
+                assert row.pop("lost_confidence") == (.99 if row["lost"] else None)
             snapshot["fields"]["자격이력자료"][key] = json.dumps(
                 history, ensure_ascii=False, separators=(",", ":"))
     serialized = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, default=str).encode()

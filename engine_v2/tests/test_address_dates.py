@@ -53,3 +53,18 @@ def test_certain_header_without_date_column_labels_does_not_require_parsed_rows(
     assert evidence["status"] == "MISSING"
     assert evidence["pages"][0]["reason"] == "date_headers_absent"
     assert evidence["pages"][0]["rows"] == 0
+
+
+def test_low_confidence_title_cannot_establish_new_failure():
+    pages=missing_address_dates()
+    for word in pages[0][1].words:
+        if word.text in {"주민등록표","초","본)"}:
+            word.confidence=.1
+    assert assess(pages,type_confidence=.95)["status"] == "UNDETERMINED"
+
+
+def test_high_confidence_complete_title_in_one_word_still_establishes_omission():
+    pages=missing_address_dates()
+    pages[0][1].words[:]=[w for w in pages[0][1].words if w.text not in {"초","본)"}]
+    next(w for w in pages[0][1].words if w.text=="주민등록표").text="주민등록표(초본)"
+    assert assess(pages,type_confidence=.95)["status"] == "MISSING"

@@ -688,8 +688,8 @@ def _document_view(d: Document, labels: dict[str, str]) -> dict[str, Any]:
 def _eligibility(entry: Entry, items: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     """자격요건 체크리스트 ①~④ (공고문).
 
-    판단 근거는 심사표 항목의 `basis`를 그대로 쓴다. 담당자가 보는 근거 문장과
-    채점 근거가 다르면 둘 중 어느 쪽을 믿어야 하는지 알 수 없게 된다.
+    소득·거주지는 심사표 근거를, 연령·근로는 독립 자격 판정의 근거를 쓴다.
+    근로 점수가 있다는 이유로 계속 근로 요건을 충족했다고 표시하지 않는다.
     """
     program = entry.program
     score = mask_data(entry.review.score_json or {}) if entry.review else {}

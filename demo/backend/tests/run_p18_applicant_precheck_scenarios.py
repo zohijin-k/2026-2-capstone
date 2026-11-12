@@ -145,9 +145,8 @@ def test_uncertainty(complete):
         payment = DocRequirement("nhis_payment", DocType.NHIS_PAYMENT, "납부확인서", premium_months=["2025-10", "2025-11"])
         ocr = OcrResult(DocType.NHIS_PAYMENT, confidence, fields={"월별고지금액": '{"2025-10":"100000"}'})
         result = check_document(payment, ocr)
-        check(f"월 누락 {confidence}", result.status, status)
-        if status == "NEEDS_REVIEW":
-            review("낮은 고지월 판독", result, "MISSING_BILLING_MONTHS")
+        check(f"월 누락 {confidence}", result.status, "NEEDS_REVIEW")
+        review("조회범위 없는 고지월 판독", result, "MISSING_BILLING_MONTHS")
     wrong = replace(complete, detected_doc_type=DocType.RESIDENT_CERTIFICATE, classification_confidence=threshold - 0.01)
     review("종류만 저신뢰", check_document(req, wrong), "WRONG_DOCUMENT_TYPE")
     history = DocRequirement("nhis_acquisition_loss", DocType.NHIS_ACQUISITION_LOSS, "자격득실확인서", recent_years=5)

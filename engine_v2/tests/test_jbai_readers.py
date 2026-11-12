@@ -59,11 +59,14 @@ def test_synthetic_payment_reader_replay():
 def test_synthetic_acquisition_loss_reader_replay():
     expected, result = _replay(FIXTURES / "nhis_acquisition_loss.json")
     history = json.loads(result.fields["자격이력자료"].value)["rows"]
+    expected_history = [{**row, "acquired_confidence": .85,
+                         "lost_confidence": .85 if row["lost"] else None}
+                        for row in expected["history"]]
     checks = {
         "name": result.fields["성명"].value == expected["name"],
         "birth_date": str(result.fields["생년월일"].value) == expected["birth_date"],
         "issue_date": str(result.fields["발급일"].value) == expected["issue_date"],
-        "history": history == expected["history"],
+        "history": history == expected_history,
         "recent_five_years": result.fields["변동내역"].value == "최근 5년 포함",
         "latest_acquisition": str(result.fields["취득일"].value) == "2023-06-01",
     }

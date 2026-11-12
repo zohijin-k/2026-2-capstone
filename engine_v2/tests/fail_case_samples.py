@@ -79,12 +79,8 @@ def missing_address_dates(*, header=True):
 
 
 def tiny_unknown():
-    cells = [(103,1,290,8,"문서확인번호:0000-0000-0000-0000",.91),
-             (467,2,486,15,"1/2",1),(145,30,175,54,"가",1),
-             (165,31,239,52,"가가",.97),(114,33,134,51,"가",.89),
-             (38,234,63,252,"번호",.97),(425,299,451,317,"전입",.96),
-             (474,230,560,242,"세대수및관계",.85)]
-    return [shaped_page(cells,size=(586,709),text=False)]
+    from .fail_case_tiny_geometry import TINY_WORDS
+    return [shaped_page(TINY_WORDS,size=(586,709),text=False)]
 
 
 def missing_payment_months():

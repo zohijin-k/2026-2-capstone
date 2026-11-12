@@ -19,11 +19,14 @@ def original_image_sizes(file_path: str) -> list[dict[str, int]]:
             return [{"page": 0, "width": width, "height": height}]
         if path.suffix.lower() == ".pdf":
             import pymupdf
+            from engine_v2.pipeline.preprocess import TEXT_LAYER_MIN_CHARS
             sizes = []
             with pymupdf.open(path) as doc:
                 if doc.needs_pass:
                     return []
                 for index, page in enumerate(doc):
+                    if len(page.get_text().strip()) >= TEXT_LAYER_MIN_CHARS:
+                        continue  # A scalable text-layer page is not limited by its background bitmap.
                     # Only a dominant source bitmap, never a rendered/upscaled page.
                     images = [image for image in page.get_image_info() if
                               pymupdf.Rect(image["bbox"]).get_area() >= .9 * page.rect.get_area()]
@@ -67,11 +70,23 @@ def independent_page_markers(pages):
 
 
 def resolution_defect(ocr) -> dict[str, int] | None:
+    from ..rules.doc_types import DocType
     try:
         sizes = json.loads(ocr.fields.get("원본이미지크기", "[]"))
-        essential = (bool(ocr.fields.get("성명")), bool(ocr.fields.get("생년월일")),
-                     bool(ocr.fields.get("발급일") or ocr.issue_date))
-        unreadable = ocr.detected_doc_type is None or sum(essential) < 2
+        identity_forms = {DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE,
+                          DocType.INSURANCE_4, DocType.DAILY_WORK_RECORD,
+                          DocType.NHIS_PAYMENT, DocType.NHIS_QUALIFICATION,
+                          DocType.NHIS_ACQUISITION_LOSS, DocType.BIZ_REG_PROOF}
+        essential_fields = ("성명", "생년월일", "발급일") if ocr.detected_doc_type in identity_forms else {
+            DocType.PAYMENT_RECEIPT: ("결제금액", "결제일"),
+            DocType.EXAM_CONFIRMATION: ("성명", "응시일"),
+            DocType.EXAM_TRANSCRIPT: ("성명", "응시일"),
+            DocType.INTERVIEW_CONFIRMATION: ("성명", "면접일", "회사명"),
+        }.get(ocr.detected_doc_type, ())
+        readable = sum(bool(ocr.fields.get(key) or key == "발급일" and ocr.issue_date)
+                       for key in essential_fields)
+        unreadable = (ocr.detected_doc_type is None or
+                      bool(essential_fields) and readable * 2 < len(essential_fields))
         if not unreadable:
             return None
         for size in sizes:

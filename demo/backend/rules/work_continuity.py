@@ -100,6 +100,8 @@ def _trust_issue(doc, fields, identity: Identity | None, end: date) -> str | Non
                          identity.birth.isoformat() in candidates)
     if not birth_matches:
         return "WORK_IDENTITY_UNCONFIRMED"
+    if not _date_confident(fields,"근로근거신뢰도"):
+        return "WORK_SOURCE_CONFIDENCE_UNCONFIRMED"
     try:
         confidence = doc.get("confidence")
         trusted_confidence = (not isinstance(confidence, bool) and math.isfinite(float(confidence)) and
@@ -176,7 +178,8 @@ def _history(fields, start, end):
                 not _date_confident(row,"acquired_confidence") or
                 (lost is not None and not _date_confident(row,"lost_confidence"))):
             return "UNDETERMINED", "WORK_HISTORY_UNREADABLE", {}, []
-        if not isinstance(row.get("category"),str):
+        if (not isinstance(row.get("category"),str) or
+                row["category"] not in {"직장", "직장가입자", "지역", "지역세대주", "지역세대원", "직장피부양자"}):
             return "UNDETERMINED", "WORK_HISTORY_UNREADABLE", {}, []
         if row.get("category") in {"직장", "직장가입자"}:
             intervals.append((acquired, lost))

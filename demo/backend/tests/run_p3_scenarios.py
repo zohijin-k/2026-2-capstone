@@ -26,6 +26,7 @@ from pathlib import Path
 from sqlmodel import create_engine, select
 
 from .. import models
+from .scenario_support import complete_synthetic_work, seed_blocked_historical_review
 from ..rules.facts import build_facts, extract_region, parse_ymd
 from ..rules.doc_types import DocType
 from ..rules.programs import DOUBLE_SAVINGS, PROGRAMS
@@ -382,6 +383,7 @@ def _create_and_fill(client, uploads: dict[str, str]) -> int:
                 files={"file": (filename, fh, "application/pdf")},
                 data={"slot_key": slot, "declared_issue_date": "2026-03-05"},
             )
+    complete_synthetic_work(app_id)
     return app_id
 
 
@@ -484,15 +486,18 @@ def test_e2e_s7(client) -> None:
     app_id = _create_and_fill(client, uploads)
 
     final = client.get(f"/api/applications/{app_id}/final-check").json()
-    check("서류 자체는 모두 적합이라 제출은 가능", final["can_submit"], True)
-    check("제출 성공", client.post(f"/api/applications/{app_id}/submit").status_code, 200)
-
-    with models.get_session() as s:
-        review = s.exec(
-            select(models.Review).where(models.Review.application_id == app_id)
-        ).first()
-    assert review is not None
-    check("엔진 최종 판정", review.final_status, "FAIL")
+    check("서류 자체가 적합해도 확정 소득 초과는 제출 차단", final["can_submit"], False)
+    blocked=client.post(f"/api/applications/{app_id}/submit")
+    check("확정 소득 초과 제출 → 400", blocked.status_code, 400)
+    income=next(item for item in final["blockers"] if item.get("code")=="OVER_LIMIT")
+    check("자격 차단 종류",income["kind"],"eligibility")
+    check_true("차단 근거에 가구·기준·본인 금액",all(value in income["message"] for value in ("4명","311,031","340,000","140%")))
+    with models.get_session() as session:
+        check("차단 요청은 Review를 만들지 않음",session.exec(select(models.Review).where(models.Review.application_id==app_id)).first(),None)
+    # Retain legacy engine/scoring checks on a clearly labeled historical
+    # officer fixture, after proving the applicant submission was rejected.
+    review=seed_blocked_historical_review(app_id,blocked)
+    check("과거 심사 fixture 엔진 최종 판정", review.final_status, "FAIL")
     check("1단계(서류)는 통과", review.stage1_status, "PASS")
     check("2단계(자격) 부적합", review.stage2_status, "FAIL")
     codes = [r["code"] for r in review.review_payload_json["reasons"]]

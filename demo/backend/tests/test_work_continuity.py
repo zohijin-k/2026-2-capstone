@@ -230,3 +230,17 @@ def test_review_and_officer_share_work_failure_and_keep_score_points_independent
     assert next(item for item in review.score_json["items"] if item["key"]=="work")["score"]>0
     check=next(item for item in _eligibility(Entry(app,review),{}) if item["key"]=="work")
     assert check["ok"] is False and check["basis"]==work["basis"]
+
+
+def test_unreadable_category_between_work_intervals_cannot_prove_a_gap():
+    doc=history([("2020-01-01","2026-01-01"),("2026-02-01",None)])
+    data=json.loads(doc["fields"]["자격이력자료"])
+    data["rows"].append({"category":"FAKE-UNREADABLE","acquired":"2026-01-01","lost":"2026-02-01"})
+    doc["fields"]["자격이력자료"]=json.dumps(data)
+    assert assess(doc).status == "UNDETERMINED"
+
+
+def test_explicit_unconfirmed_fresh_source_cannot_use_legacy_confidence():
+    doc=insurance("2026-01-01")
+    doc["fields"]["근로근거신뢰도"]="0.4"
+    assert assess(doc).status == "UNDETERMINED"

@@ -21,6 +21,7 @@ def test_address_fixture_has_date_headers_but_no_date_values():
 def test_tiny_fixture_keeps_independent_marker_but_unknown_title():
     pages = sample.tiny_unknown()
     assert pages[0][0].pixel_size == (586, 709)
+    assert len(pages[0][1].words) == 124
     assert "1/2" in pages[0][1].text
     assert classify_pages_with_evidence(pages)[0] is None
 

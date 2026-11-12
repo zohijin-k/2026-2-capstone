@@ -9,8 +9,10 @@ from .scoring import MEDIAN_INCOME_140, score_income
 
 
 def _recovery(program: ProgramConfig) -> str:
+    contact = (f"문의: 콜센터 {program.call_center}." if program.call_center else
+               f"콜센터 연락처는 사업 홈페이지({program.site_url})의 문의 안내를 확인해 주세요.")
     return ("서류를 잘못 올렸다면 서류 업로드에서 다시 올려 주세요. "
-            f"문의: 콜센터 {program.call_center}.")
+            + contact)
 
 
 def age_blockers(program: ProgramConfig, form1: dict[str, Any], identity: dict[str, Any] | None):

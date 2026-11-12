@@ -167,3 +167,13 @@ def test_submit_rechecks_other_eligibility_after_clear_final_check(client,kind):
     response=client.post(f"/api/applications/{app.id}/submit")
     assert response.status_code==400
     assert ("연령" if kind=="age" else "근로") in response.json()["detail"]
+
+
+def test_program_without_configured_call_center_uses_public_contact_page(client):
+    from demo.backend.rules.eligibility_blockers import age_blockers
+    program=PROGRAMS[JOB_PACKAGE]
+    birth=(program.birth_range[0]-timedelta(days=1)).isoformat()
+    message=age_blockers(program,{"birth":birth},{"birth":birth})[0]["message"]
+    assert program.site_url in message
+    assert "콜센터 연락처" in message
+    assert "콜센터 ." not in message

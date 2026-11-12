@@ -27,6 +27,7 @@ import tempfile
 from pathlib import Path
 
 from . import run_p4_scenarios as p4
+from .scenario_support import complete_synthetic_work, seed_blocked_historical_review
 from .run_p8_localocr_scenarios import (
     fake_abstract_words,
     install_fake_ocr,
@@ -147,8 +148,16 @@ def test_nhis_dependent_reconciliation(client, tmp: Path) -> None:
         ("work_proof", "S2_4대보험가입내역확인서_적합"),
     ):
         upload_fixture(client, dependent, tmp, stem, slot)
-    check("부모 명의 서류가 포함된 신청 제출", client.post(
-        f"/api/applications/{dependent}/submit").status_code, 200)
+    complete_synthetic_work(dependent)
+    final=client.get(f"/api/applications/{dependent}/final-check").json()
+    submitted=client.post(f"/api/applications/{dependent}/submit")
+    check("부모 명의 관계 확인과 별개로 확정 소득 초과 제출 차단",submitted.status_code,400)
+    income=next(item for item in final["blockers"] if item.get("code")=="OVER_LIMIT")
+    check("자격 차단 종류",income["kind"],"eligibility")
+    check_true("부모 명의 소득 차단은 가구·평균 금액 근거 포함",all(value in income["message"] for value in ("2명","200,000","140%")))
+    # Officer cross-reference/privacy assertions below inspect a historical
+    # submitted fixture; the current applicant request remains rejected.
+    seed_blocked_historical_review(dependent,submitted)
     officer = client.get(
         f"/api/officer/applications/{dependent}", params={"role": p4.ROLE_CITY}
     ).json()
