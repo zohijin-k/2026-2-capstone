@@ -5,10 +5,8 @@
  * 작성하던 내용이 날아가는데, 시연 중 두 화면을 오가는 것이 기본 동선이라
  * 상태를 유지하는 편이 맞다.
  *
- * 다만 `신청자` 탭은 "처음으로" 버튼을 겸한다. 시연을 한 바퀴 돌린 뒤 다시
- * 처음부터 보여줘야 하는데, 그때 눌러야 할 곳이 화면마다 다르면 안 된다.
- * 누르면 신청자 화면을 새로 마운트해 사업 선택 화면부터 다시 시작한다.
- * (담당자 탭으로 넘어갔다 돌아올 때도 마찬가지로 초기화된다.)
+ * 전북 표시를 누르면 처음으로 돌아간다. 신청자/담당자 탭은 각 화면의 상태를
+ * 유지하고, 신청번호와 마이페이지는 신청자 화면에서만 상단에 표시한다.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -28,6 +26,7 @@ export default function App() {
   /** 값이 바뀌면 신청자 화면이 새로 마운트돼 사업 선택 화면으로 돌아간다. */
   const [applicantKey, setApplicantKey] = useState(0)
   const [officerKey, setOfficerKey] = useState(0)
+  const [applicantHeaderHost, setApplicantHeaderHost] = useState<HTMLDivElement | null>(null)
   const applicantUrl = useRef<string | null>(currentMode() === 'applicant' ? currentUrl() : null)
   const officerUrl = useRef<string | null>(currentMode() === 'officer' ? currentUrl() : null)
 
@@ -67,37 +66,40 @@ export default function App() {
   }
 
   return (
-    <>
+    <div className={mode === 'applicant' ? 'app-shell app-shell--applicant' : 'app-shell'}>
       <nav className="shell" aria-label="화면 전환">
-        <span className="shell__title">
-          <button className="shell__mark" type="button" onClick={goHome} aria-label="처음 화면으로 이동">
-            전북
-          </button>
-          <span>
-            <strong>청년 지원사업 신청서류 자동 검토</strong>
-            <small>전북청년 함께 두배적금 · 전북청년 취업지원패키지</small>
-          </span>
-        </span>
-        <span className="shell__tabs">
-          {MODES.map((m) => (
-            <button
-              key={m.key}
-              type="button"
-              className={m.key === mode ? 'shell__tab shell__tab--on' : 'shell__tab'}
-              onClick={() => pick(m.key)}
-            >
-              {m.label}
+        <div className="shell__inner">
+          <span className="shell__title">
+            <button className="shell__mark" type="button" onClick={goHome} aria-label="처음 화면으로 이동">
+              전북
             </button>
-          ))}
-        </span>
+            <span>
+              <strong>청년 지원사업 신청서류 자동 검토</strong>
+              <small>전북청년 함께 두배적금 · 전북청년 취업지원패키지</small>
+            </span>
+          </span>
+          <div ref={setApplicantHeaderHost} className="shell__application" hidden={mode !== 'applicant'} />
+          <span className="shell__tabs">
+            {MODES.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                className={m.key === mode ? 'shell__tab shell__tab--on' : 'shell__tab'}
+                onClick={() => pick(m.key)}
+              >
+                {m.label}
+              </button>
+            ))}
+          </span>
+        </div>
       </nav>
 
       <div style={{ display: mode === 'applicant' ? 'block' : 'none' }}>
-        <ApplyFlow key={applicantKey} />
+        <ApplyFlow key={applicantKey} headerHost={applicantHeaderHost} />
       </div>
       <div style={{ display: mode === 'officer' ? 'block' : 'none' }}>
         <OfficerConsole key={officerKey} />
       </div>
-    </>
+    </div>
   )
 }

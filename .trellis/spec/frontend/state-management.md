@@ -22,7 +22,9 @@ Questions to answer:
 
 ## State Categories
 
-The demo uses React component state for the active applicant and officer screens. Keep the active screen in readable paths such as `/apply/45/identity` and `/officer/province/review/9` so refresh, copied links, and browser history can restore it. Use query parameters only for optional filters and preserve unrelated options such as `mock` and `debug`. Fetch application data and consent values from the API when restoring an applicant draft; do not put forms or identity data in the URL.
+The demo uses React component state for the active applicant and officer screens. Applicant paths contain only the stage, such as `/apply/identity`; keep the current application ID in tab-scoped `sessionStorage` under `applicant.activeApplicationId`. Restore applicant drafts only from this tab state, never from numeric path segments or an `application` query parameter. Missing, invalid, inaccessible, or unavailable saved state returns to program selection. Refresh and stage history restore the active application in the same tab; copying a URL alone does not identify an application. Officer paths such as `/officer/province/review/9` remain unchanged. Use query parameters only for optional filters and preserve unrelated options such as `mock` and `debug`. Fetch application data and consent values from the API when restoring an applicant draft; do not put forms or identity data in the URL. Hiding IDs does not replace server-side access checks.
+
+The shared top bar may display active applicant controls through a React portal from `ApplyFlow`. `App` owns only the DOM host; `ApplyFlow` keeps ownership of the application number, stage, and My Page handler. Do not copy these values into a second shell store or synchronize them through window events. `App` intentionally keeps applicant and officer screens mounted while hiding them, so hide the applicant header host in officer mode as well. Returning home/remounting the applicant flow or showing program selection must remove the old portal content, rather than retaining a previous application's number or action.
 
 ---
 

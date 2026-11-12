@@ -7,17 +7,14 @@
  * 본인인증이 맨 앞에 오는 이유: 업로드 서류가 '이 신청자의 것인지' 대조할 기준이
  * 필요하다. 신청서의 성명·생년월일은 인증 값으로 채워지고 잠긴다.
  *
- * 두배적금은 서식1의 절(Ⅰ~Ⅳ) 경계를 그대로 스텝 경계로 쓴다. 스텝은 서식을
- * 재구성한 것이 아니라 스크롤 위치를 나눈 것에 가깝고, "서식 전체 보기"를 켜면
- * 한 장으로 펼쳐진다.
- *
- * **사업 분기는 전부 `Program` 값으로 한다.** 이 파일 어디에도 `code === '...'`
- * 비교를 두지 않는다. 자가진단 문항 수, 신청서 서식, 동의 항목, 지원 항목 단계의
- * 유무가 전부 서버의 사업 설정에서 나온다.
+ * 서식 단계는 원본 PDF를 사용한다. 두배적금은 목록 옆 본문에서 작성하고,
+ * 취업패키지는 기존 팝업을 유지한다. 자격·동의·지원 항목 규칙은 서버의 사업
+ * 설정을 따르며, 신청번호와 마이페이지는 공유 상단 표시 영역에 렌더링한다.
  *
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import {
   createApplication,
@@ -61,15 +58,24 @@ type Stage =
   | 'complete'
   | 'mypage'
 
+const ACTIVE_APPLICATION_KEY = 'applicant.activeApplicationId'
+
 function savedPage(): { appId: number; stage: Stage; previous: Stage } | null {
   const params = currentParams()
-  const route = /^\/apply\/([1-9]\d*)\/([a-z]+)\/?$/.exec(window.location.pathname)
-  const appId = Number(route?.[1] ?? params.get('application'))
-  const stage = (route?.[2] ?? params.get('stage')) as Stage
-  const previous = (params.get('from') ?? params.get('previous')) as Stage
+  const route = /^\/apply\/([a-z]+)\/?$/.exec(window.location.pathname)
+  const stage = route?.[1] as Stage
+  const previous = params.get('from') as Stage
   const stages: Stage[] = ['identity', 'forms', 'subsidy', 'upload', 'final', 'complete', 'mypage']
-  if (!Number.isSafeInteger(appId) || appId <= 0 || !stages.includes(stage)) return null
-  return { appId, stage, previous: stages.includes(previous) ? previous : 'identity' }
+  if (!stages.includes(stage)) return null
+  try {
+    const savedId = window.sessionStorage.getItem(ACTIVE_APPLICATION_KEY)
+    if (!savedId || !/^[1-9]\d*$/.test(savedId)) return null
+    const appId = Number(savedId)
+    if (!Number.isSafeInteger(appId)) return null
+    return { appId, stage, previous: stages.includes(previous) ? previous : 'identity' }
+  } catch {
+    return null
+  }
 }
 
 type Step = { key: 'identity' | 'forms' | 'upload' | 'final'; label: string }
@@ -104,7 +110,7 @@ function consentTypesOf(program: Program): ConsentType[] {
     : ['privacy', 'unique_id', 'third_party', 'admin_info']
 }
 
-export default function ApplyFlow() {
+export default function ApplyFlow({ headerHost }: { headerHost: HTMLElement | null }) {
   const [initialPage] = useState(savedPage)
   const initialUrlWrite = useRef(true)
   const [restoring, setRestoring] = useState(initialPage !== null)
@@ -187,6 +193,11 @@ export default function ApplyFlow() {
         setStageBeforeMypage(initialPage.previous)
       } catch {
         if (!active) return
+        try {
+          window.sessionStorage.removeItem(ACTIVE_APPLICATION_KEY)
+        } catch {
+          // Storage may be disabled; the failed restore still returns to program selection.
+        }
         if (currentMode() === 'applicant') routeUrl('/', {}, true)
       } finally {
         if (active) setRestoring(false)
@@ -198,10 +209,15 @@ export default function ApplyFlow() {
 
   useEffect(() => {
     if (restoring || currentMode() !== 'applicant') return
+    try {
+      if (appId !== null) window.sessionStorage.setItem(ACTIVE_APPLICATION_KEY, String(appId))
+    } catch {
+      // Continue in memory when tab storage is unavailable; refresh returns to program selection.
+    }
     if (appId === null || stage === 'program') {
       routeUrl('/', {}, true)
     } else {
-      routeUrl(`/apply/${appId}/${stage}`, stage === 'mypage' ? { from: stageBeforeMypage } : {}, initialUrlWrite.current)
+      routeUrl(`/apply/${stage}`, stage === 'mypage' ? { from: stageBeforeMypage } : {}, initialUrlWrite.current)
     }
     initialUrlWrite.current = false
   }, [appId, stage, stageBeforeMypage, restoring])
@@ -334,27 +350,16 @@ export default function ApplyFlow() {
     window.scrollTo({ top: 0 })
   }
 
-  const stepProgress = (index: number): number => {
-    if (submittedDone) return 1
-    if (index === 2) {
-      if (uploadProgress.total === 0) return 0
-      return Math.max(0, Math.min(1, uploadProgress.completed / uploadProgress.total))
-    }
-    if (index < currentIndex) return 1
-    if (index > currentIndex) return 0
-    const current = index === 1 ? formProgress : index === 2 ? uploadProgress : null
-    return current && current.total > 0 ? Math.max(0, Math.min(1, current.completed / current.total)) : 0
-  }
-
   const stepStatus = (index: number): string => {
     if (submittedDone) return index === 3 ? '접수 완료' : '완료'
-    if (index === 2) {
-      return uploadProgress.total > 0 ? `${uploadProgress.completed} / ${uploadProgress.total}` : '대기'
+    const progress = index === 1 ? formProgress : index === 2 ? uploadProgress : null
+    const count = progress && progress.total > 0 ? `${progress.completed} / ${progress.total}` : ''
+    if (index < currentIndex) return index === 2 && count ? `완료 · ${count}` : '완료'
+    if (index > currentIndex) {
+      const state = index === 2 && uploadComplete ? '완료' : '예정'
+      return count ? `${state} · ${count}` : state
     }
-    if (index < currentIndex) return '완료'
-    if (index > currentIndex) return '대기'
-    if (index === 1 && formProgress.total > 0) return `${formProgress.completed} / ${formProgress.total} 작성`
-    return ''
+    return count ? `현재 · ${count}` : '현재 단계'
   }
 
   const stepperNavigate = (index: number) => {
@@ -373,62 +378,53 @@ export default function ApplyFlow() {
   }
 
   return (
-    <div className={stage === 'upload' ? 'flow flow--fluid' : 'flow'}>
-      <header className="flow__head">
-        <div>
+    <div className={`flow flow--active${stage === 'upload' ? ' flow--fluid' : stage === 'forms' && program.code === 'double_savings' ? ' flow--forms' : ''}`}>
+      {headerHost && appId !== null && createPortal(
+        <div className="shell__application-controls">
+          <span className="shell__application-number">신청번호 <strong>{appNo || '발급 중…'}</strong></span>
+          <button type="button" className="shell__mypage" onClick={openMyPage} disabled={stage === 'mypage'}>마이페이지</button>
+        </div>, headerHost,
+      )}
+      <div className="flow__overview">
+        <header className="flow__head flow__head--compact">
           <h1>{program.name} 신청</h1>
-          <p className="flow__sub">작성 내용은 단계마다 자동 저장됩니다</p>
-        </div>
-        <div className="flow__head-meta">
-          <dl className="flow__meta">
-            <div>
-              <dt>신청번호</dt>
-              <dd>{appNo || '발급 중…'}</dd>
-            </div>
-            {program.is_first_come && (
-              <div>
-                <dt>접수 방식</dt>
-                <dd>선착순</dd>
-              </div>
-            )}
-          </dl>
-          <button type="button" className="flow__mypage" onClick={openMyPage} disabled={stage === 'mypage'}>마이페이지</button>
-        </div>
-      </header>
-      <ol className="flow__stages" aria-label="신청 단계">
-        {APPLY_STEPS.map(({ key, label }, i) => {
-          const complete = submittedDone || (i === 2 ? uploadComplete : i < currentIndex)
-          const current = i === currentIndex
-          const canNavigate = !submittedDone && stage !== 'mypage' && i !== 0 &&
-            (i < currentIndex || (i === 2 && uploadProgress.total > 0))
-          const status = stepStatus(i)
-          return (
-          <li
-            key={key}
-            className={complete ? 'is-complete' : current ? 'is-current' : 'is-waiting'}
-          >
-            <button
-              type="button"
-              aria-current={current ? 'step' : undefined}
-              aria-disabled={!canNavigate}
-              title={i === 0 && identity ? '본인인증은 완료되었습니다' : undefined}
-              onClick={() => stepperNavigate(i)}
+          {program.is_first_come && <span className="flow__submission-order">선착순 접수</span>}
+        </header>
+        <ol className="flow__stages" aria-label="신청 단계">
+          {APPLY_STEPS.map(({ key, label }, i) => {
+            const complete = submittedDone || i < currentIndex || (i === 2 && uploadComplete)
+            const current = i === currentIndex
+            const canNavigate = !submittedDone && stage !== 'mypage' && i !== 0 &&
+              (i < currentIndex || (i === 2 && uploadProgress.total > 0))
+            const status = stepStatus(i)
+            return (
+            <li
+              key={key}
+              className={current ? 'is-current' : complete ? 'is-complete' : 'is-waiting'}
             >
-              <span className="flow__stage-no" aria-hidden="true">
-                {complete ? <span className="flow__stage-check" aria-hidden="true">✓</span> : i + 1}
-              </span>
-              <span className="flow__stage-label">{label}</span>
-              <span className="flow__stage-status">{status}</span>
-            </button>
-            {i < APPLY_STEPS.length - 1 && (
-              <span className="flow__stage-connector" aria-hidden="true">
-                <span style={{ width: `${stepProgress(i) * 100}%` }} />
-              </span>
-            )}
-          </li>
-          )
-        })}
-      </ol>
+              <button
+                type="button"
+                aria-current={current ? 'step' : undefined}
+                aria-disabled={!canNavigate}
+                title={i === 0 && identity ? '본인인증은 완료되었습니다' : undefined}
+                onClick={() => stepperNavigate(i)}
+              >
+                <span className="flow__stage-no" aria-hidden="true">
+                  {complete && !current && <span className="flow__stage-check" aria-hidden="true">✓</span>}
+                </span>
+                <span className="flow__stage-copy">
+                  <span className="flow__stage-caption">
+                    <span>{i + 1}단계</span>
+                    <span className="flow__stage-status">{status}</span>
+                  </span>
+                  <span className="flow__stage-label">{label}</span>
+                </span>
+              </button>
+            </li>
+            )
+          })}
+        </ol>
+      </div>
 
       {/* ── 본인인증 (데모) ── */}
       {stage === 'identity' && appId !== null && (
@@ -450,6 +446,7 @@ export default function ApplyFlow() {
       {/* ── [1] 자가진단 ── */}
       {stage === 'forms' && appId !== null && (
         <PdfFormsWorkspace
+          key={`${appId}:${program.code}:${!!submitted}`}
           applicationId={appId}
           program={program}
           identity={identity}

@@ -1,0 +1,39 @@
+{
+  "id": "savings-inline-forms",
+  "name": "savings-inline-forms",
+  "title": "Inline savings PDF forms and polished applicant workspace",
+  "description": "Inline original savings PDFs with explicit public1-first form navigation, a plain contents sidebar, preserved signing and compact applicant navigation.",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "rlawlqls",
+  "assignee": "rlawlqls",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "research/current-behavior.md",
+    "verification.md",
+    "commit-plan.md"
+  ],
+  "notes": "Latest targeted text refinement complete: stage2 copy left at circleedge, stage3 copy right; narrow fallback preserves readable direction. Savings title balance-wraps in shared left column, progress100% in rightcolumn preserves prior PDF-width horizontal bounds; original22px font retained. Only apply-flow.css changed; nodes/rail/colors/JSX/functions untouched. Lint/build/diff passed; independent source/diff review passed without fixes. Browser rendering/actual linebreaks unverified (host unavailable). Task manually activated because Python unavailable; no commit/push/archive; separate commit approval pending.",
+  "meta": {
+    "awaiting_implementation_approval": false,
+    "implementation_complete": true,
+    "code_review_complete": true,
+    "awaiting_commit_approval": true,
+    "browser_verification": "unavailable"
+  }
+}

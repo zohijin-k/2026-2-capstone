@@ -1,0 +1,37 @@
+{
+  "id": "hide-applicant-id",
+  "name": "hide-applicant-id",
+  "title": "Remove application IDs from applicant page URLs",
+  "description": "Use stage-only applicant URLs and stop selecting applications from URL identifiers.",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "frontend",
+  "package": "frontend",
+  "priority": "P2",
+  "creator": "rlawlqls",
+  "assignee": "rlawlqls",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": null,
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "demo/frontend/src/pages/applicant/ApplyFlow.tsx",
+    ".trellis/spec/frontend/state-management.md"
+  ],
+  "notes": "User approved the final plan on 2026-11-13. Implementation and verification are complete; awaiting the required commit-plan review. Python is unavailable, so task metadata was maintained manually.",
+  "meta": {
+    "validation": {
+      "lint": "Passed; one existing only-export-components warning in StatusBadge.tsx:5.",
+      "typecheck": "Passed for tsconfig.app.json and tsconfig.node.json with --noEmit --incremental false.",
+      "regression": "37 assertions passed against the actual savedPage function, URL synchronization effect, and failed-restore effect through TypeScript AST extraction and a simulated browser environment. Covers all stages, legacy numeric/query URLs, invalid or disabled session storage, my-page return, preserved query options, home/return state, and stale restoration.",
+      "diff_check": "Passed git diff --check.",
+      "scope": "Applicant navigation and its Trellis documentation only. No browser UI validation performed."
+    }
+  }
+}
