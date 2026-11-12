@@ -165,6 +165,10 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     # 신뢰도 = 핵심 필드 신뢰도의 최솟값. 필드 신뢰도는 OCR 점수가 아니라 검증 통과율이다.
     key = [f[k].confidence for k in ("issue_date", "name", "birth_date") if k in f]
     confidence = min([ex.type_confidence, *key]) if "issue_date" in f else 0.5
+    if any(not validation.passed and validation.name.startswith(("history", "occurred"))
+           for validation in ex.validations):
+        confidence = min(confidence, .4)
+        fields["판독경고"] = "주소 이력의 순번 또는 날짜를 완전히 확인하지 못했습니다."
 
     return OcrResult(
         detected_doc_type=detected,

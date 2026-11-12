@@ -24,6 +24,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from statistics import median
 from zoneinfo import ZoneInfo
 
 from ..pipeline.layout import Word, group_lines, line_text, normalize, squash
@@ -265,9 +266,47 @@ def _table_bounds(lines: list[list[Word]]) -> tuple[float, float] | None:
     return start, end
 
 
+def _join_note_numbers(lines: list[list[Word]], start: float, end: float) -> list[list[Word]]:
+    """Associate a uniquely adjacent isolated number with a bracketed note row."""
+    scoped = [line for line in lines if start <= line[0].cy < end]
+    dated = [line[0].cy for line in scoped if any(
+        COL_REPORT_X[0] <= word.x0 < COL_REPORT_X[1] and ISO_DATE.fullmatch(normalize_format_text(word.text))
+        for word in line)]
+    pitch = median(b - a for a, b in zip(dated, dated[1:])) if len(dated) > 1 else float('inf')
+    numbers = [index for index, line in enumerate(scoped) if len(line) == 1 and
+               line[0].x0 < COL_NO_MAX_X and re.fullmatch(r"\d{1,3}", line[0].text.strip())]
+    proposals = {}
+    for index, line in enumerate(scoped):
+        if not any(COL_NO_MAX_X <= word.x0 < COL_ADDR_MAX_X and word.text.strip().startswith("[")
+                   for word in line):
+            continue
+        if any(word.x0 < COL_NO_MAX_X for word in line) or any(
+                COL_REPORT_X[0] <= word.x0 < COL_REPORT_X[1] and ISO_DATE.fullmatch(normalize_format_text(word.text))
+                for word in line):
+            continue
+        candidates = []
+        for number_index in numbers:
+            between = scoped[min(index, number_index) + 1:max(index, number_index)]
+            if between:
+                continue
+            pair = line + scoped[number_index]
+            height = max(word.y1 - word.y0 for word in pair)
+            note_y = sum(word.cy for word in line) / len(line)
+            if abs(note_y - scoped[number_index][0].cy) <= min(height * .85, pitch * .45):
+                candidates.append(number_index)
+        if len(candidates) == 1:
+            proposals[index] = candidates[0]
+    assigned = Counter(proposals.values())
+    merged = {index: number for index, number in proposals.items() if assigned[number] == 1}
+    consumed = set(merged.values())
+    return [sorted(line + scoped[merged[index]], key=lambda word: word.x0) if index in merged else line
+            for index, line in enumerate(scoped) if index not in consumed]
+
+
 def _parse_rows(lines: list[list[Word]], start: float, end: float, page: int,
-                entries: list[HistoryEntry], pending_notes: list[str], note_numbers: list[int]) -> None:
-    for line in lines:
+                entries: list[HistoryEntry], pending_notes: list[str], note_numbers: list[int],
+                observed_numbers: list[int]) -> None:
+    for line in _join_note_numbers(lines, start, end):
         if not (start <= line[0].cy < end):
             continue
         no = None; addr: list[str] = []; occ = rep = None
@@ -277,6 +316,7 @@ def _parse_rows(lines: list[list[Word]], start: float, end: float, page: int,
             if w.x0 < COL_NO_MAX_X:
                 if m := re.fullmatch(r"(\d{1,3})\s*(.*)", t):
                     no = int(m.group(1))
+                    observed_numbers.append(no)
                     if m.group(2):
                         addr.append(m.group(2))
                 continue
@@ -322,6 +362,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     entries: list[HistoryEntry] = []
     pending: list[str] = []
     note_numbers: list[int] = []
+    observed_numbers: list[int] = []
     warnings: list[str] = []
 
     for p, r in pages:
@@ -331,7 +372,7 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
         headers.append(_parse_header(lines))
         bounds = _table_bounds(lines)
         if bounds:
-            _parse_rows(lines, *bounds, p.page, entries, pending, note_numbers)
+            _parse_rows(lines, *bounds, p.page, entries, pending, note_numbers, observed_numbers)
         else:
             warnings.append(f"page {p.page}: 주소 이력 표를 찾지 못함")
 
@@ -435,9 +476,11 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     # --- 주소 이력 ---
     entry_nos = [e.no for e in entries if e.no is not None]
     nos = sorted(entry_nos + note_numbers)
-    if nos:
-        seq_ok = nos == list(range(nos[0], nos[0] + len(nos))) and len(set(nos)) == len(nos)
-        missing = sorted(set(range(nos[0], nos[-1] + 1)) - set(nos))
+    if entries or note_numbers or observed_numbers or detected == DocType.RESIDENT_ABSTRACT:
+        seq_ok = (bool(entries) and len(entry_nos) == len(entries) and
+                  bool(nos) and nos == list(range(nos[0], nos[0] + len(nos))) and
+                  sorted(observed_numbers) == nos)
+        missing = sorted(set(range(nos[0], nos[-1] + 1)) - set(nos)) if nos else []
         validations.append(Validation(
             "history_numbers_sequential", seq_ok,
             f"순번 {len(nos)}개 (이력 {len(entry_nos)} + 메모 {len(note_numbers)}) / 건 {len(entries)}개"
@@ -449,6 +492,9 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
     validations.append(Validation("occurred_before_reported", occ_ok))
 
     hist_checks = [v.passed for v in validations if v.name.startswith(("history", "occurred"))]
+    history_complete = all(hist_checks)
+    if not history_complete:
+        warnings.append("주소 이력의 순번 또는 날짜를 완전히 확인하지 못했습니다.")
     if entries:
         fields["address_history_count"] = ExtractedField(
             value=len(entries), raw_text=f"{len(entries)}건", source=FieldSource.OCR,
@@ -465,6 +511,10 @@ def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None)
             value=last.address_text, raw_text=last.address_text, source=FieldSource.OCR,
             confidence=_confidence(hist_checks + [resolved_sido(entries, len(entries) - 1) is not None]),
             bbox=_bbox(last.words, page_map))
+
+    if not history_complete:
+        for extracted in fields.values():
+            extracted.confidence = min(extracted.confidence, .4)
 
     return ResidentAbstractResult(
         detected, tconf, fields, entries, validations, warnings,
