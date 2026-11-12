@@ -42,8 +42,8 @@ def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word
                     r"국민건강보험공단(?:이사장?)?", anchor_text):
                 continue
             extra = [word for word in row if all(word is not anchor for anchor in words)]
-            if all(re.fullmatch(r"이사장?", squash(word.text)) or
-                   (word.conf < .8 and not re.search(r"\d", word.text)) for word in extra):
+            left = min(word.x0 for word in words)
+            if all(word.x0 >= left and not re.search(r"\d", word.text) for word in extra):
                 issuers.append(words)
     if len(issuers) != 1:
         return None, [], False

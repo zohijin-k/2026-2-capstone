@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from statistics import median
 
 from . import nhis_common as common, nhis_forms as forms
 from .format_text import normalize_format_text, normalize_numeric_text
@@ -17,6 +18,7 @@ PERIOD = re.compile(r"(20\d{2})년(0?[1-9]|1[0-2])월[~～-](20\d{2})년(0?[1-9]
 COMPONENTS = ("건강보험료", "장기요양보험료", "보수외소득월액(건강)", "보수외소득월액(요양)")
 HEADERS = ("월별", *COMPONENTS, *COMPONENTS)
 OPTIONAL_COLUMNS = (3, 4, 7, 8)
+GROUPS = ("고지금액", "납부금액")
 
 
 def recognizes(pages) -> bool:
@@ -25,10 +27,16 @@ def recognizes(pages) -> bool:
     government_number = "문서확인번호" in text and DOCUMENT_NUMBER.search(normalize_format_text(text))
     information_grid = "납부자번호" in text and "사업장명칭" in text
     words = [word for page, result in pages for row in common.page_lines(page, result) for word in row]
-    header_top = min((word.y0 for word in words if "보수외" in squash(word.text)), default=float('inf'))
-    first_month = min((word.y0 for word in words if word.y0 > header_top and MONTH.fullmatch(squash(word.text))),
-                      default=float('inf'))
-    header_text = squash(" ".join(word.text for word in words if word.cy < first_month))
+    component_top = _component_top(words)
+    months = [word for word in words if word.y0 > component_top and MONTH.fullmatch(squash(word.text))]
+    first_month = min(months, key=lambda word: word.y0) if months else None
+    header_words = [word for word in words if first_month is not None
+                    and first_month.y0 - 3 * (first_month.y1 - first_month.y0) <= word.y0
+                    and word.cy < first_month.y0]
+    component_top = _component_top(header_words)
+    header_words = [word for word in header_words if word.y0 >= component_top]
+    header_text = " ".join(squash("".join(line_text(row) for row in common.group_lines(cluster, tol=.25)))
+                           for cluster in _header_clusters(header_words))
     eight_columns = header_text.count("보수외") >= 3 and header_text.count("소득월액") >= 3
     return bool(title and (government_number or information_grid) and eight_columns)
 
@@ -74,21 +82,35 @@ def _date_cell(words):
     return common.parse_date(text)
 
 
-def _header_columns(words):
+def _component_top(words):
+    return min((word.y0 for word in words
+                if any(squash(word.text) in label for label in COMPONENTS)
+                and not any(squash(word.text) in label for label in GROUPS)), default=float('inf'))
+
+
+def _header_clusters(words):
+    if not words:
+        return []
+    glyph_width = median((word.x1 - word.x0) / max(len(squash(word.text)), 1) for word in words)
     clusters = []
     for word in sorted(words, key=lambda item: item.x0):
-        if clusters and word.x0 <= max(item.x1 for item in clusters[-1]):
+        if clusters and word.x0 <= max(item.x1 for item in clusters[-1]) + .5 * glyph_width:
             clusters[-1].append(word)
         else:
             clusters.append([word])
-    if len(clusters) != len(HEADERS):
+    return clusters
+
+
+def _header_columns(words, expected=HEADERS):
+    clusters = _header_clusters(words)
+    if len(clusters) != len(expected):
         return None
-    for index, (cluster, expected) in enumerate(zip(clusters, HEADERS)):
-        value = squash("".join(word.text for word in sorted(cluster, key=lambda item: (item.cy, item.x0))))
-        if index == 0:
+    for index, (cluster, label) in enumerate(zip(clusters, expected)):
+        value = squash("".join(line_text(row) for row in common.group_lines(cluster, tol=.25)))
+        if expected == HEADERS and index == 0:
             valid = value in {"월별", "년월", "월"}
         else:
-            valid = value == expected
+            valid = value == label
         if not valid:
             return None
     return clusters
@@ -106,16 +128,23 @@ def _money_cell(words, *, allow_correction, row, column, corrections):
     return int(normalized.replace(",", "")), True
 
 
-def _monthly_table(lines, *, allow_correction):
+def _monthly_table(lines, *, allow_correction, metadata_bottom):
     checks = []
     corrections = []
-    groups = [_unique_label(lines, label) for label in ("고지금액", "납부금액")]
-    group_ok = all(groups) and max(word.x1 for word in groups[0]) < min(word.x0 for word in groups[1])
-    checks.append(common.Validation("payment_group_headers", bool(group_ok)))
     words = [word for row in lines for word in row]
-    group_bottom = max((word.y1 for group in groups for word in group), default=float('inf'))
-    months = [word for word in words if word.y0 > group_bottom and MONTH.fullmatch(squash(word.text))]
+    months = [word for word in words if word.y0 > metadata_bottom and MONTH.fullmatch(squash(word.text))]
     months.sort(key=lambda word: word.cy)
+    first_y = min((word.y0 for word in months), default=float('-inf'))
+    # Group labels belong to the table's header band. Notice prose below the
+    # table may contain the same words and cannot compete with these labels.
+    header_band = [word for word in words if metadata_bottom < word.y0 and word.cy < first_y]
+    component_top = _component_top(header_band)
+    group_words = [word for word in header_band if word.cy < component_top
+                   and any(squash(word.text) in label for label in GROUPS)]
+    groups = _header_columns(group_words, expected=GROUPS)
+    group_ok = groups is not None
+    checks.append(common.Validation("payment_group_headers", group_ok))
+    group_bottom = max((word.y1 for group in (groups or []) for word in group), default=float('inf'))
     sequence = [int(MONTH.fullmatch(squash(word.text))[1]) for word in months]
     months_ok = sequence == list(range(1, 13))
     checks.append(common.Validation("monthly_rows_found", months_ok))
@@ -256,7 +285,9 @@ def extract(pages, today=None):
         put("조회기간", [f"{year}-{int(match[2]):02}", f"{year}-{int(match[4]):02}"], row)
 
     allow_correction = all(page.source != PageSource.TEXT_LAYER and result.engine != "text_layer" for page, result in pages)
-    values, totals, corrections, table_checks = _monthly_table(lines, allow_correction=allow_correction)
+    metadata_bottom = max((word.y1 for row in period_rows for word in row), default=0)
+    values, totals, corrections, table_checks = _monthly_table(
+        lines, allow_correction=allow_correction, metadata_bottom=metadata_bottom)
     checks.extend(table_checks)
     bottom = _value_cells(lines, "납부총액", "용도구분")
     grand_total, total_ok = _money_cell(bottom[0], allow_correction=allow_correction,

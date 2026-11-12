@@ -7,13 +7,13 @@ from engine_v2.tests import p2_shape3_samples as sample
 
 @pytest.mark.parametrize("kind,detected,failures", [
     ("payment", DocType.NHIS_PAYMENT,
-     {"payment_group_headers", "payment_component_headers", "payment_columns", "paid_total_matches"}),
+     set()),
     ("qualification", DocType.NHIS_QUALIFICATION,
      set()),
     ("acquisition", DocType.NHIS_ACQUISITION_LOSS,
      set()),
 ])
-def test_exact_shape_with_inferred_footer_reproduces_observed_failures(monkeypatch, tmp_path, kind, detected, failures):
+def test_exact_shape_remaining_failures(monkeypatch, tmp_path, kind, detected, failures):
     result = sample.read_image(monkeypatch, tmp_path, kind)
     assert result.detected_doc_type == detected
     assert {value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()} == failures
@@ -27,8 +27,8 @@ def test_exact_shape_with_inferred_footer_reproduces_observed_failures(monkeypat
 @pytest.mark.parametrize("kind", ["payment", "qualification", "acquisition"])
 def test_same_geometry_with_normal_labels_already_passes(monkeypatch, tmp_path, kind):
     cells, _ = sample.document(kind)
-    cells = [(*cell[:4], cell[4].replace("고지금액", "가상안내").replace("국민건강보험공단", "가상시험안내문구"), cell[5])
-             if cell[1] in {2298, 3070, 3016} else cell for cell in cells]
+    cells = [(*cell[:4], cell[4].replace("납부금액", "가상금액").replace("국민건강보험공단", "가상시험안내문구"), cell[5])
+             if cell[1] in {2340, 2426, 3070, 3016} else cell for cell in cells]
     result = sample.read_image(monkeypatch, tmp_path, kind, cells=cells)
     assert result.fields["양식판독상태"] == "완전"
     assert not result.fields.get("판독검증실패")
