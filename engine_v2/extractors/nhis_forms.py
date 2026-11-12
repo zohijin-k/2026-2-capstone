@@ -22,31 +22,79 @@ def single_page(pages) -> bool:
 
 
 def confirmation_issue_date(page, result) -> tuple[date | None, list[common.Word], bool]:
-    """Select a unique date-only line strictly between confirmation and issuer."""
+    """Read one unlabeled date in the observed confirmation/issuing block."""
     lines = common.page_lines(page, result)
-    confirmations = [i for i, row in enumerate(lines) if "확인합니다" in squash(line_text(row))]
-    issuers = [i for i, row in enumerate(lines)
-               if "국민건강보험공단" in squash(line_text(row)) and "이사장" in squash(line_text(row))]
-    if len(confirmations) != 1 or len(issuers) != 1 or confirmations[0] >= issuers[0]:
+    confirmations = [row for row in lines if "확인합니다" in squash(line_text(row))]
+    if len(confirmations) != 1:
         return None, [], False
-    candidates = []
-    for row in lines[confirmations[0] + 1:issuers[0]]:
-        dates = common.dates_in_line(row)
-        text = common.normalize_format_text(line_text(row))
-        # A malformed second date is still a competing candidate, not blank
-        # space to ignore after finding one valid date.
-        if dates or re.search(r"\d", text):
-            residue = re.sub(r"[\d\s년월일年月日./:\-‐‑‒–—―−﹘﹣－]", "", text)
-            raw_dates = list(common.DATE_RE.finditer(text))
-            if not raw_dates:
-                raw_dates = list(common.COMPACT_DATE_RE.finditer(squash(text)))
-            if len(dates) != 1 or len(raw_dates) != 1 or residue:
+    hits = label_hits(confirmations, ("확인합니다",))
+    confirmation = hits[0][1] if len(hits) == 1 else []
+    if not confirmation:
+        return None, [], False
+    top = min(word.y0 for word in confirmation)
+    # A notice can mention the organization again. An issuing anchor consists
+    # of the organization and its optional role, separate from notice prose.
+    issuers = []
+    for row in lines:
+        for _, words in label_hits([row], ("국민건강보험공단",)):
+            anchor_text = squash(line_text(words))
+            if min(word.cy for word in words) <= top or not re.fullmatch(
+                    r"국민건강보험공단(?:이사장?)?", anchor_text):
+                continue
+            extra = [word for word in row if all(word is not anchor for anchor in words)]
+            left = min(word.x0 for word in words)
+            if all(word.x0 >= left and not re.search(r"\d", word.text) for word in extra):
+                issuers.append(words)
+    if len(issuers) != 1:
+        return None, [], False
+    issuer = issuers[0]
+    bottom = max(word.y1 for word in issuer)
+    issuer_ids = {id(word) for word in issuer}
+    parts = []
+    for row in lines:
+        row_text = squash(line_text(row))
+        if any(label in row_text for label in ("요청일", "유효", "출력", "조회기간")):
+            continue
+        for word in row:
+            if id(word) in issuer_ids or not top <= word.cy <= bottom:
+                continue
+            text = common.normalize_format_text(squash(word.text))
+            if "확인합니다" in text:
+                text = text.partition("확인합니다")[2].lstrip(".")
+            if not text:
+                continue
+            if re.fullmatch(r"[\d년월일年月日./\-]+", text):
+                parts.append((word, text))
+            elif (re.search(r"\d", text) or
+                  re.fullmatch(r"[A-Za-z]{4}[./-][A-Za-z]{1,2}[./-][A-Za-z]{1,2}\.?", text)):
                 return None, [], False
-            candidates.append(dates[0])
-    if len(candidates) != 1:
+    if not parts:
         return None, [], False
-    value, words = candidates[0]
-    return value, words, True
+    # Re-group only date fragments. Tall stamps and confirmation prose must
+    # not determine whether the date's year/month/day share a baseline.
+    text_by_id = {id(word): text for word, text in parts}
+    ordered = [word for row in common.group_lines([word for word, _ in parts]) for word in row]
+    for left, right in zip(ordered, ordered[1:]):
+        height = max(left.px[3] - left.px[1], right.px[3] - right.px[1])
+        horizontal_gap = max(left.px[0] - right.px[2], right.px[0] - left.px[2], 0)
+        vertical_gap = max(left.px[1] - right.px[3], right.px[1] - left.px[3], 0)
+        if horizontal_gap > 3 * height or vertical_gap > 3 * height:
+            return None, [], False
+    text = "".join(text_by_id[id(word)] for word in ordered)
+    matches = list(common.DATE_RE.finditer(text))
+    if not matches:
+        matches = list(common.COMPACT_DATE_RE.finditer(text))
+    if len(matches) != 1:
+        return None, [], False
+    match = matches[0]
+    # Entire fragments must describe exactly one date. A second malformed
+    # date, leftover year/month/day or extra digits invalidate the evidence.
+    if text[:match.start()] or text[match.end():].strip("."):
+        return None, [], False
+    value = common.parse_date(match.group())
+    if value is None:
+        return None, [], False
+    return value, ordered, True
 
 
 def person_table_header(page, result, anchor: str) -> common.PageHeader:
@@ -113,18 +161,25 @@ def person_table_header(page, result, anchor: str) -> common.PageHeader:
     return header
 
 
-def label_hits(lines, aliases):
+def label_hits(lines, aliases, *, x_bounds=None):
     """Compare spaced labels without joining or changing source value tokens.
 
     Separate one-character glyphs must share a line and reasonably regular
     spacing. Larger word fragments may form a label, but not across a cell gap.
-    Legacy readers retain their existing common.label_hits behavior.
+    An explicitly observed label-cell interval permits justified glyph spacing.
+    Values outside that interval never participate in the comparison.
     """
     from statistics import median
 
     found = []
     for row in lines:
+        if x_bounds is not None:
+            left, right = x_bounds
+            row = [word for word in row if left <= word.x0 and word.x1 <= right]
         for alias, words in common.label_hits([row], aliases):
+            if x_bounds is not None:
+                found.append((alias, words))
+                continue
             widths = [(w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words]
             scale = median(widths)
             gaps = [b.x0 - a.x1 for a, b in zip(words, words[1:])]
@@ -137,13 +192,15 @@ def label_hits(lines, aliases):
     return found
 
 
-def table_columns(headers, body):
+def table_columns(headers, body, *, optional_columns=(), minimum_gap_ratio=1.0):
     """Map ordered headers to persistent empty vertical corridors in body words.
 
     Header centers only establish column order and which pair a corridor can
     separate; body interval edges supply every actual boundary. Multiple equally
     plausible corridors, overlaps without a gap, or missing evidence return None.
     Marker cells can supply evidence for otherwise empty optional columns.
+    Explicit optional columns may additionally use observed header gaps within
+    empty body space. Missing headers and ambiguous occupied corridors fail.
     """
     from statistics import median
 
@@ -156,6 +213,7 @@ def table_columns(headers, body):
     if not words:
         return None
     scale = median((w.x1 - w.x0) / max(len(squash(w.text)), 1) for w in words)
+    minimum_gap = scale * minimum_gap_ratio
     intervals = []
     for left, right in sorted((w.x0, w.x1) for w in words):
         if intervals and left <= intervals[-1][1]:
@@ -164,17 +222,47 @@ def table_columns(headers, body):
             intervals.append([left, right])
     gaps = [(a[1], b[0]) for a, b in zip(intervals, intervals[1:])]
     boundaries = [float('-inf')]
-    for left, right in zip(centers, centers[1:]):
+    for index, (left, right) in enumerate(zip(centers, centers[1:])):
         candidates = sorted(((b - a, a, b) for a, b in gaps
-                             if left < (a + b) / 2 < right and b - a >= scale), reverse=True)
+                             if left < (a + b) / 2 < right and b - a >= minimum_gap), reverse=True)
         if not candidates:
-            return None
+            if index not in optional_columns and index + 1 not in optional_columns:
+                return None
+            header_left = max(word.x1 for word in headers[index])
+            header_right = min(word.x0 for word in headers[index + 1])
+            empty = [(float('-inf'), intervals[0][0]), *gaps,
+                     (intervals[-1][1], float('inf'))]
+            candidates = sorted((min(b, header_right) - max(a, header_left),
+                                 max(a, header_left), min(b, header_right))
+                                for a, b in empty
+                                if min(b, header_right) - max(a, header_left) >= minimum_gap)
+            candidates.reverse()
+            if not candidates:
+                return None
         width, a, b = candidates[0]
         if len(candidates) > 1 and width - candidates[1][0] <= scale:
             return None
         boundaries.append((a + b) / 2)
     boundaries.append(float('inf'))
-    return boundaries
+    return boundaries if all(a < b for a, b in zip(boundaries, boundaries[1:])) else None
+
+
+def table_noise(word, reference_height: float) -> bool:
+    """Identify OCR geometry anomalies for a caller's explicitly scoped region.
+
+    Callers must retain ordinary cells and use this only on OCR pages in an
+    observed blank/header-gap region. A low confidence by itself is insufficient.
+    """
+    if reference_height <= 0:
+        return False
+    height = word.y1 - word.y0
+    # Word x/y percentages use different page dimensions. Express pixel width
+    # in the same units as height before comparing the glyph's proportions.
+    pixel_height = word.px[3] - word.px[1]
+    width = ((word.px[2] - word.px[0]) * height / pixel_height) if pixel_height > 0 else 0
+    tall = word.conf < .75 and height > 2.5 * reference_height
+    tiny = word.conf < .3 and height < .6 * reference_height and width < .8 * reference_height
+    return tall or tiny
 
 
 def column_cells(words, boundaries):

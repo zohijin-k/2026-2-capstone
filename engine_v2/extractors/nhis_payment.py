@@ -27,6 +27,16 @@ MONTH_LABELS = ("년월", "월별", "보험료월", "납부월", "납부년월",
 TABLE_LABELS = MONTH_LABELS + ("고지금액", "고지보험료", "납부금액", "납부보험료", "실납부",
                                "건강보험료", "장기요양보험료", "장기요양")
 TABLE_LABEL_FRAGMENTS = ("고지", "금액", "납부", "보험료", "건강", "장기요양", "실납부", "년", "월")
+REVIEW_VALIDATIONS = frozenset({
+    "document_type", "성명_consistent", "생년월일_consistent", "발급일_consistent", "page_names_match",
+    "monthly_rows_found", "monthly_amounts_numeric", "months_continuous", "monthly_total_matches", "paid_total_matches",
+})
+
+
+def has_failed_payment_validation(fields) -> bool:
+    """Recognize critical failed checks in fresh or persisted Korean field data."""
+    failed = str(fields.get("판독검증실패", ""))
+    return bool({name.strip() for name in failed.split(",")} & REVIEW_VALIDATIONS)
 
 
 @dataclass
@@ -37,6 +47,8 @@ class PaymentResult:
     validations: list[common.Validation]
     warnings: list[str] = field(default_factory=list)
     diagnostics: dict[str, str] = field(default_factory=dict)
+    form_kind: str | None = None
+    structure_complete: bool | None = None
 
 
 def _money_words(line):
@@ -329,6 +341,10 @@ def _body_issue_date(pages):
 
 
 def extract(pages: list[tuple[PageImage, OcrResult]], today: date | None = None) -> PaymentResult:
+    from . import nhis_payment_gov
+
+    if nhis_payment_gov.recognizes(pages):
+        return nhis_payment_gov.extract(pages, today=today)
     del today
     headers = common.page_headers(pages)
     page_map = {page.page: page for page, _ in pages}

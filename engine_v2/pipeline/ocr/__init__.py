@@ -18,6 +18,8 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 
+from ..privacy import mask_rrn, mask_words
+
 
 @dataclass
 class OcrWord:
@@ -25,13 +27,17 @@ class OcrWord:
     confidence: float                          # 0~1
     bbox_px: tuple[float, float, float, float]  # 좌상단 원점 픽셀 (x0, y0, x1, y1)
 
-
 @dataclass
 class OcrResult:
     engine: str
     words: list[OcrWord] = field(default_factory=list)
     elapsed_sec: float = 0.0
     error: str | None = None
+
+    def __post_init__(self):
+        mask_words(self.words)
+        if self.error:
+            self.error = mask_rrn(self.error)
 
     @property
     def text(self) -> str:
@@ -69,7 +75,7 @@ def _run_applevision(png: bytes, size: tuple[int, int]) -> list[OcrWord]:
         x0, x1 = x * w, (x + bw) * w
         y0, y1 = (1 - y - bh) * h, (1 - y) * h
         out.append(OcrWord(text, float(conf), (x0, y0, x1, y1)))
-    return out
+    return mask_words(out)
 
 
 _easyocr_reader = None
@@ -86,7 +92,7 @@ def _run_easyocr(png: bytes, size) -> list[OcrWord]:
         xs = [p[0] for p in poly]
         ys = [p[1] for p in poly]
         out.append(OcrWord(text, float(conf), (min(xs), min(ys), max(xs), max(ys))))
-    return out
+    return mask_words(out)
 
 
 _paddle = None
@@ -128,7 +134,7 @@ def _run_paddle(png: bytes, size) -> list[OcrWord]:
             xs = [p[0] for p in poly]
             ys = [p[1] for p in poly]
             out.append(OcrWord(t, float(s), (min(xs), min(ys), max(xs), max(ys))))
-    return out
+    return mask_words(out)
 
 
 def default_engine() -> str:

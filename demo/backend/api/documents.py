@@ -20,6 +20,7 @@ from ..models import UNASSIGNED_SLOT, Application, Document, SubsidyItem, get_se
 from ..ocr import read_document, split_pdf_pages
 from ..rules.identity import identity_of
 from ..ocr.base import BBox, OcrResult
+from engine_v2.pipeline.privacy import mask_data
 from ..rules.doc_check import CheckFinding, THRESHOLD_NOTES, check_document
 from ..rules.doc_types import DocType
 from ..rules.criteria import for_application, read_criteria
@@ -193,7 +194,7 @@ def _parse_date(value: str | None) -> date | None:
 
 
 def _ocr_json(ocr: OcrResult) -> dict[str, Any]:
-    return {
+    return mask_data({
         "detected_doc_type": str(ocr.detected_doc_type) if ocr.detected_doc_type else None,
         "confidence": ocr.confidence,
         "image_quality": ocr.image_quality,
@@ -211,7 +212,7 @@ def _ocr_json(ocr: OcrResult) -> dict[str, Any]:
         "classification_evidence": ocr.classification_evidence,
         "classification_confidence": ocr.classification_confidence,
         "elapsed_ms": ocr.elapsed_ms,
-    }
+    })
 
 
 def _save_row(
@@ -237,7 +238,7 @@ def _save_row(
         declared_issue_date=declared,
         ocr_json=_ocr_json(ocr),
         stage1_status=status,
-        findings_json=findings,
+        findings_json=mask_data(findings),
         page_index=page_index,
         source_file_path=source_file_path,
     )
@@ -302,7 +303,7 @@ def _refresh_nhis_identity(application_id: int, app: Application, checklist: lis
             saved = session.get(Document, row.id)
             if saved is not None:
                 saved.stage1_status = result.status
-                saved.findings_json = [finding.as_dict() for finding in result.findings]
+                saved.findings_json = mask_data([finding.as_dict() for finding in result.findings])
                 session.add(saved)
                 session.commit()
 

@@ -303,7 +303,11 @@ def test_acquisition_loss_wrapped_column_headings_and_compact_dates():
 
 def test_acquisition_loss_five_years_not_covered():
     result = nhis_acquisition_loss.extract(acquisition_pages(acquired="2024-02-01", lost="2025-02-01", period=False))
-    assert result.fields["변동내역"].value == "최근 5년 미포함"
+    assert result.fields["변동내역"].value == "최근 5년 확인 필요"
+    history = json.loads(result.fields["자격이력자료"].value)
+    assert history["recent_five_years_covered"] is None
+    assert history["coverage_basis"] == "undetermined"
+    assert history["period_label_present"] is True
     assert "취득일" not in result.fields
 
 
@@ -352,7 +356,11 @@ def test_government24_synthetic_header_rrn_and_absent_period_fallback():
     assert result.fields["변동내역"].value == "최근 5년 포함"
 
     without_old_loss = nhis_acquisition_loss.extract(_government24_synthetic_pages(old_loss=False))
-    assert without_old_loss.fields["변동내역"].value == "최근 5년 미포함"
+    assert without_old_loss.fields["변동내역"].value == "최근 5년 확인 필요"
+    history = json.loads(without_old_loss.fields["자격이력자료"].value)
+    assert history["recent_five_years_covered"] is None
+    assert history["coverage_basis"] == "undetermined"
+    assert history["period_label_present"] is False
 
     with_period = nhis_acquisition_loss.extract(_government24_synthetic_pages(period=True))
     assert with_period.fields["변동내역"].value == "최근 5년 미포함"

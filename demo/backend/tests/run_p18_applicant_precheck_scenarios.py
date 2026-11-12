@@ -8,7 +8,7 @@ import json
 import os
 import tempfile
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -55,9 +55,11 @@ def resident_words(marker="1/1", *, name=IDENTITY.name, birth="1999-01-01", inde
             word.text = marker
         elif word.text == "990101-1234567" and birth == OTHER_BIRTH:
             word.text = "980203-1******"
+    first_date = date(2020, 1, 1) if index == 0 else date(2023, 1, 1) + timedelta(days=2 * index - 1)
+    second_date = date(2023, 1, 1) if index == 0 else date(2023, 1, 1) + timedelta(days=2 * index)
     return words + table_head(31.8) + [
-        *row(34.4, 1 + index * 2, "전북특별자치도 전주시 가상동", "2020-01-01"),
-        *row(39.4, 2 + index * 2, "전북특별자치도 전주시 합성동", "2023-01-01"),
+        *row(34.4, 1 + index * 2, "전북특별자치도 전주시 가상동", first_date.isoformat()),
+        *row(39.4, 2 + index * 2, "전북특별자치도 전주시 합성동", second_date.isoformat()),
     ]
 
 
@@ -81,7 +83,9 @@ def test_pages(tmp):
         "missing": ([resident_words("1/2")], "FAIL", "PAGES_INCOMPLETE"),
         "unread": ([resident_words("읽기불가")], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
         "duplicate-missing": ([resident_words("1/2"), resident_words("1/2")], "FAIL", "PAGES_INCOMPLETE"),
+        "duplicate-missing-distinct-body": ([resident_words("1/2"), resident_words("1/2", index=1)], "FAIL", "PAGES_INCOMPLETE"),
         "duplicate": ([resident_words(), resident_words()], "FAIL", "PAGES_DUPLICATED"),
+        "duplicate-distinct-body": ([resident_words(), resident_words(index=1)], "FAIL", "PAGES_DUPLICATED"),
         "totals": ([resident_words("1/2"), resident_words("2/3", index=1)], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
         "partly-unread": ([resident_words("1/2"), resident_words("읽기불가", index=1)], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
         "out-of-range": ([resident_words("2/1")], "NEEDS_REVIEW", "PAGES_UNREADABLE"),
@@ -98,6 +102,14 @@ def test_pages(tmp):
             review(name, result, code)
         if name == "missing":
             check("누락 문구 N/M", "2쪽 중 1쪽" in result.findings[0].message, True)
+    for name in ("duplicate-missing", "duplicate"):
+        original = results[name]
+        low_type = replace(original, classification_confidence=engine_config.OCR_CONFIDENCE_THRESHOLD - .01)
+        review(name + " 낮은 종류 신뢰도", check_document(req, low_type, identity=IDENTITY), "PAGES_UNREADABLE")
+        data = json.loads(original.fields["쪽표기자료"])
+        data["confidence"] = engine_config.OCR_CONFIDENCE_THRESHOLD - .01
+        low_page = replace(original, fields=dict(original.fields, 쪽표기자료=json.dumps(data)))
+        review(name + " 낮은 쪽 신뢰도", check_document(req, low_page, identity=IDENTITY), "PAGES_UNREADABLE")
     low_marker = resident_words("1/2")
     next(w for w in low_marker if w.text == "1/2").confidence = engine_config.OCR_CONFIDENCE_THRESHOLD - 0.01
     review("낮은 쪽표기 신뢰도", check_document(req, read_fake(tmp, "low-marker", [low_marker]), identity=IDENTITY), "PAGES_UNREADABLE")
@@ -146,8 +158,8 @@ def test_uncertainty(complete):
         fields = dict(complete.fields)
         fields.pop(field)
         review("초본 " + field, check_document(req, replace(complete, fields=fields), identity=IDENTITY), "RESIDENT_APPLICANT_UNREADABLE")
-    biz = DocRequirement("work_proof", DocType.BIZ_REG_PROOF, "사업자등록증명")
-    check("본인 항목 없는 종류는 범위 밖", check_document(biz, OcrResult(DocType.BIZ_REG_PROOF, 1.0), identity=IDENTITY).status, "PASS")
+    outside = DocRequirement("work_proof", DocType.FARM_BIZ_CERT, "농업경영체증명")
+    check("본인 항목 없는 종류는 범위 밖", check_document(outside, OcrResult(DocType.FARM_BIZ_CERT, 1.0), identity=IDENTITY).status, "PASS")
 
 
 def test_insurance(tmp):
@@ -249,8 +261,9 @@ def test_issue_date_labels():
         check("B6 발급일 속성 비움", ocr.issue_date, None)
         check("B6 발급일 필드 비움", "발급일" in ocr.fields, False)
         review("B6 발급일 미판독", check_document(req, ocr, declared_issue_date=date(2026, 11, 10)), "REQUIRED_FIELD_UNREADABLE")
-    req.date_basis = "none"
-    check("B6 날짜 검사 제외 서류", check_document(req, ocr).status, "PASS")
+    outside = DocRequirement("work_proof", DocType.FARM_BIZ_CERT, "농업경영체증명",
+                             min_issue_date=date(2026, 3, 3), date_basis="none")
+    check("B6 날짜 검사 제외 서류", check_document(outside, OcrResult(DocType.FARM_BIZ_CERT, 1.0)).status, "PASS")
 
 
 def main():

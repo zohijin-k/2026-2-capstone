@@ -30,6 +30,7 @@ from typing import Callable
 
 from ..paths import PRIVATE_DIR
 from .jbai_quality import assess_page
+from .privacy import mask_markup_rrn, mask_rrn
 
 MODEL = "PaddlePaddle/PaddleOCR-VL"
 DEFAULT_BASE_URL = "https://ai.jb.go.kr/open-api/v1"
@@ -174,7 +175,7 @@ class _TableParser(HTMLParser):
         tag = tag.lower()
         if tag in {"td", "th"} and self._cell is not None and self._row is not None:
             self._row.append(JBAITableCell(
-                text=re.sub(r"\s+", " ", "".join(self._cell["text"])).strip(),
+                text=mask_rrn(re.sub(r"\s+", " ", "".join(self._cell["text"])).strip()),
                 rowspan=int(self._cell["rowspan"]), colspan=int(self._cell["colspan"]),
                 header=bool(self._cell["header"]),
             ))
@@ -268,7 +269,7 @@ def parse_otsl_tables(content: str) -> list[JBAITable]:
     rows: list[list[JBAITableCell]] = [[] for _ in range(max_row + 1)]
     for anchor in sorted(anchors, key=lambda cell: (cell.row, cell.col)):
         rows[anchor.row].append(JBAITableCell(
-            text=anchor.text, rowspan=anchor.rowspan, colspan=anchor.colspan,
+            text=mask_rrn(anchor.text), rowspan=anchor.rowspan, colspan=anchor.colspan,
             header=anchor.row < 2,
         ))
     rows = [cells for cells in rows if cells]
@@ -324,13 +325,6 @@ def _response_content(body: object) -> str:
     return _content_text(message.get("content"))
 
 
-#: 주민등록번호(외국인등록번호 포함). 앞 6자리 + 구분자 + 성별 자리 + 나머지 6자리.
-#: OCR이 뒷자리 숫자 사이에 공백을 끼워 읽는 경우도 잡는다.
-_RRN_SEPARATED = re.compile(r"(?<!\d)(\d{6})([ \t]*[-‐‑‒–—―~][ \t]*)(\d)((?:[ \t]?\d){6})(?!\d)")
-#: 구분자 없이 13자리가 붙어 온 경우.
-_RRN_COMPACT = re.compile(r"(?<!\d)(\d{6})(\d)(\d{6})(?!\d)")
-
-
 def _max_tokens() -> int:
     raw = os.environ.get(MAX_TOKENS_ENV, str(DEFAULT_MAX_TOKENS)).strip()
     try:
@@ -354,16 +348,6 @@ def _unsupported_options(response: bytes, options: dict[str, object]) -> list[st
     if not any(marker in raw for marker in markers):
         return []
     return [name for name in ("temperature", "max_tokens") if name in options and name in raw]
-
-
-def mask_rrn(text: str) -> str:
-    """주민등록번호 뒷자리 중 성별 자리 뒤 6자리를 `*`로 지운다.
-
-    생년월일·성별 자리는 남긴다 — 초본·건강보험 추출기가 출생 연도(1900/2000년대)를
-    성별 자리로 가르기 때문이다(`resident_abstract.RRN`, `nhis_common.RRN_RE`).
-    """
-    text = _RRN_SEPARATED.sub(lambda m: f"{m.group(1)}-{m.group(3)}******", text)
-    return _RRN_COMPACT.sub(lambda m: f"{m.group(1)}{m.group(2)}******", text)
 
 
 def _text_lines(content: str) -> list[str]:
@@ -562,7 +546,7 @@ def run_jbai_ocr(image: bytes, size: tuple[int, int], *, task: str = TASK_OCR,
         # 원문(주민번호 13자리 포함)은 여기서 바로 가린다. 아래로는 가린 텍스트만 흐른다.
         response_content = _response_content(body)
         special_count = len(MODEL_TOKEN_RE.findall(response_content))
-        content = mask_rrn(MODEL_TOKEN_RE.sub("", response_content))
+        content = mask_markup_rrn(MODEL_TOKEN_RE.sub("", response_content))
         del body, response_bytes
         elapsed = time.monotonic() - started
         lines = _text_lines(content)

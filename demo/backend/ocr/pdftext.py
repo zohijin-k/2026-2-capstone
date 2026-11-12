@@ -17,6 +17,7 @@ from pathlib import Path
 
 from ..rules.doc_types import DocType
 from .base import BBox, OcrResult, unreadable
+from engine_v2.pipeline.privacy import mask_rrn
 
 NAME = "pdftext"
 
@@ -231,6 +232,7 @@ def _confidence(text: str, doc_type: DocType | None, issue_date: date | None) ->
 
 def read_page_text(text: str, page, page_index: int) -> OcrResult:
     """페이지 텍스트 하나를 판독 결과로 만든다. 병합 PDF 분리에서도 이걸 쓴다."""
+    text = mask_rrn(text)
     doc_type, type_evidence = classify_with_evidence(text)
     issue_date = extract_issue_date(text)
 
@@ -339,7 +341,7 @@ def _read_pdf(path: Path) -> OcrResult | None:
             return unreadable("페이지가 없는 PDF입니다.", tier=NAME)
 
         page = doc[0]
-        text = page.get_text()
+        text = mask_rrn(page.get_text())
         if not _squeeze(text):
             # 텍스트 레이어가 없다 = 스캔 이미지 PDF. Tier3 몫.
             return None
@@ -433,7 +435,7 @@ def split_pdf_pages(file_path: str, out_dir: Path, stem: str) -> list[tuple[int,
             return results
         for i in range(doc.page_count):
             page = doc[i]
-            result = read_page_text(page.get_text(), page, i)
+            result = read_page_text(mask_rrn(page.get_text()), page, i)
             result.page_count = 1
 
             single = fitz.open()

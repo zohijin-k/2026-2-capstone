@@ -21,7 +21,7 @@ from .insurance_issue import select_issue_date
 
 INSURANCE_NAMES = ("국민연금", "건강보험", "산재보험", "고용보험")
 DOC_NO_RE = re.compile(r"(?<!\d)(\d{4}-\d{4}-\d{4}-\d{4,5})(?!\d)")
-RRN_RE = re.compile(r"(?<!\d)(\d{6})\s*-?\s*([0-8])(?=(?:\s*\d){6}(?!\d))")
+RRN_RE = re.compile(r"(?<!\d)(\d{6})\s*-?\s*([0-8])(?=(?:\s*[\d*]){6}(?![\d*]))")
 ISSUE_NUMBER_RE = re.compile(r"(?<!\d)\d{14}(?!\d)")
 NAME_RE = re.compile(r"^[가-힣]{2,6}$")
 CATEGORY_NAMES = ("지역가입자", "직장가입자", "직장피부양자", "사업장가입자")

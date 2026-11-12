@@ -19,6 +19,7 @@ from datetime import date
 from typing import Protocol, runtime_checkable
 
 from ..rules.doc_types import DocType
+from engine_v2.pipeline.privacy import mask_data, mask_rrn
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,12 @@ class OcrResult:
     #: 판독 소요 시간(ms). R2.1의 5초 기준을 화면에서 보여주기 위해 남긴다.
     elapsed_ms: int = 0
 
+    def __post_init__(self) -> None:
+        self.fields = mask_data(self.fields)
+        self.fallback_reason = mask_rrn(self.fallback_reason)
+        self.quality_note = mask_rrn(self.quality_note)
+        self.classification_evidence = mask_rrn(self.classification_evidence)
+
     def bboxes_as_dict(self) -> dict[str, dict[str, float | int]]:
         return {k: v.as_dict() for k, v in self.bboxes.items()}
 
@@ -87,6 +94,7 @@ class OcrFallback(Exception):
     """
 
     def __init__(self, reason: str, fallback_result: OcrResult | None = None) -> None:
+        reason = mask_rrn(reason)
         super().__init__(reason)
         self.reason = reason
         self.fallback_result = fallback_result

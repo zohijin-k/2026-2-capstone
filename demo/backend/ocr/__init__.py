@@ -9,12 +9,13 @@ Tier1(fixture) → Tier1.2(전북AI OCR) → Tier1.5(로컬 OCR, engine_v2) → 
 """
 
 import time
+from engine_v2.pipeline.privacy import mask_data, mask_rrn
 
 from ..rules.doc_types import DocType
 from .base import BBox, OcrAdapter, OcrFallback, OcrResult
 from .fixture import FixtureOcr, fixture_keys
 from .jbai import JbaiOcr
-from .localocr import LocalOcr, ensure_nhis_required_fields
+from .localocr import LocalOcr, ensure_nhis_required_fields, ensure_business_required_fields
 from .pdftext import PdfTextOcr, split_pdf_pages
 from .upstage import UpstageOcr
 
@@ -79,6 +80,12 @@ def read_document(file_path: str, expected: DocType | None = None) -> OcrResult:
         result.bboxes.pop(key, None)
 
     ensure_nhis_required_fields(result)
+    ensure_business_required_fields(result)
+
+    result.fields = mask_data(result.fields)
+    result.fallback_reason = mask_rrn(result.fallback_reason)
+    result.quality_note = mask_rrn(result.quality_note)
+    result.classification_evidence = mask_rrn(result.classification_evidence)
 
     result.elapsed_ms = int((time.perf_counter() - started) * 1000)
     return result

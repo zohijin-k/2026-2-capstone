@@ -37,6 +37,7 @@ from pathlib import Path
 
 from ..rules.doc_types import DocType
 from .base import BBox, OcrResult
+from engine_v2.pipeline.privacy import mask_rrn
 
 NAME = "localocr"
 ENGINE_ENV = "ENGINE_V2_OCR"
@@ -164,6 +165,10 @@ def _from_resident(ex, pages, ra, v2types) -> OcrResult:
     # 신뢰도 = 핵심 필드 신뢰도의 최솟값. 필드 신뢰도는 OCR 점수가 아니라 검증 통과율이다.
     key = [f[k].confidence for k in ("issue_date", "name", "birth_date") if k in f]
     confidence = min([ex.type_confidence, *key]) if "issue_date" in f else 0.5
+    if any(not validation.passed and validation.name.startswith(("history", "occurred"))
+           for validation in ex.validations):
+        confidence = min(confidence, .4)
+        fields["판독경고"] = "주소 이력의 순번 또는 날짜를 완전히 확인하지 못했습니다."
 
     return OcrResult(
         detected_doc_type=detected,
@@ -181,17 +186,21 @@ def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
     """Keep supported NHIS forms complete after final header-value safety."""
     if (result.tier == "fixture" or not (
             result.detected_doc_type == DocType.NHIS_ACQUISITION_LOSS or
-            (result.detected_doc_type == DocType.NHIS_QUALIFICATION and "양식판독상태" in result.fields))):
+            (result.detected_doc_type in {DocType.NHIS_QUALIFICATION, DocType.NHIS_PAYMENT} and
+             "양식판독상태" in result.fields))):
         return result
     from engine_v2.pipeline.field_safety import remove_header_only_fields
 
     for key in remove_header_only_fields(result.fields):
         result.bboxes.pop(key, None)
     missing = []
-    for label in ("성명", "생년월일", "발급일"):
+    required = ("성명", "생년월일", "발급일")
+    if result.detected_doc_type == DocType.NHIS_PAYMENT:
+        required += ("사업장명칭", "납부자번호", "문서확인번호", "조회기간", "납부총액", "용도구분")
+    for label in required:
         value = str(result.fields.get(label) or "").strip()
-        valid = bool(value)
-        if label != "성명":
+        valid = label in result.fields if label == "사업장명칭" else bool(value)
+        if label in {"생년월일", "발급일"}:
             try:
                 date.fromisoformat(value[:10])
             except ValueError:
@@ -207,9 +216,104 @@ def ensure_nhis_required_fields(result: OcrResult) -> OcrResult:
     result.fields["판독검증"] = f"{passed}/{total + len(added)} 통과"
     result.fields["판독검증실패"] = ", ".join([*failed, *added])
     result.confidence = min(result.confidence, 0.4)
+    if "양식판독상태" in result.fields:
+        result.fields["양식판독상태"] = "불완전"
     if "발급일" in missing:
         result.issue_date = None
     return result
+
+
+def ensure_business_required_fields(result: OcrResult) -> OcrResult:
+    """Retain the proof completeness gate after shared field safety filtering."""
+    if result.detected_doc_type != DocType.BIZ_REG_PROOF or result.tier == "fixture":
+        return result
+    from engine_v2.extractors.business_registration import (
+        REQUIRED_FIELDS, BUSINESS_NUMBER_RE, representative_name, LABEL_VALUES,
+    )
+    from engine_v2.extractors.job_common import brn_is_valid
+    from engine_v2.pipeline.field_safety import remove_header_only_fields
+
+    for key in remove_header_only_fields(result.fields):
+        result.bboxes.pop(key, None)
+    number = result.fields.get("사업자등록번호", "")
+    valid_number = bool(BUSINESS_NUMBER_RE.fullmatch(number)) and brn_is_valid(number)
+    code = int(number[4:6]) if valid_number else 0
+    if not valid_number or not (1 <= code <= 79 or 90 <= code <= 99) or "법인" in result.fields.get("과세유형", ""):
+        result.fields.pop("생년월일", None)
+        result.bboxes.pop("생년월일", None)
+    missing = []
+    for key in REQUIRED_FIELDS:
+        value = result.fields.get(key, "")
+        valid = bool(value.strip()) and re.sub(r"\s+", "", value) not in LABEL_VALUES
+        if key in {"생년월일", "개업일", "사업자등록일", "발급일"}:
+            try:
+                date.fromisoformat(value)
+            except ValueError:
+                valid = False
+        elif key == "성명":
+            valid = representative_name(value) is not None
+        elif key == "사업자등록번호":
+            valid = valid_number
+        elif key in {"업태", "종목"}:
+            try:
+                items = json.loads(value)
+                valid = isinstance(items, list) and bool(items) and all(
+                    isinstance(item, str) and item.strip() and re.sub(r"\s+", "", item) not in LABEL_VALUES
+                    for item in items)
+            except (ValueError, TypeError):
+                valid = False
+        elif key == "공동사업자유무":
+            valid = value in {"있음", "없음"}
+        if not valid:
+            missing.append(key)
+    if not missing:
+        return result
+    failed = [value.strip() for value in result.fields.get("판독검증실패", "").split(",") if value.strip()]
+    added = [f"{key}_required" for key in missing if f"{key}_required" not in failed]
+    counts = re.fullmatch(r"(\d+)/(\d+) 통과", result.fields.get("판독검증", ""))
+    passed, total = (int(counts[1]), int(counts[2])) if counts else (0, 0)
+    result.fields["판독검증"] = f"{passed}/{total + len(added)} 통과"
+    result.fields["판독검증실패"] = ", ".join([*failed, *added])
+    result.fields["양식판독상태"] = "불완전"
+    result.confidence = min(result.confidence, .4)
+    if "발급일" in missing:
+        result.issue_date = None
+    return result
+
+
+def _from_business_proof(ex, pages, classification_evidence="") -> OcrResult:
+    fields = {}
+    bboxes = {}
+    for key, extracted in ex.fields.items():
+        value = extracted.value
+        if isinstance(value, date):
+            fields[key] = value.isoformat()
+        elif isinstance(value, list):
+            fields[key] = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        elif isinstance(value, bool):
+            fields[key] = "있음" if value else "없음"
+        else:
+            fields[key] = str(value)
+        if (box := _demo_bbox(extracted.bbox)) is not None:
+            bboxes[key] = box
+    fields["판독검증"] = f"{sum(check.passed for check in ex.validations)}/{len(ex.validations)} 통과"
+    failed = [check.name for check in ex.validations if not check.passed]
+    if failed:
+        fields["판독검증실패"] = ", ".join(failed)
+    if ex.warnings:
+        fields["판독경고"] = " ".join(ex.warnings)
+    fields["양식판독상태"] = "완전" if ex.structure_complete else "불완전"
+    issue = ex.fields.get("발급일")
+    confidence = min((value.confidence for value in ex.fields.values()), default=.4)
+    return ensure_business_required_fields(OcrResult(
+        detected_doc_type=DocType.BIZ_REG_PROOF if ex.detected_type.value == "biz_reg_proof" else None,
+        confidence=min(confidence, ex.type_confidence, 1 if ex.structure_complete else .4),
+        image_quality=_quality([page for page, _ in pages]),
+        issue_date=issue.value if issue else None, fields=fields, bboxes=bboxes,
+        page_count=len(pages), tier=NAME, engine=_pages_engine(pages),
+        classification_evidence=classification_evidence,
+        classification_confidence=ex.type_confidence,
+    ))
 
 
 def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
@@ -241,6 +345,11 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         v2types.NHIS_ACQUISITION_LOSS: DocType.NHIS_ACQUISITION_LOSS,
     }
     detected = detected_override or detected_map.get(ex.detected_type)
+    if detected == DocType.NHIS_PAYMENT:
+        from engine_v2.extractors.nhis_payment import has_failed_payment_validation
+
+        if has_failed_payment_validation(fields):
+            confidence = min(confidence, .4)
     if (detected == DocType.NHIS_ACQUISITION_LOSS and
             any(v.name == "document_confirmation_number_consistent" and not v.passed
                 for v in validations)):
@@ -254,7 +363,9 @@ def _from_nhis(ex, pages, v2types, classification_evidence: str = "",
         if type(covered) is bool and history_text:
             try:
                 history = json.loads(history_text)
-                history["recent_five_years_covered"] = covered
+                # Preserve the extractor's tri-state; legacy readers only
+                # supplied a boolean validation and still need this fallback.
+                history.setdefault("recent_five_years_covered", covered)
                 fields["자격이력자료"] = json.dumps(history, ensure_ascii=False, separators=(",", ":"))
             except (TypeError, ValueError):
                 pass
@@ -466,7 +577,7 @@ def _tier2_can_read(path: Path) -> bool:
         with fitz.open(path) as doc:
             if doc.needs_pass or doc.page_count == 0:
                 return True
-            return bool("".join(doc[0].get_text().split()))
+            return bool("".join(mask_rrn(doc[0].get_text()).split()))
     except Exception:  # noqa: BLE001 - 못 여는 파일은 Tier2가 '열 수 없음'으로 처리
         return True
 
@@ -499,7 +610,7 @@ class LocalOcr:
             if classified is None:
                 return None
             detected = classified.detected_doc_type
-            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4)
+            if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4, DocType.BIZ_REG_PROOF)
                     and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION and detected is not None):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
             if detected == DocType.NHIS_QUALIFICATION:
@@ -507,7 +618,7 @@ class LocalOcr:
                 import pymupdf
 
                 with pymupdf.open(path) as document:
-                    if not is_notification(" ".join(page.get_text() for page in document)):
+                    if not is_notification(" ".join(mask_rrn(page.get_text()) for page in document)):
                         return None  # Other qualification forms retain their PdfText reader.
         elif engine == "off":
             return None
@@ -523,6 +634,7 @@ class LocalOcr:
                 DocType.NHIS_QUALIFICATION: v2types.NHIS_QUALIFICATION,
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
+                DocType.BIZ_REG_PROOF: v2types.BIZ_REG_PROOF,
             }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             pages = load_pages(input_doc, engine)
@@ -540,7 +652,10 @@ class LocalOcr:
                 result.classification_confidence = .95
                 result.engine = _pages_engine(pages)
                 return result
-            if detected in _JOB_DOCS:
+            if detected == DocType.BIZ_REG_PROOF:
+                from engine_v2.extractors import business_registration
+                result = _from_business_proof(business_registration.extract(pages), pages, classified.classification_evidence)
+            elif detected in _JOB_DOCS:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
             elif detected == DocType.INSURANCE_4:
@@ -577,6 +692,13 @@ class LocalOcr:
         detected, evidence = pdftext.classify_pages_with_evidence(pages)
         if detected is None:
             return None
+
+        if detected == DocType.BIZ_REG_PROOF:
+            from engine_v2.extractors import business_registration
+            result = _from_business_proof(business_registration.extract(pages), pages, evidence)
+            if path.suffix.lower() != ".pdf":
+                _merge_image_heuristics(result, path)
+            return result
 
         if detected in _JOB_DOCS:
             result = _from_job_doc(_job_extractor(detected)(pages), pages, evidence, detected)

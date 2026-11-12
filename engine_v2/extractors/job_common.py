@@ -31,7 +31,7 @@ SHORT_DATE_RE = re.compile(r"(?<!\d)(\d{2})\s*[./\-]\s*(\d{1,2})\s*[./\-]\s*(\d{
 #: OCR이 날짜와 시각을 붙여 읽은 경우('2026.09.2112:02'). 붙어 있으면 두 자리 일만 인정하고 사이를 띄운다.
 GLUED_TIME_RE = re.compile(r"(?<!\d)((?:\d{4}|\d{2})\s*[./\-년]\s*\d{1,2}\s*[./\-월]\s*\d{2})(?=\d{1,2}\s*:\s*\d{2})")
 BRN_RE = re.compile(rf"(?<!\d)(\d{{3}})\s*[{DASHES}]?\s*(\d{{2}})\s*[{DASHES}]?\s*(\d{{5}})(?!\d)")
-RRN_RE = re.compile(rf"(?<!\d)(\d{{6}})\s*[{DASHES}]\s*([1-8])\d{{6}}(?!\d)")
+RRN_RE = re.compile(rf"(?<!\d)(\d{{6}})\s*[{DASHES}]?\s*([1-8])(?:\s*[\d*]){{6}}(?![\d*])")
 NAME_RE = re.compile(r"[가-힣]{2,5}")
 NAME_STOPWORDS = frozenset({
     "성명", "이름", "생년월일", "주소", "응시자", "수험자", "수험번호", "한자", "본인",
@@ -151,7 +151,7 @@ def scrub_rrn(words: list[Word], originals: list[OcrWord]) -> date | None:
         if match:
             birth = birth or birth_from_rrn(match.group(1), match.group(2))
             text = RRN_RE.sub(lambda m: f"{m.group(1)}-{m.group(2)}******", text)
-        elif re.fullmatch(r"[1-8]\d{6}", text) and index > 0:
+        elif re.fullmatch(r"[1-8][\d*]{6}", text) and index > 0:
             before = " ".join(item.text for item in words[max(0, index - 2):index])
             front = re.search(rf"(\d{{6}})\s*[{DASHES}]\s*$", before)
             if front:

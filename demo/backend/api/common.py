@@ -181,6 +181,8 @@ APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액", 
 
 def document_dict(d: Document) -> dict[str, Any]:
     """업로드 서류 한 건의 신청자 화면 표현. 점수와 담당자용 판독값은 들어가지 않는다."""
+    from engine_v2.pipeline.privacy import mask_data
+
     findings = [
         {
             key: finding[key]
@@ -200,7 +202,7 @@ def document_dict(d: Document) -> dict[str, Any]:
         visible_fields.add("생년월일")
     if any(finding.get("code") == "IDENTITY_MISMATCH" for finding in findings):
         visible_fields.difference_update({"성명", "생년월일"})
-    return {
+    return mask_data({
         "document_id": d.id,
         "slot_key": d.slot_key,
         "file_name": Path(d.file_path).name,
@@ -224,12 +226,14 @@ def document_dict(d: Document) -> dict[str, Any]:
         "elapsed_ms": (d.ocr_json or {}).get("elapsed_ms"),
         "page_index": d.page_index,
         "uploaded_at": d.uploaded_at.isoformat(timespec="seconds"),
-    }
+    })
 
 
 def document_fact(d: Document) -> dict[str, Any]:
     """채점·엔진 변환에 쓰는 표현. 판독 원값(fields·bboxes·신뢰도)을 그대로 싣는다."""
-    ocr = d.ocr_json or {}
+    from engine_v2.pipeline.privacy import mask_data
+
+    ocr = mask_data(d.ocr_json or {})
     issue_date = ocr.get("issue_date")
     parsed_issue = None
     if isinstance(issue_date, str):

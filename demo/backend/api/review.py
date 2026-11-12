@@ -18,6 +18,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
+from engine_v2.pipeline.privacy import mask_data
 
 from ..engine_adapter import (
     electronic_consent_row,
@@ -574,11 +575,11 @@ def _run_review(app: Application) -> Review:
             "NEEDS_REVIEW" if household_needs_review
             else result.stage2.status.value if result.stage2 else None
         ),
-        score_json=sheet.as_dict() if sheet else {},
+        score_json=mask_data(sheet.as_dict()) if sheet else {},
         total_score=sheet.total if sheet else None,
-        tiebreak_json=sheet.tiebreak if sheet else [],
+        tiebreak_json=mask_data(sheet.tiebreak) if sheet else [],
         supplement_deadline=supplement_deadline,
-        review_payload_json=payload,
+        review_payload_json=mask_data(payload),
     )
 
 
@@ -623,7 +624,7 @@ def _append_household_link(
     payload["reasons"] = reasons
     payload["final_status"] = "NEEDS_REVIEW"
     payload["recommended_action"] = "담당자 재검토 필요"
-    review.review_payload_json = payload
+    review.review_payload_json = mask_data(payload)
     review.final_status = "NEEDS_REVIEW"
     review.stage2_status = "NEEDS_REVIEW"
 

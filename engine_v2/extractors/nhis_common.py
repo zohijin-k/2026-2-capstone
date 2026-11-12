@@ -18,7 +18,7 @@ from .format_text import normalize_format_text
 DATE_RE = re.compile(r"(?<!\d)(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?(?!\d)")
 COMPACT_DATE_RE = re.compile(r"(?<!\d)(20\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])(?!\d)")
 RRN_RE = re.compile(r"(\d{6})\s*[-‐‑‒–—―−﹘﹣－]\s*([1-8])\s*\d{6}")
-MASKED_RRN_RE = re.compile(r"(\d{6})\s*[-‐‑‒–—―−﹘﹣－]\s*([1-8])\s*[*＊●•○◦∙·xX×✱✳Ｘ]{1,7}")
+MASKED_RRN_RE = re.compile(r"(\d{6})\s*[-‐‑‒–—―−﹘﹣－]?\s*([1-8])\s*[*＊●•○◦∙·xX×✱✳Ｘ]{1,7}")
 NAME_RE = re.compile(r"[가-힣]{2,6}")
 
 
