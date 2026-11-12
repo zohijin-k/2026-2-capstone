@@ -23,7 +23,7 @@ def page(cells, *, jitter=0, seed=7, image=False, size=(595, 842)):
     for x0, y0, x1, y1, text in cells:
         dx, dy = rng.uniform(-jitter, jitter), rng.uniform(-jitter, jitter)
         words.append(OcrWord(text, .99, (x0 + dx, y0 + dy, x1 + dx, y1 + dy)))
-    return (PageImage(0, PageSource.IMAGE if image else PageSource.TEXT_LAYER,
+    return (PageImage(0, PageSource.UPLOAD if image else PageSource.TEXT_LAYER,
                       size, pixel_size=size, dpi=72), OcrResult("synthetic", words))
 
 
@@ -124,4 +124,33 @@ def portal(*, name=NAME, long=False):
     cells += [word(41, 449, 346, "▷가상안내문", 11), word(58, 604, 83, "위와같이가입내역을", 11),
               word(48, 614, 104, "확인합니다.", 11), word(188, 637, 86, "국민건강보험공단"),
               word(209, 649, 44, "이사장", 13)]
+    return cells
+
+
+def resident(*, kind='초본', opening='', prior=False, combined=False, main=True, subtitle=True):
+    """Title boxes preserve the two OCR layouts and interleaved side notice."""
+    cells = [word(376, 97, 645, '문서확인번호:0000-0000-0000-0000', 36),
+             word(996, 150, 619, '가상 안내 문구입니다', 58),
+             word(956, 182, 179, '가상 안내문', 54),
+             word(958, 231, 123, '가상라벨:', 49),
+             word(961, 278, 209, '가상인:가상인', 43),
+             word(960, 321, 212, '가상 신청인 안내', 47),
+             word(1347, 423, 561, '가상 발급기관', 53),
+             word(190, 510, 192, '성 명(한자)', 51), word(471, 509, 111, NAME, 51),
+             word(1124, 511, 208, '주민등록번호', 47), word(1422, 516, 240, '900101-1******', 35)]
+    # Insert side-notice words between title tokens, like OCR reading order.
+    if main:
+        cells.insert(2, word(309 if prior else 292, 204 if prior else 207, 559 if prior else 556,
+                             '주 민 등 록 표', 85 if prior else 82))
+    if subtitle:
+        x, y = (420, 290) if prior else (403, 300)
+        if opening:
+            cells.append(word(320, y, 50, opening, 58))
+        cells += [word(x, y, 65, kind[0], 52), word(689 if prior else 671, 284 if prior else 294,
+                                                                   75 if prior else 70, kind[1], 69),
+                  word(829 if prior else 804, 291 if prior else 305, 42 if prior else 29, ')', 50)]
+        if combined:
+            cells.append(word(500, 380, 200, '등 본', 65))
+    cells += [word(200, 900 + i * 60, 600, '가상 본문 자료 안내', 40) for i in range(20)]
+    cells.append(word(207, 2502, 1684, '주민등록표 등·초본상 가상 안내문', 32))
     return cells

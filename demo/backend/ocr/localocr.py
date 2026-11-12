@@ -500,7 +500,7 @@ class LocalOcr:
                 return None
             detected = classified.detected_doc_type
             if (detected not in (DocType.NHIS_PAYMENT, DocType.NHIS_ACQUISITION_LOSS, DocType.INSURANCE_4)
-                    and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION):
+                    and detected not in _JOB_DOCS and detected != DocType.NHIS_QUALIFICATION and detected is not None):
                 return None  # 그 밖의 텍스트 PDF는 Tier2가 이미 분류·판독한다.
             if detected == DocType.NHIS_QUALIFICATION:
                 from engine_v2.extractors.nhis_qualification import is_notification
@@ -523,11 +523,23 @@ class LocalOcr:
                 DocType.NHIS_QUALIFICATION: v2types.NHIS_QUALIFICATION,
                 DocType.NHIS_ACQUISITION_LOSS: v2types.NHIS_ACQUISITION_LOSS,
                 DocType.INSURANCE_4: v2types.INSURANCE_4,
-            }[detected]
+            }.get(detected, v2types.UNKNOWN)
             input_doc = V2DocumentInput(doc_id="demo", declared_type=v2type, file_path=str(path))
             pages = load_pages(input_doc, engine)
             if isinstance(pages, str):
                 return None  # OCR 엔진이 없어도 다음 계층이 판독을 이어받는다.
+            if detected is None:
+                detected, evidence = pdftext.classify_pages_with_evidence(pages)
+                if detected not in (DocType.RESIDENT_ABSTRACT, DocType.RESIDENT_CERTIFICATE):
+                    return None
+                # Coordinate fallback changes classification only. Fields still
+                # use the established resident reader and review rules.
+                result = _from_resident(ra.extract(pages), pages, ra, v2types)
+                result.detected_doc_type = detected
+                result.classification_evidence = evidence
+                result.classification_confidence = .95
+                result.engine = _pages_engine(pages)
+                return result
             if detected in _JOB_DOCS:
                 result = _from_job_doc(_job_extractor(detected)(pages), pages,
                                        classified.classification_evidence, detected)
@@ -562,7 +574,7 @@ class LocalOcr:
             pages.append((p, r))
 
         text = "\n".join(result.text for _, result in pages)
-        detected, evidence = pdftext.classify_with_evidence(text)
+        detected, evidence = pdftext.classify_pages_with_evidence(pages)
         if detected is None:
             return None
 
