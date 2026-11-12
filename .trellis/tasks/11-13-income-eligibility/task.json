@@ -1,0 +1,30 @@
+{
+  "id": "income-eligibility",
+  "name": "income-eligibility",
+  "title": "Income and age eligibility evidence",
+  "description": "Tri-state NHIS evidence, exact income eligibility, final review status and inclusive program age requirements",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "document-ai",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feat/income-eligibility",
+  "base_branch": "feat/p2-real-forms",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md"
+  ],
+  "notes": "",
+  "meta": {}
+}
