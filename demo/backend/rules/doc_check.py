@@ -56,11 +56,11 @@ CODE_PAGES_INCOMPLETE = "PAGES_INCOMPLETE"
 CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
 CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
 
-RETAKE_GUIDANCE = (
+PHOTO_RETAKE_GUIDANCE = (
     "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
     "서류 전체가 똑바로 보이게 밝은 곳에서 선명하게 다시 촬영해 주세요. "
-    "이대로 제출해도 담당자가 확인합니다."
 )
+RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 확인합니다."
 
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
@@ -306,7 +306,7 @@ def _check_resident_pages(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
     return []
 
 
-def check_document(
+def _check_document(
     req: DocRequirement,
     ocr: OcrResult,
     declared_issue_date: date | None = None,
@@ -726,3 +726,22 @@ def check_document(
         status = "PASS"
 
     return CheckResult(status=status, findings=findings)
+
+
+def check_document(
+    req: DocRequirement,
+    ocr: OcrResult,
+    declared_issue_date: date | None = None,
+    file_format: str = "pdf",
+    identity: Identity | None = None,
+    related_nhis_docs: list[tuple[str, dict[str, str]]] | None = None,
+    suggested_slot_label: str | None = None,
+) -> CheckResult:
+    """Check one upload and adapt only photo-specific guidance to its format."""
+    result = _check_document(req, ocr, declared_issue_date, file_format, identity,
+                             related_nhis_docs, suggested_slot_label)
+    if file_format.lower() == "pdf":
+        for finding in result.findings:
+            finding.message = finding.message.replace(PHOTO_RETAKE_GUIDANCE, "")
+            finding.how_to_fix = finding.how_to_fix.replace(PHOTO_RETAKE_GUIDANCE, "")
+    return result
