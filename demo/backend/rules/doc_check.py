@@ -57,6 +57,7 @@ CODE_PAGES_UNREADABLE = "PAGES_UNREADABLE"
 CODE_PAGES_DUPLICATED = "PAGES_DUPLICATED"
 CODE_IMAGE_RESOLUTION_TOO_LOW = "IMAGE_RESOLUTION_TOO_LOW"
 CODE_MISSING_ADDRESS_DATES = "MISSING_ADDRESS_DATES"
+CODE_DAILY_RECORDS_PARTIALLY_SELECTED = "DAILY_RECORDS_PARTIALLY_SELECTED"
 
 PHOTO_RETAKE_GUIDANCE = (
     "흐리거나 옆으로 누운 사진은 읽기 어렵습니다. "
@@ -67,6 +68,7 @@ RETAKE_GUIDANCE = PHOTO_RETAKE_GUIDANCE + "이대로 제출해도 담당자가 �
 #: 사유 코드 → 해결 방법. 공고문 문구와 발급 절차를 그대로 옮긴 것이다.
 #: "무엇이 잘못됐는지"만 말하면 신청자는 또 전화한다. 해결 방법이 같이 있어야 한다.
 HOW_TO_FIX: dict[str, str] = {
+    CODE_DAILY_RECORDS_PARTIALLY_SELECTED: "전체 이력을 선택해 다시 발급받아 올려 주세요",
     CODE_IMAGE_RESOLUTION_TOO_LOW: "선명한 원본(원본 PDF 또는 고해상도 스캔)으로 다시 올려 주세요",
     CODE_MISSING_ADDRESS_DATES: "정부24에서 초본을 발급할 때 주소 변동 사항의 발생일·신고일이 표시되도록 선택해 다시 발급받아 주세요",
     "WRONG_DOCUMENT_TYPE": "요구되는 서류와 다른 종류를 올리셨습니다. 아래 발급처에서 '{label}'을(를) 다시 발급받아 올려 주세요.",
@@ -521,6 +523,10 @@ def _check_document(
             pass
 
     if ocr.detected_doc_type is DocType.DAILY_WORK_RECORD and ocr.tier != "fixture":
+        from engine_v2.extractors.daily_work_record import selection_status
+        if selection_status(ocr.fields) == "PARTIAL":
+            return CheckResult("FAIL", [_finding(CODE_DAILY_RECORDS_PARTIALLY_SELECTED,
+                "일용근로 이력 중 일부만 선택해 발급된 서류입니다. 전체 이력을 선택해 다시 발급받아 올려 주세요.", req)])
         if ocr.fields.get("양식판독상태") != "완전":
             return CheckResult("NEEDS_REVIEW", [_finding(CODE_REQUIRED_FIELD_UNREADABLE,
                 "일용근로·노무제공내역서의 표·조회기간·확인 내용을 완전히 읽지 못했습니다. 담당자가 확인합니다.",

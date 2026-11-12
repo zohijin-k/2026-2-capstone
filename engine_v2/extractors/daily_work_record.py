@@ -26,6 +26,7 @@ PERIOD = re.compile(r"(20\d{2})[./년-](0?[1-9]|1[0-2])월?[~～∼](20\d{2})[./
 ISSUE_NUMBER = re.compile(r"\d{4}-\d{4}-\d{9}")
 MONEY = re.compile(r"(?:0|[1-9]\d*|[1-9]\d{0,2}(?:,\d{3})+)원?")
 CHECK = r"(?:\[\s*[√✓✔xXvV]\s*\]|[☑√✓✔■])"
+SELECTION = re.compile(r"\(조회기간총([0-9]+)개이력중([0-9]+)개이력선택발급요청\)")
 
 
 @dataclass
@@ -47,7 +48,7 @@ def _compact(words):
     return squash(normalize_format_text(_text(words)))
 
 
-def _unique(lines, aliases):
+def _unique(lines, aliases, *, exact=False):
     hits = forms.label_hits(lines, aliases)
     # This form deliberately stacks 근로/년월, 근로/일자 and 근로자/구분.
     # The common matcher preserves those separate source tokens.
@@ -57,6 +58,8 @@ def _unique(lines, aliases):
             hits.append((alias,words))
     unique = {}
     for _, words in hits:
+        if exact and _compact(words).strip(":：") not in aliases:
+            continue
         unique[tuple(id(word) for word in words)] = words
     selected = []
     for words in sorted(unique.values(), key=len, reverse=True):
@@ -132,18 +135,34 @@ def _birth(words):
     return None, f"{yy:02}-{mm:02}-{dd:02}" if candidates else None, candidates
 
 
-def _query_period(lines, headers):
-    label = _unique(lines, ("조회기간", "조회대상기간"))
+def _query_words(lines, headers):
+    # The query label is in the left metadata cell. A split note token can
+    # contain exactly the same word, but is outside this observed label cell.
+    left_cell = [[word for word in row if word.x1 < 20] for row in lines]
+    label = _unique(left_cell, ("조회기간", "조회대상기간"), exact=True)
     if not label or not headers:
-        return None, []
+        return []
     cy = sum(word.cy for word in label) / len(label)
     height = max(word.y1 - word.y0 for word in label)
     top = cy - 1.75 * height
     bottom = min(word.y0 for words in headers for word in words)
     # The range may sit one line above its left-side label.
-    words = [word for row in lines for word in row if top <= word.cy < bottom and word.x0 > max(w.x1 for w in label)]
+    return [word for row in lines for word in row if top <= word.cy < bottom and word.x0 > max(w.x1 for w in label)]
+
+
+def _selection_note(row):
+    text = _compact(row)
+    # Damaged punctuation/label text must not turn an observed selection note
+    # into legacy absence and accidentally establish complete work history.
+    return "이력" in text and ("조회기간" in text or "선택" in text)
+
+
+def _query_period(lines, headers):
+    words = _query_words(lines, headers)
     matches = []
     for row in group_lines(words):
+        if _selection_note(row):
+            continue  # The bounded selection note is assessed independently.
         text = _compact(row)
         match = PERIOD.fullmatch(text)
         if match:
@@ -153,6 +172,56 @@ def _query_period(lines, headers):
         elif re.search(r"\d{4}|[~～∼]", text):
             return None, words
     return (matches[0][0], matches[0][1]) if len(matches) == 1 else (None, words)
+
+
+def _selection(lines, headers):
+    notes = [row for row in group_lines(_query_words(lines, headers)) if _selection_note(row)]
+    if not notes:
+        return {"status": "ABSENT"}
+    if len(notes) != 1:
+        return {"status": "UNREADABLE"}
+    match = SELECTION.fullmatch(_compact(notes[0]))
+    confidence = min(w.conf for w in notes[0])
+    if not match or confidence < .85:
+        return {"status": "UNREADABLE"}
+    total, selected = map(int, match.groups())
+    if selected > total:
+        return {"status": "UNREADABLE"}
+    return {"status": "READABLE", "total": total, "selected": selected,
+            "confidence": confidence}
+
+
+def _selection_summary(copies):
+    if copies and all(copy.get("status") == "ABSENT" for copy in copies):
+        return "ABSENT"
+    if not copies or any(copy.get("status") != "READABLE" for copy in copies):
+        return "UNREADABLE"
+    for copy in copies:
+        total, selected, confidence = copy.get("total"), copy.get("selected"), copy.get("confidence")
+        if (type(total) is not int or type(selected) is not int or not 0 <= selected <= total
+                or type(confidence) not in {int, float} or not .85 <= confidence <= 1):
+            return "UNREADABLE"
+    counts = {(copy["total"], copy["selected"]) for copy in copies}
+    if len(counts) != 1:
+        return "CONFLICT"
+    total, selected = next(iter(counts))
+    return "PARTIAL" if selected < total else "COMPLETE"
+
+
+def selection_status(fields):
+    """Recheck saved count provenance; never trust a categorical status alone."""
+    if "일용근로선택자료" not in fields:
+        return "ABSENT"  # Existing supported forms may have no selection note.
+    try:
+        data = json.loads(fields["일용근로선택자료"])
+        copies = data["copies"]
+        if type(data.get("version")) is not int or data["version"] != 1 or not isinstance(copies, list) or any(not isinstance(c, dict) for c in copies):
+            return "UNREADABLE"
+        if data.get("copies_consistent") is not True:
+            return "CONFLICT"
+        return _selection_summary(copies)
+    except (ValueError, TypeError, KeyError):
+        return "UNREADABLE"
 
 
 def _insurance(lines):
@@ -264,22 +333,29 @@ def _table(page, result, lines, headers):
     return rows, flat, bool(valid and len(rows)==len(anchors))
 
 
+def _issuer(lines):
+    aliases = ("근로복지공단이사장", "근로복지공단")
+    standalone = [row for row in lines if _compact(row) in aliases]
+    return _unique(standalone, aliases, exact=True)
+
+
 def _confirmation(copy):
     found = []
     for page,result in copy:
         lines = common.page_lines(page,result)
-        issuer = _unique(lines,("근로복지공단이사장", "근로복지공단"))
+        issuer = _issuer(lines)
         if not issuer:
             continue
         issuer_y = min(word.y0 for word in issuer)
-        confirmations = [row for row in lines if "확인합니다" in squash(line_text(row)) and row[0].cy < issuer_y]
+        confirmations = [row for row in lines if row[0].cy < issuer_y and
+                         re.fullmatch(r"위와같이(?:내역을확인합니다|확인합니다|자격내역을알려드립니다)\.?", _compact(row))]
         if len(confirmations) != 1:
             return None, [], False
         top = max(word.y1 for word in confirmations[0])
         words = [word for row in lines for word in row if top < word.cy < issuer_y]
         # Notice prose is above the confirmation, not part of this date cell.
         value = _date(words)
-        if value is None or any(word.conf < .85 for word in words):
+        if value is None or any(word.conf < .85 for word in words + issuer + confirmations[0]):
             return None, words, False
         found.append((value,words))
     return (*found[0],True) if len(found)==1 else (None,[],False)
@@ -327,6 +403,9 @@ def extract(pages, today=None) -> DailyWorkResult:
         period,period_words = _query_period(lines,headers)
         checks.append(common.Validation(f"daily_{number}_query_period",period is not None))
         rows,row_words,table_ok = _table(page,result,lines,headers)
+        selection_record = _selection(lines, headers)
+        if table_ok and selection_record.get("status") == "READABLE" and selection_record["selected"] != len(rows):
+            selection_record = {"status": "UNREADABLE"}
         checks.append(common.Validation(f"daily_{number}_table_rows",table_ok))
         if period is not None:
             checks.append(common.Validation(f"daily_{number}_rows_in_period",all(period[0]<=row["month"]<=period[1] for row in rows)))
@@ -335,7 +414,8 @@ def extract(pages, today=None) -> DailyWorkResult:
         # A continuation page cannot conceal an independent table or identity.
         continuation_ok = len(copy)<=2 and all(
             _headers(lines_by_page[i]) is None and not _title(lines_by_page[i])
-            and bool(_unique(lines_by_page[i],("근로복지공단이사장","근로복지공단")))
+            and bool(_issuer(lines_by_page[i]))
+            and _confirmation([pages[i]])[2] and _confirmation([pages[i]])[0] == issue
             # Supported continuation pages contain notices and confirmation,
             # not an independently labeled applicant/issue grid. Even matching
             # extra metadata needs review until its page relationship is known.
@@ -348,16 +428,23 @@ def extract(pages, today=None) -> DailyWorkResult:
         checks.append(common.Validation(f"daily_{number}_cell_confidence",bool(required_words) and all(word.conf>=.85 for word in required_words)))
         insurance = _insurance(lines)
         if insurance is None:
-            warnings.append("산재·고용보험 체크 표시를 문자로 확인하지 못했습니다. 담당자가 원본의 표시를 확인합니다.")
+            warnings.append("산재·고용보험 체크 표시를 문자로 확인하지 못했습니다. 근로 내역 판정에는 사용하지 않는 참고 정보입니다.")
         records.append({"issue_number":issue_number,"issue":issue,"name":name,"birth":birth,
                         "birth_printed":printed,"birth_candidates":candidates,"period":period,"rows":rows,
-                        "insurance":insurance,"metadata":metadata,"identity":identity,"period_words":period_words})
+                        "insurance":insurance,"metadata":metadata,"identity":identity,"period_words":period_words,
+                        "selection":selection_record})
         all_row_words+=row_words
     comparable = [(r["issue"],r["name"],r["birth_printed"],r["period"],r["rows"]) for r in records]
     consistent = bool(records) and all(record==comparable[0] for record in comparable)
     checks.append(common.Validation("daily_insurance_copies_consistent",consistent))
     known_insurance = [record["insurance"] for record in records if record["insurance"]]
-    checks.append(common.Validation("daily_insurance_copies_unique",len(known_insurance)==len(set(known_insurance))))
+    if len(known_insurance) != len(set(known_insurance)):
+        warnings.append("보험 체크 표시가 중복되어 보입니다. 근로 내역 판정에는 사용하지 않는 참고 정보입니다.")
+    selections = [record["selection"] for record in records]
+    selection = _selection_summary(selections)
+    checks.append(common.Validation("daily_selection_copies_consistent", selection != "CONFLICT"))
+    if selection in {"UNREADABLE", "CONFLICT"}:
+        warnings.append("전체 이력 선택 여부를 확실히 읽지 못해 근로 내역의 완전성을 확인해야 합니다.")
     complete = bool(checks) and all(check.passed for check in checks)
     confidence = .97 if complete else .4
 
@@ -383,6 +470,8 @@ def extract(pages, today=None) -> DailyWorkResult:
             put("조회기간",first["period"],first["period_words"])
         put("보험구분",known_insurance or ["미확인"])
         put("발급번호목록",[record["issue_number"] for record in records])
+        put("일용근로선택자료", {"version": 1, "status": selection, "copies": selections,
+                               "copies_consistent": consistent})
         put("일용근로내역자료",{"period":first["period"],"rows":first["rows"],
                            "insurance_types":known_insurance,"copies_consistent":consistent},all_row_words)
     if not complete:

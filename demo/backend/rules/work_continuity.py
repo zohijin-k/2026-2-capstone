@@ -100,6 +100,11 @@ def _trust_issue(doc, fields, identity: Identity | None, end: date) -> str | Non
                          identity.birth.isoformat() in candidates)
     if not birth_matches:
         return "WORK_IDENTITY_UNCONFIRMED"
+    if doc.get("doc_type") == DocType.DAILY_WORK_RECORD:
+        from engine_v2.extractors.daily_work_record import selection_status
+        selection = selection_status(fields)
+        if selection not in {"ABSENT", "COMPLETE"}:
+            return "WORK_DAILY_SELECTION_INCOMPLETE" if selection == "PARTIAL" else "WORK_DAILY_SELECTION_UNCONFIRMED"
     if not _date_confident(fields,"근로근거신뢰도"):
         return "WORK_SOURCE_CONFIDENCE_UNCONFIRMED"
     try:

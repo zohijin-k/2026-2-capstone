@@ -133,6 +133,14 @@ def test_incomplete_or_conflicting_printed_evidence_stays_low_confidence(defect)
         word=next(w for w in pages[0][1].words if w.text=="2025년09월~")
         word.confidence=.4
     result=reader.extract(pages)
+    if defect == "same-checkbox":
+        assert result.structure_complete is True
+        assert all(validation.passed for validation in result.validations)
+        assert data(result)["copies_consistent"] is True
+        assert len(data(result)["rows"]) == 3
+        assert any("참고 정보" in warning for warning in result.warnings)
+        assert all(field.confidence >= .9 for field in result.fields.values())
+        return
     assert result.structure_complete is False
     assert any(not validation.passed for validation in result.validations)
     assert result.warnings

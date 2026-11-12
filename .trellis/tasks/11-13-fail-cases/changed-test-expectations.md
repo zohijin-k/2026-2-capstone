@@ -22,3 +22,9 @@ No existing assertions have been removed or weakened.
 
 
 Final follow-up 2 audit against 79406ed: the `[True]` short-year CLI branch above is the only baseline expectation change. All other baseline assertions remain. New tests account for +28 engine and +27 backend passes; scenario counts/expectations are unchanged. The stage-2 sparse-header reproduction transition is an authored follow-up test, not a baseline regression relaxation.
+
+
+## Follow-up 3 — daily structure and selection
+
+- Baseline `engine_v2/tests/test_daily_work_record.py::test_incomplete_or_conflicting_printed_evidence_stays_low_confidence[same-checkbox]` retains the same authored mutation but now expects complete structure, every validation passed, matching duplicate rows, >=.9 field confidence and a reference-only warning. The user explicitly decided that insurance checkbox selection is not needed for work continuity when the actual work rows agree; treating duplicate readable marks as a structural failure would violate that decision. All other defects in this existing parametrized test retain their original incomplete/review assertions; no case was removed.
+- NEW stage-2 `test_followup3_daily_reproduction.py::test_source_notice_and_selection_note_reproduce_actual_structural_failure` becomes `test_source_notice_and_selection_note_now_prove_complete_daily_work`: exact six failed validations/.4/missing query/REQUIRED_FIELD_UNREADABLE/UNDETERMINED now become all validations passed/query present/PASS/NOT_MET/actual blocker O. It is the authored follow-up reproduction introduced in 5b20963, not a baseline expectation relaxation. It still verifies four pages, intended full-birth absence, candidate identity, all originally present fields and actual shared rule outputs.
