@@ -47,7 +47,7 @@ def test_household_source_and_income_review() -> None:
     print("\n[1] 소득 가구원 수는 자격확인서만 사용")
     missing = build_facts(
         {"householdSize": "4인"},
-        [{"doc_type": str(DocType.NHIS_PAYMENT), "fields": {"건강보험료": "100000"}}],
+        [{"doc_type": str(DocType.NHIS_PAYMENT), "fields": {"건강보험료": "100000", "월별고지금액": json.dumps({month: "100000" for month in ("2025-10", "2025-11", "2025-12")})}}],
     )
     check("자격확인서 없음 → 신청서 입력값 미사용", missing.household_size, None)
     check("미확인 사유", missing.household_size_issue,
@@ -66,7 +66,7 @@ def test_household_source_and_income_review() -> None:
     ]
     form_four = {"householdSize": "4인"}
     facts = build_facts(form_four, [qualification({"가구원목록": json.dumps(members), "가입구분": "직장"}),
-                                    {"doc_type": str(DocType.NHIS_PAYMENT), "fields": {"건강보험료": "100000"}}])
+                                    {"doc_type": str(DocType.NHIS_PAYMENT), "fields": {"건강보험료": "100000", "월별고지금액": json.dumps({month: "100000" for month in ("2025-10", "2025-11", "2025-12")})}}])
     check("신청서 4명, 자격확인서 목록 3명 → 판정은 3명", facts.household_size, 3)
     check("신청서 값 차이 참고 기록", facts.household_size_form_mismatch, (4, 3))
     check_true("담당자 근거에 신청서 입력과 인증서 출처", "신청서 입력 4명" in facts.source("income").origin)
@@ -171,7 +171,7 @@ def _add_app(
             expected_doc_type=str(DocType.NHIS_QUALIFICATION),
             file_path=f"/fake/{app_no}.pdf",
             file_format="pdf",
-            ocr_json={"fields": {"가구원목록": json.dumps(members, ensure_ascii=False)}},
+            ocr_json={"confidence": .95, "fields": {"가구원목록": json.dumps(members, ensure_ascii=False)}},
             stage1_status="PASS",
         ))
         session.add(Review(

@@ -44,7 +44,7 @@ OFFICIAL_NOTICE_MAX_HOUSEHOLD = MAX_SUPPORTED_HOUSEHOLD
 #: 신청 자격 상한. 이 값을 넘으면 점수와 무관하게 부적합이다.
 INCOME_LIMIT_PERCENT = 140.0
 
-#: 가입구분 표기. 건강보험 자격확인서의 직장가입자 칸 기재 여부로 갈린다.
+#: 공개 기준표의 가입구분. 자동 자격 판정은 직장·지역 상한만 사용한다.
 INSURANCE_TYPES = ("직장", "지역", "혼합")
 
 #: 항목 1. 중위소득 — (하한 %, 점수). 위에서부터 먼저 걸리는 구간을 쓴다.
@@ -461,7 +461,10 @@ def score_age(facts: ScoringFacts, age_basis_date: date) -> ScoreItem:
         return _missing("age", "신청자 연령", 10, "생년월일", source)
 
     age = korean_age_at(birth, age_basis_date)
-    score, band = next((s, b) for upper, s, b in AGE_BANDS if age <= upper)
+    score, band = next(
+        ((s, b) for upper, s, b in AGE_BANDS if age <= upper),
+        AGE_BANDS[-1][1:],
+    )
     return ScoreItem(
         key="age",
         label="신청자 연령",

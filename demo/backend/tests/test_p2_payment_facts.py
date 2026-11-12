@@ -67,8 +67,17 @@ def test_complete_matching_payment_preserves_income_scoring(high):
     assert facts.monthly_premium == int(payment["fields"]["건강보험료"])
     program = PROGRAMS[DOUBLE_SAVINGS]
     sheet = score_application(facts, announcement_date=program.announcement_date, age_basis_date=program.age_basis_date)
-    assert sheet.income_percent is not None
-    assert (sheet.income_percent > 140) == high
+    assert sheet.income_status == ("OVER_LIMIT" if high else "UNDETERMINED")
+    assert sheet.income_over_limit is high
+    if high:
+        assert sheet.income_percent is not None
+        assert sheet.income_percent > 140
+    else:
+        # B is an observed regional blank, but A is missing in this sample.
+        # This middle-band amount cannot inherit the old workplace default.
+        assert sheet.income_percent is None
+        assert sheet.items[0].incomplete
+        assert "INSURANCE_EVIDENCE_INSUFFICIENT" in sheet.income_reason_codes
 
 
 @pytest.mark.parametrize("status", ["NEEDS_REVIEW", "FAIL"])

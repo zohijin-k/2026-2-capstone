@@ -130,3 +130,17 @@ def test_malformed_huge_birth_reaches_review_through_actual_fact_building(isolat
     review = _run_review(app)
     assert review.final_status == review.stage2_status == "NEEDS_REVIEW"
     assert review.review_payload_json["age_eligibility"]["reason_code"] == "AGE_UNDETERMINED"
+
+
+@pytest.mark.parametrize("program_code", [DOUBLE_SAVINGS, JOB_PACKAGE])
+def test_valid_ancient_fictitious_birth_reaches_age_failure_without_scoring_error(isolated_db, program_code):
+    app = make_application(program_code=program_code, premium=0)
+    app.form1_json = {**app.form1_json, "birth": "0001-01-01"}
+    app.identity_json = {**app.identity_json, "birth": "0001-01-01"}
+    review = _run_review(app)
+    assert review.final_status == review.stage2_status == review.review_payload_json["final_status"] == "FAIL"
+    age = review.review_payload_json["age_eligibility"]
+    assert age["reason_code"] == "AGE_OUT_OF_RANGE"
+    check = next(row for row in _eligibility(Entry(app, review), {}) if row["key"] == "age")
+    assert not check["ok"]
+    assert check["basis"] == age["basis"]
