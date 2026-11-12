@@ -189,3 +189,22 @@ def test_real_text_layer_pages_use_the_same_reader_without_ocr(tmp_path):
     assert result.structure_complete is True, [v.name for v in result.validations if not v.passed]
     assert data(result)["copies_consistent"] is True
     assert len(data(result)["rows"])==3
+
+
+@pytest.mark.parametrize("kind",["identity-matching","identity-conflicting","issue-matching","issue-conflicting"])
+def test_unexpected_continuation_metadata_cannot_be_silently_ignored(kind):
+    pages=sample.daily()
+    if kind.startswith("identity"):
+        name="가짜다름" if kind.endswith("conflicting") else sample.NAME
+        birth="1991년01월01일" if kind.endswith("conflicting") else "1990년01월01일"
+        words=[OcrWord("성명",1,(122,134,143,146)),OcrWord(name,1,(224,134,270,146)),
+               OcrWord("생년월일",1,(331,134,380,146)),OcrWord(birth,1,(432,134,520,146))]
+    else:
+        number="0000-0000-000000001" if kind.endswith("conflicting") else "0000-0000-000000000"
+        words=[OcrWord("발급번호",1,(55,105,93,117)),OcrWord(number,1,(111,105,222,117)),
+               OcrWord("발급일자",1,(234,105,280,117)),OcrWord("2026년03월03일",1,(292,105,380,117))]
+    pages[1][1].words.extend(words)
+    result=reader.extract(pages)
+    assert result.structure_complete is False
+    assert not next(v.passed for v in result.validations if v.name=="daily_0_continuation")
+    assert all(field.confidence<=.4 for field in result.fields.values())

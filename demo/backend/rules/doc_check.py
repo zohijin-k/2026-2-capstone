@@ -399,9 +399,13 @@ def _check_billing_months(ocr: OcrResult, req: DocRequirement) -> list[CheckFind
             missing = [month for month in req.premium_months if not period[0] <= month <= period[1]]
             if not missing and data.get("amounts_certain") is True:
                 absent = data.get("absent_amount_months")
-                if not isinstance(absent, list) or any(not isinstance(value, str) for value in absent):
+                uncertain_absent = data.get("uncertain_absent_amount_months")
+                if (not isinstance(absent, list) or not isinstance(uncertain_absent, list) or
+                        any(not isinstance(value, str) for value in absent + uncertain_absent)):
                     return review()
                 missing = [month for month in req.premium_months if month in absent]
+                if not missing and any(month in uncertain_absent for month in req.premium_months):
+                    return review()
             if missing:
                 rendered = format_month_ranges(missing)
                 finding = _finding(

@@ -5,7 +5,7 @@ import json
 import re
 
 from . import nhis_common as common
-from .format_text import normalize_format_text
+from .format_text import normalize_format_text, normalize_numeric_text
 from ..pipeline.layout import line_text, squash
 
 
@@ -40,6 +40,20 @@ def collect(pages, extraction) -> dict[str, object]:
     Only positive observed amounts or explicit year-month rows contradict it.
     Ambiguous or low-confidence competing evidence requires review.
     """
+    validations = {check.name: check.passed for check in extraction.validations}
+    corrected_zeros_certain = all(validations.get(name) is True for name in (
+        "monthly_amounts_numeric", "monthly_total_matches", "paid_total_matches", "numeric_cell_corrections"))
+
+    def outside_token_readable(word):
+        text = squash(word.text)
+        if _MONEY.fullmatch(text) or text in {"", "원", "-", "—", "―"}:
+            return True
+        normalized, categories = normalize_numeric_text(text)
+        # Preserve established OCR O/o zero correction only when the bounded
+        # numeric reader proved every column and paid-total arithmetic.
+        return bool(corrected_zeros_certain and categories and normalized is not None and
+                    int(normalized.replace(",", "")) == 0)
+
     periods = []
     uncertain = False
     row_months = []
@@ -93,6 +107,10 @@ def collect(pages, extraction) -> dict[str, object]:
             if year is not None:
                 ym = f"{year:04}-{month:02}"
                 row_months.append({"month": ym, "positive": bool(positive), "explicit_year": bool(match[1])})
+                if period and not period[0] <= ym <= period[1]:
+                    # A damaged amount could hide a positive contradicting the
+                    # query title. Missing numeric tokens are not proven zero.
+                    uncertain |= any(not outside_token_readable(word) for word in row[1:])
                 if period and not period[0] <= ym <= period[1] and (positive or match[1]):
                     # Uncertain competing values also prevent certain rejection.
                     uncertain = uncertain or any(word.conf < MIN_CONFIDENCE for word in [first, *positive])
@@ -104,7 +122,6 @@ def collect(pages, extraction) -> dict[str, object]:
         for row in row_months))
     # The government reader separately proves headers, columns, all arithmetic
     # and blank-cell boundaries. This must not rely on document confidence.
-    validations = {check.name: check.passed for check in extraction.validations}
     amounts_certain = (validations.get("payment_billing_absence_certain") is True and
                        validations.get("paid_total_matches") is True)
     rows = None
@@ -113,6 +130,8 @@ def collect(pages, extraction) -> dict[str, object]:
     except (KeyError, TypeError, ValueError):
         pass
     absent_amount_months = []
+    uncertain_absent_amount_months = []
+    absence_states = getattr(extraction, "billing_absence_states", {})
     if amounts_certain and isinstance(rows, list):
         for row in rows:
             if not isinstance(row, dict):
@@ -120,9 +139,15 @@ def collect(pages, extraction) -> dict[str, object]:
                 break
             value = (row.get("고지") or {}).get("건강보험료")
             if value is None or str(value).strip() in {"", "0"}:
-                absent_amount_months.append(row.get("월"))
+                month = row.get("월")
+                state = absence_states.get(month) if isinstance(absence_states, dict) else None
+                if state in {"ZERO_CONFIRMED", "BLANK_CONFIRMED"}:
+                    absent_amount_months.append(month)
+                else:
+                    uncertain_absent_amount_months.append(month)
     return {"version": 1, "status": "CONFLICT" if conflict else
             "READABLE" if period and not uncertain else "UNDETERMINED",
             "period": period, "periods": periods, "month_rows": row_months,
             "amounts_certain": bool(amounts_certain and not uncertain and not conflict and period),
-            "absent_amount_months": absent_amount_months}
+            "absent_amount_months": absent_amount_months,
+            "uncertain_absent_amount_months": uncertain_absent_amount_months}

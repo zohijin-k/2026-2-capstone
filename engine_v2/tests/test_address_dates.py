@@ -35,3 +35,21 @@ def test_broken_certainty_stays_undetermined(defect):
 
 def test_existing_complete_multisheet_document_never_becomes_omission():
     assert assess(p2_resident_samples.resident(), type_confidence=.95)["status"] != "MISSING"
+
+
+def test_date_in_address_note_is_not_a_date_column_value():
+    pages=missing_address_dates()
+    pages[0][1].words.append(OcrWord("2020.01.01",1,(200,487,340,511)))
+    evidence=assess(pages,type_confidence=.95)
+    assert evidence["status"] == "MISSING"
+    assert evidence["pages"][0]["reason"] == "rows_without_dates"
+
+
+def test_certain_header_without_date_column_labels_does_not_require_parsed_rows():
+    pages=missing_address_dates()
+    pages[0][1].words[:]=[w for w in pages[0][1].words if w.bbox_px[1]<460 and
+                        w.text not in {"발  생일","신 고 일"}]
+    evidence=assess(pages,type_confidence=.95)
+    assert evidence["status"] == "MISSING"
+    assert evidence["pages"][0]["reason"] == "date_headers_absent"
+    assert evidence["pages"][0]["rows"] == 0

@@ -35,12 +35,12 @@ def assess(pages, *, type_confidence):
             # An observed administrative-region address plus its ordinal proves a row.
             if any(w.conf >= .9 and re.search(r"(?:특별자치도|특별시|광역시|[가-힣]+도)", w.text) for w in address):
                 row_count += 1
-        if not row_count:
+        date_labels = {label for label, _ in forms.label_hits(header, ("발생일", "신고일"))}
+        if not row_count and date_labels:
             return unknown
         date_words = [w for w in body if 50 <= ((w.x0 + w.x1) / 2) < 77.5]
-        has_dates = any(common.parse_date(line_text(row)) is not None for row in lines
-                        if row[0].cy > bottom + 1 and row[0].cy < end and
-                        any(w in date_words for w in row))
+        from ..pipeline.layout import group_lines
+        has_dates = any(common.parse_date(line_text(row)) is not None for row in group_lines(date_words))
         any_dates |= has_dates
         # Digits/unreadable date punctuation are evidence of failed reading, not blank cells.
         ambiguous = any(re.search(r"[0-9?？]|[-–—./]{2,}", normalize_format_text(w.text)) for w in date_words)
@@ -49,7 +49,6 @@ def assess(pages, *, type_confidence):
                          for w in date_words)
         if not has_dates and ambiguous:
             return unknown
-        date_labels = {label for label, _ in forms.label_hits(header, ("발생일", "신고일"))}
         if not has_dates:
             evidence.append({"page": page.page, "rows": row_count,
                              "reason": "rows_without_dates" if date_labels else "date_headers_absent"})

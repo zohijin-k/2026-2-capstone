@@ -336,6 +336,11 @@ def extract(pages, today=None) -> DailyWorkResult:
         continuation_ok = len(copy)<=2 and all(
             _headers(lines_by_page[i]) is None and not _title(lines_by_page[i])
             and bool(_unique(lines_by_page[i],("근로복지공단이사장","근로복지공단")))
+            # Supported continuation pages contain notices and confirmation,
+            # not an independently labeled applicant/issue grid. Even matching
+            # extra metadata needs review until its page relationship is known.
+            and _labeled_cells(lines_by_page[i],(("성명",),("생년월일",))) is None
+            and _labeled_cells(lines_by_page[i],(("발급번호",),("발급일자","발급일"))) is None
             for i in range(start+1,end))
         checks.append(common.Validation(f"daily_{number}_continuation",continuation_ok))
         required_words = [word for cells in (metadata or [],identity or []) for cell in cells for word in cell]
