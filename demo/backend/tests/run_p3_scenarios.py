@@ -70,12 +70,17 @@ def test_income_table() -> None:
     check("4인 직장 100% 기준선", base_100, 222_165)
     check("4인 직장 200,000원 → 중위소득 %", round(percent, 1), 90.0)
 
-    # 표에 없는 가구원수·가입구분은 대체값을 쓰고 그 사실을 남긴다.
-    _, _, note8 = income_percent(11, 200_000, "직장")
-    check_true("8인 이상 가구 대체 근거 문구", ESTIMATE_LABEL in note8)
+    # 공식 표 밖 가구원 수를 10인 상한으로 대체하지 않는다.
+    try:
+        income_percent(11, 200_000, "직장")
+        rejected_unsupported_size = False
+    except ValueError:
+        rejected_unsupported_size = True
+    check_true("11인 기준표 직접 조회는 대체 없이 거부", rejected_unsupported_size)
+    # 참고 환산 helper 호환성만 검증한다. 자격 판정에서는 혼합을 선택하지 않는다.
     _, _, note_mix = income_percent(1, 100_000, "혼합")
-    check_true("1인 혼합 대체 근거 문구", ESTIMATE_LABEL in note_mix)
-    check("1인 혼합은 직장 기준으로 대체", premium_limit_140(1, "혼합")[0], 118_821)
+    check_true("1인 혼합 참고 환산 helper 주석(자격 판정에 미사용)", ESTIMATE_LABEL in note_mix)
+    check("1인 혼합 참고 환산 helper 직장값(자격 판정에 미사용)", premium_limit_140(1, "혼합")[0], 118_821)
 
     print("\n  -- 8~10인 상한 경계")
     expected = {
@@ -89,9 +94,8 @@ def test_income_table() -> None:
             if household_size >= 8:
                 source_note = premium_limit_140(household_size, insurance_type)[1]
                 check_true(
-                    f"{household_size}인 값의 출처와 공고문 표 밖 표시",
-                    "보건복지부 소득판정기준표(2025.1.1. 고시)" in source_note
-                    and "공고문 표(7인까지) 밖" in source_note,
+                    f"{household_size}인 공식 값은 표 밖·담당자 확인 주석 없음",
+                    source_note == "",
                 )
             under = score_application(
                 ScoringFacts(household_size=household_size, monthly_premium=limit, insurance_type=insurance_type),
@@ -103,14 +107,37 @@ def test_income_table() -> None:
                 announcement_date=PROGRAM.announcement_date,
                 age_basis_date=PROGRAM.age_basis_date,
             )
-            check(f"{household_size}인 {insurance_type} 상한 이하 통과", under.income_over_limit, False)
-            check(f"{household_size}인 {insurance_type} 상한 초과 부적합", over_limit.income_over_limit, True)
+            if insurance_type == "혼합":
+                check(f"{household_size}인 혼합 상한에서는 초과 확정 안 함", under.income_over_limit, False)
+                check(f"{household_size}인 혼합 표 값의 판정", under.income_status, "UNDETERMINED")
+                check(f"{household_size}인 혼합 가능 세부 사유", under.income_reason_codes, ["INCOME_MIXED_POSSIBLE"])
+                check_true(f"{household_size}인 혼합 가입구분 자동 선택 없음",
+                           "혼합가입자" not in under.items[0].basis and "혼합 가구 여부를 확정할 수 없습니다" in under.items[0].basis)
+                middle = score_application(
+                    ScoringFacts(household_size=household_size, monthly_premium=limits["지역"] + 1, insurance_type="혼합"),
+                    announcement_date=PROGRAM.announcement_date,
+                    age_basis_date=PROGRAM.age_basis_date,
+                )
+                check(f"{household_size}인 혼합 중간 금액은 자동 판정 불가", middle.income_status, "UNDETERMINED")
+            else:
+                check(f"{household_size}인 {insurance_type} 상한 이하 통과", under.income_over_limit, False)
+                check(f"{household_size}인 {insurance_type} 상한 포함 판정", under.income_status, "MET")
+            mixed_possible = insurance_type == "직장"
+            check(f"{household_size}인 {insurance_type} 상한+1 초과 확정 여부", over_limit.income_over_limit, not mixed_possible)
+            check(f"{household_size}인 {insurance_type} 상한+1 정수 판정", over_limit.income_status,
+                  "UNDETERMINED" if mixed_possible else "OVER_LIMIT")
+            if mixed_possible:
+                check(f"{household_size}인 직장 상한+1 혼합 가능 사유", over_limit.income_reason_codes, ["INCOME_MIXED_POSSIBLE"])
 
-    _, _, note_11 = income_percent(11, 500_000, "직장")
-    check_true(
-        "11인 이상 10인 상한·공고문 표 범위·담당자 확인 사유",
-        "10인 기준" in note_11 and "공고문 표는 7인까지만" in note_11 and "담당자 확인" in note_11,
+    unsupported = score_application(
+        ScoringFacts(household_size=11, monthly_premium=500_000, insurance_type="직장"),
+        announcement_date=PROGRAM.announcement_date,
+        age_basis_date=PROGRAM.age_basis_date,
     )
+    check("11인 이상은 10인 상한 대체 대신 판정 불가", unsupported.income_status, "UNDETERMINED")
+    check("11인 이상 비율은 미확정", unsupported.income_percent, None)
+    check("11인 이상 잘못된 초과 확정 없음", unsupported.income_over_limit, False)
+    check_true("11인 이상 담당자 확인 사유", "HOUSEHOLD_SIZE_UNSUPPORTED" in unsupported.income_reason_codes)
 
     residence_facts = build_facts(
         {"birth": "1999-01-01", "employedAt": "2023-01-01"},

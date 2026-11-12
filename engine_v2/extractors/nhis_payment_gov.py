@@ -75,6 +75,36 @@ def _text(words):
     return line_text(sorted(words, key=lambda word: word.x0))
 
 
+def _workplace_evidence(lines, middle, period_rows, complete):
+    """Keep optional income evidence separate from the existing form checks."""
+    left = _unique_label(lines, "사업장명칭")
+    right = _unique_label(lines, "납부자번호")
+    above = _unique_label(lines, "가입자성명") + _unique_label(lines, "생년월일")
+    labels = left + right
+    if not (complete and middle is not None and left and right and above and len(period_rows) == 1):
+        return "못 읽음", labels
+    if squash(_text(left)) != "사업장명칭" or squash(_text(right)) != "납부자번호":
+        return "못 읽음", labels
+    top = (max(word.y1 for word in above) + min(word.y0 for word in labels)) / 2
+    bottom = (max(word.y1 for word in labels) + min(word.y0 for word in period_rows[0])) / 2
+    start, end = max(word.x1 for word in left), min(word.x0 for word in right)
+    if top >= min(word.y0 for word in labels) or bottom <= max(word.y1 for word in labels):
+        return "못 읽음", labels
+    label_ids = {id(word) for word in labels}
+    words = [word for row in lines for word in row if id(word) not in label_ids and
+             word.x1 > start and word.x0 < end and word.y1 > top and word.y0 < bottom]
+    if any(word.x0 <= start or word.x1 >= end or word.y0 < top or word.y1 > bottom or
+           word.conf < .85 for word in words) or any(word.conf < .85 for word in labels + above):
+        return "못 읽음", labels + words
+    if all(not re.search(r"[^\s|:：.·=~\-－—–]", word.text) for word in words):
+        return "확실한 공란", left + words
+    text = _text(words)
+    valid = (bool(re.search(r"[가-힣A-Za-z]", text)) and
+             re.fullmatch(r"[가-힣A-Za-z0-9\s()（）&.,·'’\-]+", text) and
+             not common.is_header_only_value(text))
+    return ("값 있음" if valid else "못 읽음"), left + words
+
+
 def _date_cell(words):
     text = normalize_format_text(squash(_text(words)))
     if re.fullmatch(r"\d{4}(?:년\d{1,2}월\d{1,2}일|[./-]\d{1,2}[./-]\d{1,2}\.?)", text) is None:
@@ -333,6 +363,8 @@ def extract(pages, today=None):
         put("합계자료", [str(value) if value is not None else None for value in totals])
 
     complete = all(check.passed for check in checks)
+    workplace_state, workplace_words = _workplace_evidence(lines, middle, period_rows, complete)
+    put("사업장명칭_상태", workplace_state, workplace_words)
     if not complete:
         for extracted in fields.values():
             extracted.confidence = min(extracted.confidence, .4)

@@ -169,6 +169,7 @@ def to_engine_applicant(
     residence_region: str,
     program: ProgramConfig,
     income_percent: float | None,
+    income_over_limit: bool | None = None,
     prior_support_count: int = 0,
     is_duplicate_submission: bool = False,
     conflicting_benefits: list[str] | None = None,
@@ -178,6 +179,13 @@ def to_engine_applicant(
     `applicant_id`에 데모의 `application_no`를 그대로 넣는다. 담당자가 원본 서류와
     매칭하는 유일 키이므로 두 시스템이 같은 값을 써야 한다.
     """
+    decile = income_percent_to_decile(income_percent)
+    if income_over_limit is True:
+        # Eligibility is an integer premium comparison. Its displayed percent
+        # can round to 140.0 even when the premium is one won above the limit.
+        decile = 10
+    elif income_over_limit is False and decile is not None:
+        decile = min(9, decile)
     return engine_models.Applicant(
         applicant_id=application_no,
         name=name or "(미입력)",
@@ -186,7 +194,7 @@ def to_engine_applicant(
         birth_date=birth_date or date(1900, 1, 1),
         residence_region=residence_region,
         program=ENGINE_PROGRAM_KEY[program.code],
-        income_decile=income_percent_to_decile(income_percent),
+        income_decile=decile,
         prior_support_count=prior_support_count,
         is_duplicate_submission=is_duplicate_submission,
         conflicting_benefits=conflicting_benefits or [],
