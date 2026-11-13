@@ -2,6 +2,17 @@
 
 두배적금과 청년 취업지원패키지 신청 서류를 읽고 공고문 기준을 확인해, 담당자가 검토할 내용과 판정 근거를 정리하는 데모입니다.
 
+> **안내** 이 저장소는 프로젝트 안내용입니다. 개발은 아래 네 저장소로 나누어 진행합니다. 이 저장소의 코드는 분리 직전 상태이며 `archive/main-before-split` 태그로 보관합니다.
+
+## 저장소 구성
+
+| 저장소 | 내용 |
+|---|---|
+| [26-2-savings-applicant](https://github.com/zohijin-k/26-2-savings-applicant) | 두배적금 신청자 화면: 본인인증, 서식 작성, 서류 업로드 즉시 판정과 재업로드 안내 |
+| [26-2-savings-officer](https://github.com/zohijin-k/26-2-savings-officer) | 두배적금 담당자 화면: 적합 서류와 확인 필요 서류 검토 |
+| [26-2-youth-applicant](https://github.com/zohijin-k/26-2-youth-applicant) | 청년정책 신청자 화면: 공고문·서식 PDF에 맞춰 구성되는 범용 신청 페이지 |
+| [26-2-youth-officer](https://github.com/zohijin-k/26-2-youth-officer) | 청년정책 담당자 화면: 공고문·서식 PDF 등록과 신청 검토 |
+
 ## 해결하려는 문제
 
 도청·시군 담당자는 신청자가 낸 여러 서류를 열어 자격과 제출 상태를 하나씩 확인해야 합니다. 신청자도 서류가 잘못되었는지 접수 뒤에야 알 수 있습니다. 이 시스템은 업로드할 때 미비 가능성을 알려 담당자의 확인 부담과 신청자의 재제출 대기를 줄이는 것을 목표로 합니다.
