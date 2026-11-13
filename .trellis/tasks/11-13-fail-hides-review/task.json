@@ -1,0 +1,32 @@
+{
+  "id": "fail-hides-review",
+  "name": "fail-hides-review",
+  "title": "Hide review guidance for confirmed failures",
+  "description": "Trace case 7 review warning and suppress review-only applicant findings when a document has confirmed FAIL, preserving officer evidence and verdicts.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "backend",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "fix/fail-hides-review",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "demo/backend/api/common.py",
+    "demo/backend/tools/verify_upload.py",
+    "demo/backend/tests/test_applicant_failure_findings.py",
+    "demo/backend/tests/test_verify_upload_validations.py",
+    ".trellis/spec/backend/failure-filtering.md"
+  ],
+  "notes": "Implementation and independent review complete; engine1264/3skips, backend1159 (+52), all18 scenarios exit0/count1885/0failed; existing expectations unchanged. Awaiting user work-commit approval; original case7 validations will be checked by the user locally.",
+  "meta": {}
+}

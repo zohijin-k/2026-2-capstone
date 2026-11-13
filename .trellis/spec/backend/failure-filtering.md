@@ -2,7 +2,7 @@
 
 ## 1. Scope / trigger
 
-Apply when changing upload certainty, mixed-document PDF handling, daily-work records, provisional work continuity, applicant blockers or officer work checklist. Classify from body text/coordinates; never from filenames or expected slots. Synthetic evidence only during development. Work contracts, residence eligibility, weekly hours, mixed-household rules and score policy remain separate.
+Apply when changing upload certainty, mixed-document PDF handling, daily-work records, provisional work continuity, applicant findings/blockers or officer work checklist. Classify from body text/coordinates; never from filenames or expected slots. Synthetic evidence only during development. Work contracts, residence eligibility, weekly hours, mixed-household rules and score policy remain separate.
 
 ## 2. Signatures
 
@@ -14,6 +14,7 @@ Apply when changing upload certainty, mixed-document PDF handling, daily-work re
 - `daily_work_record.extract(pages, today=None) -> DailyWorkResult`; registered as engine_v2 `DAILY_WORK_RECORD`, value `daily_work_record`.
 - `assess_work(program, announcement_date, work_category, documents, identity) -> WorkContinuityResult`; `review_status` maps MET/NOT_MET/UNDETERMINED to PASS/FAIL/NEEDS_REVIEW.
 - `age_blockers(program, form1, identity)` and `eligibility_blockers(program, form1, identity, documents, work_category, criteria)` return applicant-safe blocker dictionaries.
+- `api.common.applicant_findings(findings: list[Any] | None) -> list[dict[str, Any]]` is the shared applicant finding projection, used by `document_dict` and explicit-upload CLI verification.
 
 ## 3. Contracts
 
@@ -29,6 +30,7 @@ Apply when changing upload certainty, mixed-document PDF handling, daily-work re
 - Work JSON: status, reason_code, detail_codes, basis, period_start/end, evidence, missing_months, provisional. Complete full rows, verified applicant identity, valid high confidence/quality and issue date on/after announcement are required. Preserve fresh insurance `자격취득일신뢰도`, NHIS `acquired_confidence`/`lost_confidence`, and bounded identity/date source confidence. Fresh converters store `근로근거신뢰도` from bounded identity/issue source words. Noncoordinate JBAI retains prior document compatibility but records unconfirmed work evidence. Legacy absent provenance never bypasses full-row/structure/global trust checks. Summaries alone are unknown. Conflicting determinate documents => UNDETERMINED.
 - Final-check `blockers[]`: `{kind:"eligibility",target,label,code,message,goto,evidence,...}`. Eligibility blockers use only OVER_LIMIT, AGE_OUT_OF_RANGE and work NOT_MET; confirmed document FAILs use the separate document-blocker projection. Submit recomputes blockers from current stored facts and returns HTTP400 `detail` string with eligibility reasons. Unknown eligibility stays submittable. Identity POST, application GET and status GET include the same age `eligibility_blockers`.
 - Applicant evidence includes public household/category/140% limits/average months and amount, birth/date range or work period/missing months. Never reuse score-item basis or expose points/ranks. Use configured call center; when absent, direct users to the configured public contact page without inventing a number.
+- Applicant finding projection suppresses exact `NEEDS_REVIEW` severity only when the same document contains a `FAIL` finding. Historical omitted severity defaults to FAIL, matching document blockers. Retain every FAIL, INFO/reference finding, public key and stable order; without FAIL retain the existing guidance. Ignore nondictionary entries as before. Never infer severity from code/message, mutate stored findings or recompute status. `document_dict` must inspect all original findings for identity masking before suppression; a hidden downgraded IDENTITY_MISMATCH must not expose a name/birth. Officer `_document_view` retains complete stored findings and internal detail. Upload/list/final-check/status share `document_dict`; no frontend change is needed.
 
 ## 4. Validation and error matrix
 
@@ -45,6 +47,9 @@ Apply when changing upload certainty, mixed-document PDF handling, daily-work re
 | All relevant active acquisitions after start; provable history gap; late opening/explicit closure | NOT_MET |
 | Contract-only, summaries-only, partial table or identity uncertainty | UNDETERMINED |
 | Work/income not required | No corresponding blocker or work checklist |
+| Same document FAIL + NEEDS_REVIEW + INFO | Applicant retains FAIL and INFO; storage/officer retain all three |
+| NEEDS_REVIEW without FAIL | Applicant retains existing officer-check guidance |
+| Missing severity on historical finding + NEEDS_REVIEW | Retain historical failure; hide NEEDS_REVIEW; no status change |
 
 ## 5. Good / base / bad cases
 
@@ -54,6 +59,8 @@ Good: body-recognized four-page daily duplicate, matching verified identity, com
 
 Run full engine/backend pytest separately and every scenario module. Preserve baseline coverage and record intentional expectation changes. Include actual synthetic encrypted PDFs, text/image uploads with arbitrary names/expectations, normal image sizes and hard-cutoff boundaries, date-empty versus broken-header variants, contradictory/unknown periods, confident/uncertain zero/blank and arithmetic, duplicate/continuation corruption, full work gaps/boundaries/conflicts/identity/date uncertainty, officer agreement, fresh submit rechecks, unknown-submittable behavior and no-work programs. Source-shaped fixtures prove contracts, not real-document OCR accuracy.
 
+Applicant projection regressions cover mixed severity, multiple FAILs, preserved INFO/reference warnings, same code with differing severity, review-only documents, stable order, historical findings, full-source identity masking and immutable storage. Verify actual upload/list/final-check projections against complete officer findings and unchanged blockers/submit rejection. Preserve the existing daily insurance-mark warning in `판독경고`; do not invent a standalone finding or grade for metadata-only warnings. Include authored case5 (MISSING_ADDRESS_DATES + LOW_IMAGE_QUALITY + reading review) and case7 (MISSING_BILLING_MONTHS + reading review), and distinguish original-file verification from injected recognition.
+
 ## 7. Wrong versus correct
 
 Wrong: overall confidence .4 means every independent defect must become review. Correct: preserve file facts and separately proven printed period defects while deferring uncertain values.
@@ -61,6 +68,8 @@ Wrong: overall confidence .4 means every independent defect must become review. 
 Wrong: type score .95 proves title glyphs were read confidently; a known receipt must have birth/name fields. Correct: verify source title certainty for new rejection and choose essential fields by actual document kind.
 
 Wrong: synthesize a successful current submit for a now-ineligible officer fixture. Correct: assert current blocker/400, then explicitly seed an isolated synthetic historical review only for downstream officer regression coverage.
+
+Wrong: delete reading warnings from stored findings or hide every non-FAIL finding. Correct: suppress exact NEEDS_REVIEW only in the applicant projection when that same document has FAIL, retaining INFO/reference and complete officer data.
 
 ## 8. Read-only upload verification
 
@@ -71,6 +80,8 @@ Wrong: synthesize a successful current submit for a now-ineligible officer fixtu
 Self identity requires an explicitly readable name and a full ISO birth date, or the daily reader's validated short-year printed date plus its complete valid century-candidate set. For daily candidates only, the supplied program.birth_range must select exactly one candidate before forming a temporary CLI reference; otherwise leave the reference unresolved. Never insert that century into OCR fields or select it arbitrarily. Existing authenticated daily identity matching compares the candidate birth and name; incomplete structure/copy disagreement still prevents work rejection. Income uses payment as one reference identity across the entire bundle. This is verification context, not actual identity authentication.
 
 Output is a positive schema with fixed code/type/tier/status vocabularies, static checklist labels, bounded metrics, counts and O/X. Drop fields, names, dates, monetary amounts, identifiers, messages, basis, evidence, filenames, paths and exception strings. Redact all numeric runs of four or more digits at final emission, including static label years. Suppress Python/native stdout/stderr and logging around all dependency work, including failure paths. Unknown production codes become UNKNOWN_CODE until reviewed for addition to the vocabulary.
+
+Explicit-upload output retains complete `reason: CODE GRADE` diagnostics and adds `applicant_reason: CODE GRADE` via the shared applicant projection. Opt-in `--validations` adds `failed_validation: SLOT NAME` for each failed validation stored in `판독검증실패`, in explicit-upload and ordered income-bundle modes. SLOT is the static checklist slot, not a filename. Deduplicate names in source order. Only the reviewed `SAFE_VALIDATIONS` vocabulary (including fixed field names and bounded daily/payment identifier families) can be emitted; unknown tokens become `UNKNOWN_VALIDATION` without echoing their contents. Never print successful validations, aggregate results, explanations or raw metadata. No validation lines are emitted by default; `--slots-list --validations` is ARGUMENT_ERROR. Do not rerun/change extractors for diagnostics. Required tests cover per-document association, default-off, all-passed, malformed/unknown/malicious names, privacy and unchanged no-write behavior.
 
 Reject Python filesystem writes, DB connections and child processes with a CLI-only audit guard; remember rejected attempts even when OCR fallback catches the exception. Do not silently continue with a different verdict after a blocked write. Existing tempfile-based OCR transports are not changed to satisfy the CLI; report WRITE_ATTEMPT_BLOCKED. Native library filesystem isolation is not established by a Python audit hook (추정). Keep the configured OCR chain and its existing external-service opt-in semantics.
 

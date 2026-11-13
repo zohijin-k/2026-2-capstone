@@ -216,8 +216,20 @@ def _additional_page_count(ocr):
     return _count(len(pages)) if isinstance(pages, list) else "X"
 
 
+def _failed_validations(slot, fields):
+    """Emit reviewed validation identifiers only, never arbitrary OCR metadata."""
+    raw = fields.get("판독검증실패")
+    if not isinstance(raw, str):
+        return []
+    names = dict.fromkeys(
+        name if name in SAFE_VALIDATIONS else "UNKNOWN_VALIDATION"
+        for token in raw.split(",") if (name := token.strip())
+    )
+    return [f"failed_validation: {slot} {name}" for name in names]
+
+
 def _document(args, program, category, criteria, checklist):
-    from ..api.common import document_fact
+    from ..api.common import applicant_findings, document_fact
     from ..api.review import document_blockers
     from ..rules.doc_types import DocType
     from ..rules.eligibility_blockers import eligibility_blockers
@@ -265,6 +277,10 @@ def _document(args, program, category, criteria, checklist):
     ]
     for finding in result.findings:
         lines.append(f"reason: {_code(finding.code)} {_enum(finding.severity, {'PASS', 'FAIL', 'NEEDS_REVIEW', 'INFO'})}")
+    for finding in applicant_findings(row.findings_json):
+        lines.append(f"applicant_reason: {_code(finding.get('code'))} {_enum(finding.get('severity'), {'PASS', 'FAIL', 'NEEDS_REVIEW', 'INFO'})}")
+    if args.validations:
+        lines.extend(_failed_validations(req.slot_key, ocr.fields))
     lines.append(f"additional_pages: {_additional_page_count(ocr)}")
     if work is not None:
         lines.append(f"work_status: {_enum(work.status, {'MET', 'NOT_MET', 'UNDETERMINED'})}")
@@ -318,6 +334,9 @@ def _income(args, program, category, criteria, checklist):
         *(finding["code"] for row in documents for finding in row.findings_json),
     ]))
     lines.extend(f"reason: {_code(code)}" for code in codes)
+    if args.validations:
+        for row in documents:
+            lines.extend(_failed_validations(row.slot_key, (row.ocr_json or {}).get("fields") or {}))
     lines.append(f"blockers: {'O' if blocked else 'X'}")
     return "\n".join(lines)
 
@@ -329,6 +348,7 @@ def parser():
     p.add_argument("--work-category", metavar="CATEGORY")
     p.add_argument("--self-identity", action="store_true")
     p.add_argument("--slots-list", action="store_true")
+    p.add_argument("--validations", action="store_true", help="서류별 실패한 검증 이름만 추가 출력")
     p.add_argument("--income", nargs=3, metavar=("PAYMENT", "QUALIFICATION", "HISTORY"))
     p.add_argument("file", nargs="?", metavar="FILE")
     return p
@@ -340,7 +360,7 @@ def main(argv=None):
         with quiet_assessment():
             program, category, criteria, checklist = _context(args)
             if args.slots_list:
-                if args.file or args.slot or args.income or args.self_identity:
+                if args.file or args.slot or args.income or args.self_identity or args.validations:
                     raise VerificationError("ARGUMENT_ERROR")
                 output = "\n".join(f"{row.slot_key}: {row.label}" for row in checklist if row.upload)
             elif args.income:
@@ -367,6 +387,51 @@ ERROR_CODES = frozenset({
     "UPLOAD_SLOT_UNKNOWN", "FORMAT_UNSUPPORTED", "INPUT_UNAVAILABLE", "WORK_CATEGORY_REQUIRED",
     "INCOME_NOT_APPLICABLE", "WRITE_ATTEMPT_BLOCKED", "ASSESSMENT_ERROR", "INTERRUPTED",
 })
+# Reviewed identifiers from the extractors and adapter completeness checks.
+# Keep this positive vocabulary independent of document-supplied text.
+_VALIDATION_FIELDS = (
+    "성명", "생년월일", "발급일", "사업장명칭", "납부자번호", "문서확인번호", "조회기간",
+    "납부총액", "용도구분", "발급번호", "과세유형", "상호", "사업자등록번호",
+    "사업장소재지", "개업일", "사업자등록일", "업태", "종목", "공동사업자유무",
+)
+SAFE_VALIDATIONS = frozenset("""
+acquisition_before_loss amount_found birth_consistent brn_checksum
+business_entity_consistent business_issue_location_unique business_issue_not_future
+business_joint_section_read business_label_grid business_number_checksum
+business_number_format business_registered_not_after_issue business_single_page business_title
+company_found company_names_match daily_copy_pages_assigned daily_document_type
+daily_insurance_copies_consistent daily_selection_copies_consistent daily_selection_readable
+date_formats dates_not_after_issue doc_no_consistent document_confirmation_number_consistent
+document_number_format document_type exam_date_found exam_date_not_after_issue
+exam_date_not_future exam_name_found form_recognized four_rows_in_order
+history_dates_ordered history_dates_read history_numbers_sequential household_rows_read
+insurance_names_recognized insurance_type_found interview_date_found interview_date_not_future
+interview_not_after_confirmation issue_date_consistent issue_date_not_future issue_not_future
+monthly_amounts_numeric monthly_rows_found monthly_total_matches months_continuous
+name_consistent name_found nhis_blank_marker nhis_current_loss_blank nhis_document_number
+nhis_history_cells_read nhis_issue_location_unique nhis_neighbor_dates_continuous
+nhis_row_numbers_continuous nhis_single_page not_cancelled notice_number_read
+numeric_cell_corrections occurred_before_reported page_complete page_marker_1_of_1
+page_names_match pages_complete paid_total_matches payment_billing_absence_certain
+payment_columns payment_component_headers payment_date_found payment_date_not_future
+payment_group_headers payment_information_cells payment_purpose payment_query_period
+payment_single_page payment_sum_row portal_row_cells portal_table_columns
+recent_five_years_covered row_names_match_header single_item single_total
+subscriber_matches_first_member supply_plus_vat_matches
+""".split()) | frozenset(
+    f"{label}_consistent" for label in ("성명", "생년월일", "발급일", "문서확인번호", "발급번호")
+) | frozenset(f"{label}_required" for label in _VALIDATION_FIELDS) | frozenset(
+    f"business_{label}_read" for label in _VALIDATION_FIELDS
+) | frozenset(f"payment_column_{column}_sum" for column in range(1, 9)) | frozenset(
+    f"daily_{number}_{check}"
+    for number in range(100)
+    for check in (
+        "table_headers", "label_confidence", "issue_metadata", "applicant_identity",
+        "query_period", "table_rows", "rows_in_period", "confirmation", "continuation",
+        "cell_confidence",
+    )
+)
+
 # Fixed production code vocabulary; never accept arbitrary OCR strings as codes.
 SAFE_CODES = frozenset("""
 ADMIN_CONSENT_IDENTITY_MISMATCH
