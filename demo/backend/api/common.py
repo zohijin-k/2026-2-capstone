@@ -190,19 +190,26 @@ def list_consents(application_id: int) -> list[Consent]:
 APPLICANT_VISIBLE_FIELDS = ("발급일", "성명", "응시일", "결제금액", "동의여부", "서명잉크확인")
 
 
-def document_dict(d: Document) -> dict[str, Any]:
-    """업로드 서류 한 건의 신청자 화면 표현. 점수와 담당자용 판독값은 들어가지 않는다."""
-    from engine_v2.pipeline.privacy import mask_data
-
-    findings = [
+def applicant_findings(findings: list[Any] | None) -> list[dict[str, Any]]:
+    """Hide review guidance for rejected documents; retain FAIL and reference findings."""
+    source = [finding for finding in (findings or []) if isinstance(finding, dict)]
+    has_failure = any(finding.get("severity", "FAIL") == "FAIL" for finding in source)
+    return [
         {
             key: finding[key]
             for key in ("code", "message", "how_to_fix", "link", "severity")
             if key in finding
         }
-        for finding in (d.findings_json or [])
-        if isinstance(finding, dict)
+        for finding in source
+        if not (has_failure and finding.get("severity") == "NEEDS_REVIEW")
     ]
+
+
+def document_dict(d: Document) -> dict[str, Any]:
+    """업로드 서류 한 건의 신청자 화면 표현. 점수와 담당자용 판독값은 들어가지 않는다."""
+    from engine_v2.pipeline.privacy import mask_data
+
+    findings = applicant_findings(d.findings_json)
     nhis_subscriber_document = d.doc_type in {
         "건강보험료납부확인서", "건강보험자격확인서",
     } or d.expected_doc_type in {
@@ -211,7 +218,9 @@ def document_dict(d: Document) -> dict[str, Any]:
     visible_fields = set(APPLICANT_VISIBLE_FIELDS)
     if d.doc_type == "4대보험가입내역확인서" or d.expected_doc_type == "4대보험가입내역확인서":
         visible_fields.add("생년월일")
-    if any(finding.get("code") == "IDENTITY_MISMATCH" for finding in findings):
+    # Identity privacy depends on all original findings, including hidden reviews.
+    if any(isinstance(finding, dict) and finding.get("code") == "IDENTITY_MISMATCH"
+           for finding in (d.findings_json or [])):
         visible_fields.difference_update({"성명", "생년월일"})
     return mask_data({
         "document_id": d.id,

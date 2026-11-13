@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Full-scope backend review"}
+{"file": ".trellis/spec/backend/failure-filtering.md", "reason": "Check unchanged verdict/blocker and CLI privacy contracts"}
+{"file": ".trellis/tasks/11-13-fail-hides-review/research/warning-origin.md", "reason": "Validate projection scope and prevent unsupported original-document claims"}
