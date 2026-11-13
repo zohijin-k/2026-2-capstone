@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Full-scope backend guideline review"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check source compatibility, synthetic evidence and private artifacts"}
+{"file": ".trellis/spec/backend/document-form-contracts.md", "reason": "Verify existing CLI privacy/output contracts and regression coverage"}
+{"file": ".trellis/spec/backend/failure-filtering.md", "reason": "Verify unchanged verdict, applicant finding and blocker semantics"}
+{"file": ".trellis/spec/backend/income-eligibility.md", "reason": "Check correct income projection and exclusion of sensitive numerical data"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check both CLIs call shared orchestration without rule duplication"}
+{"file": ".trellis/tasks/11-13-verify-cases/research/shared-assessment.md", "reason": "Review implementation against confirmed source evidence and baseline"}
+{"file": ".trellis/tasks/11-13-verify-cases/approval.md", "reason": "Binding latest user conditions override conflicting original plan details"}
+{"file": ".trellis/spec/backend/verify-cases.md", "reason": "New executable CLI, resolved-location, safe snapshot and comparison contract"}

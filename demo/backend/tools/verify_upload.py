@@ -12,6 +12,8 @@ sys.dont_write_bytecode = True
 import argparse
 from contextlib import contextmanager
 from datetime import date
+from dataclasses import dataclass
+from typing import Any
 import json
 import logging
 import math
@@ -216,8 +218,8 @@ def _additional_page_count(ocr):
     return _count(len(pages)) if isinstance(pages, list) else "X"
 
 
-def _failed_validations(slot, fields):
-    """Emit reviewed validation identifiers only, never arbitrary OCR metadata."""
+def _failed_validation_names(fields):
+    """Return reviewed identifiers without retaining arbitrary OCR metadata."""
     raw = fields.get("판독검증실패")
     if not isinstance(raw, str):
         return []
@@ -225,11 +227,28 @@ def _failed_validations(slot, fields):
         name if name in SAFE_VALIDATIONS else "UNKNOWN_VALIDATION"
         for token in raw.split(",") if (name := token.strip())
     )
-    return [f"failed_validation: {slot} {name}" for name in names]
+    return list(names)
 
 
-def _document(args, program, category, criteria, checklist):
-    from ..api.common import applicant_findings, document_fact
+def _failed_validations(slot, fields):
+    """Emit reviewed validation identifiers only, never arbitrary OCR metadata."""
+    return [f"failed_validation: {slot} {name}" for name in _failed_validation_names(fields)]
+
+
+@dataclass
+class Assessment:
+    """Transient shared verdict context; never serialize this object wholesale."""
+
+    documents: list
+    identity: dict | None
+    blocked: bool
+    work: Any = None
+    facts: Any = None
+    income: Any = None
+
+
+def assess_document(args, program, category, criteria, checklist):
+    from ..api.common import document_fact
     from ..api.review import document_blockers
     from ..rules.doc_types import DocType
     from ..rules.eligibility_blockers import eligibility_blockers
@@ -266,6 +285,15 @@ def _document(args, program, category, criteria, checklist):
                   DocType.NHIS_ACQUISITION_LOSS, DocType.BIZ_REG_PROOF}
     if program.has_work_requirement and (req.slot_key.startswith("work_proof") or ocr.detected_doc_type in work_types):
         work = assess_work(program, date.fromisoformat(criteria["announcement_date"]), category, rows, identity)
+    return Assessment([(req, ocr, row, result)], identity, blocked, work=work)
+
+
+def _document(args, program, category, criteria, checklist):
+    from ..api.common import applicant_findings
+    from ..rules.doc_types import DocType
+    assessment = assess_document(args, program, category, criteria, checklist)
+    req, ocr, row, result = assessment.documents[0]
+    identity, blocked, work = assessment.identity, assessment.blocked, assessment.work
     lines = [
         f"tier: {_enum(ocr.tier, {'fixture', 'localocr', 'pdftext', 'jbai', 'upstage', 'none'})}",
         f"detected_type: {_enum(ocr.detected_doc_type, {str(kind) for kind in DocType})}",
@@ -291,7 +319,7 @@ def _document(args, program, category, criteria, checklist):
     return "\n".join(lines)
 
 
-def _income(args, program, category, criteria, checklist):
+def assess_income(args, program, category, criteria, checklist):
     from ..api.common import document_fact
     from ..api.review import document_blockers
     from ..rules.eligibility_blockers import eligibility_blockers
@@ -327,6 +355,16 @@ def _income(args, program, category, criteria, checklist):
     eligibility = eligibility_blockers(program, {}, identity, facts_rows, category, criteria)
     blocked = (any(item["target"] in slots for item in document_blockers(checklist, documents))
                or any(item["target"] == "income" for item in eligibility))
+    return Assessment(
+        [(req, ocr, row, result) for (req, path, ocr, result), row in zip(reads, documents)],
+        identity, blocked, facts=facts, income=income,
+    )
+
+
+def _income(args, program, category, criteria, checklist):
+    assessment = assess_income(args, program, category, criteria, checklist)
+    documents = [row for req, ocr, row, result in assessment.documents]
+    facts, income, blocked = assessment.facts, assessment.income, assessment.blocked
     lines = [f"membership: {_enum(facts.insurance_type, {'직장', '지역', '모름'})}",
              f"income_status: {_enum(income.status, {'MET', 'OVER_LIMIT', 'UNDETERMINED'})}"]
     codes = list(dict.fromkeys([

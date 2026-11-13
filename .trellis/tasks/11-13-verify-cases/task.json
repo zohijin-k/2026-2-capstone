@@ -1,0 +1,44 @@
+{
+  "id": "verify-cases",
+  "name": "verify-cases",
+  "title": "11-13-verify-cases",
+  "description": "Run private document cases through shared upload assessments and compare value-free verdict snapshots.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "backend",
+  "package": null,
+  "priority": "P2",
+  "creator": "codex",
+  "assignee": "codex",
+  "createdAt": "2026-11-13",
+  "completedAt": null,
+  "branch": "feat/verify-cases",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "demo/backend/tools/verify_cases.py",
+    "demo/backend/tools/verify_upload.py",
+    "demo/backend/tests/test_verify_cases.py",
+    ".trellis/spec/backend/verify-cases.md"
+  ],
+  "notes": "Implementation and independent review complete. Engine1264/3skips; backend1227 (+68); all18 scenarios exit0/count1885/0failed; focused149 and independent149. Existing verify_upload tests byte-identical and legacy output cmp identical. Awaiting concrete commit-plan approval with git diff --stat main and three-suite results; no commit/push.",
+  "meta": {
+    "verification": {
+      "engine_passed": 1264,
+      "engine_skipped": 3,
+      "backend_passed": 1227,
+      "backend_added": 68,
+      "scenario_passed": 1885,
+      "scenario_failed": 0,
+      "scenario_modules": 18,
+      "focused_passed": 149,
+      "independent_passed": 149,
+      "existing_cli_tests_unchanged": true
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Backend guideline entry point and applicable contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Preserve OCR compatibility and synthetic-only private-data handling"}
+{"file": ".trellis/spec/backend/document-form-contracts.md", "reason": "Preserve document and value-free verification contracts"}
+{"file": ".trellis/spec/backend/failure-filtering.md", "reason": "Keep upload certainty, applicant projection and blocker semantics unchanged"}
+{"file": ".trellis/spec/backend/income-eligibility.md", "reason": "Reuse income statuses/reasons without altering rules or storing values"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Share assessment orchestration rather than copying or parsing output"}
+{"file": ".trellis/tasks/11-13-verify-cases/research/shared-assessment.md", "reason": "Confirmed source owners, privacy boundary, baseline and test conventions"}
+{"file": ".trellis/tasks/11-13-verify-cases/approval.md", "reason": "Binding latest user conditions override conflicting original plan details"}
+{"file": ".trellis/spec/backend/verify-cases.md", "reason": "New executable CLI, resolved-location, safe snapshot and comparison contract"}
